@@ -27,11 +27,23 @@ A full-stack application to manage a badminton club, including member management
 
 ## Quick Start
 
-### 1. Start the Database
+### 1. Set Up Database
+
+#### Option A: Local PostgreSQL (Docker)
 
 ```bash
 docker-compose up -d
 ```
+
+#### Option B: Neon Cloud PostgreSQL (Recommended for Production)
+
+1. Create a free account at [neon.tech](https://neon.tech)
+2. Create a new project
+3. Copy the connection string from the dashboard
+4. The connection string looks like:
+   ```
+   postgresql://neondb_owner:password@ep-cool-darkness-123456.us-east-2.aws.neon.tech/neondb?sslmode=require
+   ```
 
 ### 2. Configure Environment Variables
 
@@ -85,7 +97,7 @@ The app will be available at `http://localhost:5173`
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `PORT` | Server port | `8080` |
-| `DATABASE_URL` | PostgreSQL connection string | `postgres://user:pass@localhost:5432/db` |
+| `DATABASE_URL` | PostgreSQL connection string (local or Neon) | `postgres://user:pass@localhost:5432/db` or `postgresql://user:pass@ep-xxx.neon.tech/db?sslmode=require` |
 | `AUTH0_DOMAIN` | Auth0 tenant domain | `your-tenant.auth0.com` |
 | `AUTH0_AUDIENCE` | Auth0 API identifier | `https://your-api` |
 | `ADMIN_EMAIL` | Email of first admin (auto-promoted) | `admin@example.com` |
