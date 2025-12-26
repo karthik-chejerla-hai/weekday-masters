@@ -42,15 +42,24 @@ func getJWKS(domain string) (*JWKS, error) {
 		return jwksCache, nil
 	}
 
-	resp, err := http.Get(fmt.Sprintf("https://%s/.well-known/jwks.json", domain))
+	if domain == "" {
+		return nil, errors.New("AUTH0_DOMAIN is not configured")
+	}
+
+	jwksURL := fmt.Sprintf("https://%s/.well-known/jwks.json", domain)
+	resp, err := http.Get(jwksURL)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to fetch JWKS from %s: %w", jwksURL, err)
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("JWKS endpoint returned status %d", resp.StatusCode)
+	}
+
 	var jwks JWKS
 	if err := json.NewDecoder(resp.Body).Decode(&jwks); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to decode JWKS response: %w", err)
 	}
 
 	jwksCache = &jwks
@@ -104,7 +113,9 @@ func AuthMiddleware(config Auth0Config) gin.HandlerFunc {
 		// Get JWKS
 		jwks, err := getJWKS(config.Domain)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch JWKS"})
+			// Log the actual error for debugging
+			fmt.Printf("JWKS fetch error: %v\n", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch JWKS", "details": err.Error()})
 			c.Abort()
 			return
 		}
