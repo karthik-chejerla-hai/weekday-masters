@@ -174,6 +174,41 @@ weekday-masters/
 3. When capacity is exceeded, first-come-first-served based on RSVP timestamp
 4. Admin decides overflow situations manually
 
+## Deployment
+
+The app is deployed on Google Cloud (free tier):
+
+| Service | Platform | URL |
+|---------|----------|-----|
+| Frontend | Firebase Hosting | https://weekday-masters.web.app |
+| Backend | Cloud Run | https://weekday-masters-api-1011694988612.australia-southeast1.run.app |
+| Database | Neon PostgreSQL | - |
+
+### Deploy Backend (Cloud Run)
+
+```bash
+cd backend
+gcloud run deploy weekday-masters-api \
+  --source . \
+  --region australia-southeast1 \
+  --allow-unauthenticated
+```
+
+### Deploy Frontend (Firebase Hosting)
+
+```bash
+cd frontend
+npm run build
+firebase deploy --only hosting
+```
+
+### First-Time Setup
+
+See [DEPLOY.md](DEPLOY.md) for complete setup instructions including:
+- GCP project setup
+- Environment variables configuration
+- Auth0 production URLs
+
 ## License
 
 MIT
