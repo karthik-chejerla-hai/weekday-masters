@@ -163,6 +163,86 @@ class ApiService {
     const response = await this.client.put<Club>('/admin/club', data);
     return response.data;
   }
+
+  // Notifications - Preferences
+  async getNotificationPreferences(): Promise<NotificationPreferences> {
+    const response = await this.client.get<NotificationPreferences>('/users/me/notifications');
+    return response.data;
+  }
+
+  async updateNotificationPreferences(updates: Partial<NotificationPreferences>): Promise<NotificationPreferences> {
+    const response = await this.client.put<NotificationPreferences>('/users/me/notifications', updates);
+    return response.data;
+  }
+
+  // Notifications - Push Tokens
+  async registerPushToken(token: string, deviceName?: string): Promise<void> {
+    await this.client.post('/users/me/push-tokens', { token, device_name: deviceName });
+  }
+
+  async unregisterPushToken(token?: string): Promise<void> {
+    await this.client.delete('/users/me/push-tokens', { data: { token } });
+  }
+
+  // Notifications - History
+  async getNotificationHistory(limit = 20, offset = 0): Promise<Notification[]> {
+    const response = await this.client.get<Notification[]>('/users/me/notifications/history', {
+      params: { limit, offset }
+    });
+    return response.data;
+  }
+
+  async markNotificationRead(notificationId: string): Promise<void> {
+    await this.client.post(`/notifications/${notificationId}/read`);
+  }
+
+  // Admin - Announcements
+  async sendAnnouncement(title: string, body: string): Promise<Announcement> {
+    const response = await this.client.post<Announcement>('/admin/announcements', { title, body });
+    return response.data;
+  }
+}
+
+// Notification types
+export interface NotificationPreferences {
+  id: string;
+  user_id: string;
+  push_enabled: boolean;
+  push_session_reminders: boolean;
+  push_rsvp_deadlines: boolean;
+  push_waitlist_updates: boolean;
+  push_admin_announcements: boolean;
+  email_enabled: boolean;
+  email_session_reminders: boolean;
+  email_rsvp_deadlines: boolean;
+  email_waitlist_updates: boolean;
+  email_admin_announcements: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Notification {
+  id: string;
+  user_id: string;
+  notification_type: string;
+  title: string;
+  body: string;
+  data?: string;
+  push_sent: boolean;
+  push_sent_at?: string;
+  email_sent: boolean;
+  email_sent_at?: string;
+  read_at?: string;
+  created_at: string;
+}
+
+export interface Announcement {
+  id: string;
+  title: string;
+  body: string;
+  created_by: string;
+  sent_at: string;
+  created_at: string;
 }
 
 export const api = new ApiService();

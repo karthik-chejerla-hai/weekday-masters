@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="256" fill="#0891b2"/>
+
+  <!-- Inner lighter circle -->
+  <circle cx="256" cy="256" r="210" fill="#06b6d4"/>
+
+  <!-- Shuttlecock cork (bottom) -->
+  <ellipse cx="256" cy="345" rx="48" ry="32" fill="#f8fafc"/>
+  <ellipse cx="256" cy="345" rx="38" ry="24" fill="#e2e8f0"/>
+
+  <!-- Shuttlecock feathers -->
+  <path d="M256 330 L176 140 Q196 115 256 115 Q316 115 336 140 L256 330 Z" fill="#f8fafc" stroke="#0891b2" stroke-width="6"/>
+
+  <!-- Feather lines -->
+  <line x1="256" y1="125" x2="256" y2="305" stroke="#0891b2" stroke-width="5"/>
+  <line x1="208" y1="165" x2="224" y2="295" stroke="#0891b2" stroke-width="4"/>
+  <line x1="304" y1="165" x2="288" y2="295" stroke="#0891b2" stroke-width="4"/>
+  <line x1="190" y1="205" x2="214" y2="285" stroke="#0891b2" stroke-width="3"/>
+  <line x1="322" y1="205" x2="298" y2="285" stroke="#0891b2" stroke-width="3"/>
+
+  <!-- Top curve -->
+  <path d="M176 140 Q196 110 256 110 Q316 110 336 140" fill="none" stroke="#0891b2" stroke-width="6"/>
+</svg>

@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { User, Mail, Phone, Shield, Save, Loader2 } from 'lucide-react';
+import { User, Mail, Phone, Shield, Save, Loader2, Bell } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import Avatar from '../components/ui/Avatar';
 import Badge from '../components/ui/Badge';
+import NotificationSettings from '../components/notifications/NotificationSettings';
 
 export default function Profile() {
   const { user, refreshUser } = useAuth();
@@ -106,6 +107,15 @@ export default function Profile() {
             Save Changes
           </button>
         </div>
+      </div>
+
+      {/* Notification Settings */}
+      <div>
+        <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2 mb-4">
+          <Bell className="w-6 h-6 text-primary-600" />
+          Notification Settings
+        </h2>
+        <NotificationSettings />
       </div>
     </div>
   );
