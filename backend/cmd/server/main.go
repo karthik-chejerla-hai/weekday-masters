@@ -2,6 +2,9 @@ package main
 
 import (
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/gin-gonic/gin"
 	"github.com/weekday-masters/backend/internal/config"
@@ -33,6 +36,27 @@ func main() {
 	sessionService := services.NewSessionService()
 	rsvpService := services.NewRSVPService()
 
+	// Initialize notification service
+	notificationService := services.NewNotificationService(services.NotificationConfig{
+		FirebaseCredentials: cfg.FirebaseCredentials,
+		SendGridAPIKey:      cfg.SendGridAPIKey,
+		SendGridFromEmail:   cfg.SendGridFromEmail,
+		SendGridFromName:    cfg.SendGridFromName,
+		FrontendURL:         cfg.FrontendURL,
+	})
+
+	// Initialize scheduler for notification cron jobs
+	var scheduler *services.SchedulerService
+	if notificationService.IsEnabled() {
+		scheduler = services.NewSchedulerService(services.SchedulerConfig{
+			NotificationService:    notificationService,
+			SessionReminderHours24: cfg.SessionReminderHours24,
+			SessionReminderHours12: cfg.SessionReminderHours12,
+			DeadlineReminderHours:  cfg.DeadlineReminderHours,
+		})
+		scheduler.Start()
+	}
+
 	// Refresh recurring sessions on startup
 	if err := sessionService.RefreshRecurringSessions(); err != nil {
 		log.Println("Warning: Failed to refresh recurring sessions:", err)
@@ -44,6 +68,7 @@ func main() {
 	sessionHandler := handlers.NewSessionHandler(sessionService, rsvpService)
 	rsvpHandler := handlers.NewRSVPHandler(rsvpService)
 	adminHandler := handlers.NewAdminHandler(userService, sessionService, rsvpService)
+	notificationHandler := handlers.NewNotificationHandler(notificationService)
 
 	// Auth0 config for middleware
 	auth0Config := middleware.Auth0Config{
@@ -76,6 +101,14 @@ func main() {
 			// User routes
 			protected.GET("/users/me", userHandler.GetMe)
 			protected.PUT("/users/me", userHandler.UpdateMe)
+
+			// Notification preferences routes (available to all authenticated users)
+			protected.GET("/users/me/notifications", notificationHandler.GetPreferences)
+			protected.PUT("/users/me/notifications", notificationHandler.UpdatePreferences)
+			protected.POST("/users/me/push-tokens", notificationHandler.RegisterPushToken)
+			protected.DELETE("/users/me/push-tokens", notificationHandler.UnregisterPushToken)
+			protected.GET("/users/me/notifications/history", notificationHandler.GetNotificationHistory)
+			protected.POST("/notifications/:id/read", notificationHandler.MarkNotificationRead)
 
 			// These routes require approved membership
 			approved := protected.Group("")
@@ -118,13 +151,33 @@ func main() {
 
 				// Club management
 				admin.PUT("/club", adminHandler.UpdateClub)
+
+				// Announcements
+				admin.POST("/announcements", notificationHandler.SendAnnouncement)
 			}
 		}
 	}
 
-	// Start server
-	log.Printf("Server starting on port %s", cfg.Port)
-	if err := r.Run(":" + cfg.Port); err != nil {
-		log.Fatal("Failed to start server:", err)
+	// Handle graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	// Start server in goroutine
+	go func() {
+		log.Printf("Server starting on port %s", cfg.Port)
+		if err := r.Run(":" + cfg.Port); err != nil {
+			log.Fatal("Failed to start server:", err)
+		}
+	}()
+
+	// Wait for shutdown signal
+	<-quit
+	log.Println("Shutting down server...")
+
+	// Stop scheduler if running
+	if scheduler != nil {
+		scheduler.Stop()
 	}
+
+	log.Println("Server stopped")
 }
