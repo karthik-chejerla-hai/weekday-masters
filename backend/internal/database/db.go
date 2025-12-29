@@ -32,6 +32,11 @@ func Migrate() error {
 		&models.User{},
 		&models.Session{},
 		&models.RSVP{},
+		// Notification models
+		&models.UserNotificationPreferences{},
+		&models.UserPushToken{},
+		&models.Notification{},
+		&models.Announcement{},
 	)
 	if err != nil {
 		return err

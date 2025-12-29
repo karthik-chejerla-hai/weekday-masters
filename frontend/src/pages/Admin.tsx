@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Settings, Users, Calendar, Check, X, Loader2, MapPin, Save, Building } from 'lucide-react';
+import { Settings, Users, Calendar, Check, X, Loader2, MapPin, Save, Building, Megaphone, Send } from 'lucide-react';
 import { api } from '../services/api';
 import type { User } from '../types';
 import Avatar from '../components/ui/Avatar';
@@ -14,6 +14,11 @@ export default function Admin() {
   const [clubForm, setClubForm] = useState({ name: '', venue_name: '', venue_address: '' });
   const [isSavingClub, setIsSavingClub] = useState(false);
   const [clubMessage, setClubMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Announcement state
+  const [announcementForm, setAnnouncementForm] = useState({ title: '', body: '' });
+  const [isSendingAnnouncement, setIsSendingAnnouncement] = useState(false);
+  const [announcementMessage, setAnnouncementMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     loadData();
@@ -73,6 +78,26 @@ export default function Admin() {
       setClubMessage({ type: 'error', text: 'Failed to save club settings' });
     } finally {
       setIsSavingClub(false);
+    }
+  };
+
+  const handleSendAnnouncement = async () => {
+    if (!announcementForm.title.trim() || !announcementForm.body.trim()) {
+      setAnnouncementMessage({ type: 'error', text: 'Please enter both title and message' });
+      return;
+    }
+
+    setIsSendingAnnouncement(true);
+    setAnnouncementMessage(null);
+    try {
+      await api.sendAnnouncement(announcementForm.title, announcementForm.body);
+      setAnnouncementMessage({ type: 'success', text: 'Announcement sent to all members!' });
+      setAnnouncementForm({ title: '', body: '' });
+    } catch (error) {
+      console.error('Failed to send announcement:', error);
+      setAnnouncementMessage({ type: 'error', text: 'Failed to send announcement' });
+    } finally {
+      setIsSendingAnnouncement(false);
     }
   };
 
@@ -174,6 +199,66 @@ export default function Admin() {
               <Save className="w-4 h-4" />
             )}
             Save Club Settings
+          </button>
+        </div>
+      </div>
+
+      {/* Send Announcement */}
+      <div className="bg-white rounded-xl border border-slate-200 p-6">
+        <h2 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
+          <Megaphone className="w-5 h-5 text-primary-600" />
+          Send Announcement
+        </h2>
+        <p className="text-sm text-slate-600 mb-4">
+          Send a notification to all club members via push notification and email.
+        </p>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Title
+            </label>
+            <input
+              type="text"
+              value={announcementForm.title}
+              onChange={(e) => setAnnouncementForm({ ...announcementForm, title: e.target.value })}
+              placeholder="Announcement title"
+              className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Message
+            </label>
+            <textarea
+              value={announcementForm.body}
+              onChange={(e) => setAnnouncementForm({ ...announcementForm, body: e.target.value })}
+              placeholder="Write your announcement message..."
+              rows={4}
+              className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            />
+          </div>
+
+          {announcementMessage && (
+            <div className={`p-3 rounded-lg text-sm ${
+              announcementMessage.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+            }`}>
+              {announcementMessage.text}
+            </div>
+          )}
+
+          <button
+            onClick={handleSendAnnouncement}
+            disabled={isSendingAnnouncement || !announcementForm.title.trim() || !announcementForm.body.trim()}
+            className="bg-secondary-500 text-white px-6 py-2 rounded-lg font-medium hover:bg-secondary-600 transition-colors disabled:opacity-50 flex items-center gap-2"
+          >
+            {isSendingAnnouncement ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
+            Send Announcement
           </button>
         </div>
       </div>

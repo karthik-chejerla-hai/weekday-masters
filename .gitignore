@@ -5,11 +5,22 @@ node_modules/
 dist/
 build/
 
-# Environment files
+# Environment files (NEVER commit secrets)
 .env
 .env.local
 .env.*.local
+.env.production
+.env.development
 backend/.env
+frontend/.env
+frontend/.env.production
+frontend/.env.development
+
+# Firebase/GCP service account keys (SENSITIVE)
+**/service-account*.json
+**/serviceAccount*.json
+**/*-credentials.json
+firebase-adminsdk*.json
 
 # IDE
 .idea/
