@@ -1,4 +1,4 @@
-# Weekday Masters - Codebase Summary
+# RallyUp - Codebase Summary
 
 A full-stack web application for managing a badminton club — handling member registration, session scheduling, RSVP tracking, and notifications. Designed as a single-club app for a group that plays on weekdays in the **Australia/Sydney** timezone.
 
@@ -232,8 +232,8 @@ Triggers on push to `main` or manual dispatch:
 
 | Service | Platform | URL |
 |---------|----------|-----|
-| Frontend | Firebase Hosting | https://weekday-masters.web.app |
-| Backend | Cloud Run | https://weekday-masters-api-1011694988612.australia-southeast1.run.app |
+| Frontend | Firebase Hosting | https://rallyup.web.app |
+| Backend | Cloud Run | https://rallyup-api-1011694988612.australia-southeast1.run.app |
 | Database | Neon PostgreSQL | (managed) |
 
 ### Environment Variables

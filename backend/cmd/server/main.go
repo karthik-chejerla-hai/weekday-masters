@@ -91,6 +91,9 @@ func main() {
 	api := r.Group("/api")
 	{
 		// Public routes
+		api.GET("/openapi", handlers.RedirectOpenAPI)
+		api.GET("/openapi/index.html", handlers.ServeOpenAPIIndex)
+		api.GET("/openapi/spec.yaml", handlers.ServeOpenAPISpec)
 		api.POST("/auth/callback", authHandler.Callback)
 		api.GET("/club", adminHandler.GetClub)
 

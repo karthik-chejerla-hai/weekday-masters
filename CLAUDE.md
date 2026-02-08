@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Weekday Masters is a badminton club management app (single-club) with member registration, session scheduling, RSVP tracking, and notifications. All times use **Australia/Sydney** timezone.
+RallyUp is a badminton club management app with member registration, session scheduling, RSVP tracking, and notifications. All times use **Australia/Sydney** timezone.
 
 ## Development Commands
 
@@ -34,7 +34,7 @@ npm run lint                # eslint
 ### Docker (backend only)
 ```bash
 cd backend
-docker build -t weekday-masters-api .
+docker build -t rallyup-api .
 # Multi-stage: golang:1.22-alpine → alpine:3.19, binary at ./server, port 8080
 ```
 

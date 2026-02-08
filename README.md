@@ -1,4 +1,4 @@
-# Weekday Masters - Badminton Club Management App
+# RallyUp - Badminton Club Management App
 
 A full-stack application to manage a badminton club, including member management, session scheduling, and RSVP tracking.
 
@@ -180,15 +180,15 @@ The app is deployed on Google Cloud (free tier):
 
 | Service | Platform | URL |
 |---------|----------|-----|
-| Frontend | Firebase Hosting | https://weekday-masters.web.app |
-| Backend | Cloud Run | https://weekday-masters-api-1011694988612.australia-southeast1.run.app |
+| Frontend | Firebase Hosting | https://rallyup.web.app |
+| Backend | Cloud Run | https://rallyup-api-1011694988612.australia-southeast1.run.app |
 | Database | Neon PostgreSQL | - |
 
 ### Deploy Backend (Cloud Run)
 
 ```bash
 cd backend
-gcloud run deploy weekday-masters-api \
+gcloud run deploy rallyup-api \
   --source . \
   --region australia-southeast1 \
   --allow-unauthenticated

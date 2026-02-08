@@ -1,6 +1,6 @@
 # Deployment Guide
 
-Deploy Weekday Masters to Google Cloud (free tier).
+Deploy RallyUp to Google Cloud (free tier).
 
 ## Architecture
 
@@ -28,10 +28,10 @@ Deploy Weekday Masters to Google Cloud (free tier).
 gcloud auth login
 
 # Create a new project (or use existing)
-gcloud projects create weekday-masters --name="Weekday Masters"
+gcloud projects create rallyup --name="RallyUp"
 
 # Set as default project
-gcloud config set project weekday-masters
+gcloud config set project rallyup
 
 # Enable required APIs
 gcloud services enable cloudbuild.googleapis.com
@@ -49,7 +49,7 @@ gcloud services enable artifactregistry.googleapis.com
 cd backend
 
 # Deploy to Cloud Run (builds container automatically)
-gcloud run deploy weekday-masters-api \
+gcloud run deploy rallyup-api \
   --source . \
   --region australia-southeast1 \
   --allow-unauthenticated \
@@ -63,7 +63,7 @@ After initial deployment, set secrets:
 
 ```bash
 # Set environment variables (replace with your values)
-gcloud run services update weekday-masters-api \
+gcloud run services update rallyup-api \
   --region australia-southeast1 \
   --set-env-vars "DATABASE_URL=postgresql://user:pass@ep-xxx.neon.tech/dbname?sslmode=require" \
   --set-env-vars "AUTH0_DOMAIN=your-tenant.auth0.com" \
@@ -75,7 +75,7 @@ gcloud run services update weekday-masters-api \
 ### 2.3 Get Backend URL
 
 ```bash
-gcloud run services describe weekday-masters-api \
+gcloud run services describe rallyup-api \
   --region australia-southeast1 \
   --format 'value(status.url)'
 ```
@@ -93,10 +93,10 @@ Save this URL - you'll need it for the frontend.
 firebase login
 
 # Create a new Firebase project (or link to existing GCP project)
-firebase projects:create weekday-masters --display-name "Weekday Masters"
+firebase projects:create rallyup --display-name "RallyUp"
 
 # Or use existing GCP project
-firebase projects:addfirebase weekday-masters
+firebase projects:addfirebase rallyup
 ```
 
 ### 3.2 Update Firebase Config
@@ -106,7 +106,7 @@ Edit `frontend/.firebaserc`:
 ```json
 {
   "projects": {
-    "default": "weekday-masters"
+    "default": "rallyup"
   }
 }
 ```
@@ -118,7 +118,7 @@ cd frontend
 
 # Create .env.production with your values
 cat > .env.production << EOF
-VITE_API_URL=https://weekday-masters-api-xxxxx-ts.a.run.app/api
+VITE_API_URL=https://rallyup-api-xxxxx-ts.a.run.app/api
 VITE_AUTH0_DOMAIN=your-tenant.auth0.com
 VITE_AUTH0_CLIENT_ID=your-production-client-id
 VITE_AUTH0_AUDIENCE=https://your-api-identifier
@@ -138,7 +138,7 @@ npm run build
 firebase deploy --only hosting
 ```
 
-Your app will be live at: `https://weekday-masters.web.app`
+Your app will be live at: `https://rallyup.web.app`
 
 ---
 
@@ -148,17 +148,17 @@ Add these URLs to your Auth0 application settings:
 
 **Allowed Callback URLs:**
 ```
-https://weekday-masters.web.app/callback
+https://rallyup.web.app/callback
 ```
 
 **Allowed Logout URLs:**
 ```
-https://weekday-masters.web.app
+https://rallyup.web.app
 ```
 
 **Allowed Web Origins:**
 ```
-https://weekday-masters.web.app
+https://rallyup.web.app
 ```
 
 ---
@@ -168,9 +168,9 @@ https://weekday-masters.web.app
 Update the `FRONTEND_URL` environment variable in Cloud Run:
 
 ```bash
-gcloud run services update weekday-masters-api \
+gcloud run services update rallyup-api \
   --region australia-southeast1 \
-  --update-env-vars "FRONTEND_URL=https://weekday-masters.web.app"
+  --update-env-vars "FRONTEND_URL=https://rallyup.web.app"
 ```
 
 ---
@@ -182,7 +182,7 @@ gcloud run services update weekday-masters-api \
 ```bash
 #!/bin/bash
 cd backend
-gcloud run deploy weekday-masters-api \
+gcloud run deploy rallyup-api \
   --source . \
   --region australia-southeast1 \
   --allow-unauthenticated

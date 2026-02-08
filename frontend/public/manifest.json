@@ -1,7 +1,7 @@
 {
-  "name": "Weekday Masters Badminton",
-  "short_name": "Weekday Masters",
-  "description": "Weekday Masters Badminton Club - Session Management and RSVP",
+  "name": "RallyUp Badminton",
+  "short_name": "RallyUp",
+  "description": "RallyUp Badminton Club - Session Management and RSVP",
   "theme_color": "#0891b2",
   "background_color": "#ffffff",
   "display": "standalone",

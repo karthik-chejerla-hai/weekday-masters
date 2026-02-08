@@ -51,8 +51,8 @@ func Load() *Config {
 
 		// SendGrid
 		SendGridAPIKey:    getEnv("SENDGRID_API_KEY", ""),
-		SendGridFromEmail: getEnv("SENDGRID_FROM_EMAIL", "noreply@weekdaymasters.club"),
-		SendGridFromName:  getEnv("SENDGRID_FROM_NAME", "Weekday Masters"),
+		SendGridFromEmail: getEnv("SENDGRID_FROM_EMAIL", "noreply@rallyup.club"),
+		SendGridFromName:  getEnv("SENDGRID_FROM_NAME", "RallyUp"),
 
 		// Notification timing
 		SessionReminderHours24: getEnvInt("SESSION_REMINDER_HOURS_24", 24),
