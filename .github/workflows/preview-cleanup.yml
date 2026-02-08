@@ -29,6 +29,6 @@ jobs:
         continue-on-error: true
         run: |
           PR_NUMBER=${{ github.event.pull_request.number }}
-          gcloud run services update-traffic rallyup-api \
+          gcloud run services update-traffic weekday-masters-api \
             --region australia-southeast1 \
             --remove-tags pr-${PR_NUMBER}
