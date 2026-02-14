@@ -80,13 +80,13 @@ gcloud run services describe rallyup-api \
   --format 'value(status.url)'
 ```
 
-Save this URL - you'll need it for the frontend.
+Save this URL – you'll need it for the frontend.
 
 ---
 
 ## Step 3: Deploy Frontend to Firebase Hosting
 
-### 3.1 Setup Firebase
+### 3.1 Set up Firebase
 
 ```bash
 # Login to Firebase
@@ -201,11 +201,11 @@ firebase deploy --only hosting
 
 ## Estimated Free Tier Usage
 
-| Service | Your App (estimated) | Free Tier Limit |
-|---------|---------------------|-----------------|
-| Cloud Run | ~10K requests/month | 2M requests/month |
-| Firebase Hosting | ~1GB transfer/month | 10GB/month |
-| Neon PostgreSQL | ~100MB storage | 500MB storage |
+| Service          | Your App (estimated) | Free Tier Limit   |
+|------------------|----------------------|-------------------|
+| Cloud Run        | ~10K requests/month  | 2M requests/month |
+| Firebase Hosting | ~1GB transfer/month  | 10GB/month        |
+| Neon PostgreSQL  | ~100MB storage       | 500MB storage     |
 
 You should stay well within free tier limits for a small club app.
 
@@ -214,7 +214,7 @@ You should stay well within free tier limits for a small club app.
 ## Troubleshooting
 
 ### Cold Starts
-Cloud Run scales to zero. First request after idle may take 1-2 seconds.
+Cloud Run scales to zero. The first request after idle may take 1–2 seconds.
 
 ### CORS Errors
 Ensure `FRONTEND_URL` env var in Cloud Run matches your Firebase Hosting URL exactly.
