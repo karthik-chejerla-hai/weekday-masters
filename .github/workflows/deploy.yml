@@ -50,6 +50,7 @@ jobs:
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy ${{ env.BACKEND_SERVICE_NAME }} \
+            --project ${{ env.GCP_PROJECT_ID }} \
             --image ${{ env.IMAGE }} \
             --region ${{ env.GCP_REGION }} \
             --platform managed \
@@ -73,6 +74,7 @@ jobs:
         id: backend-url
         run: |
           URL=$(gcloud run services describe ${{ env.BACKEND_SERVICE_NAME }} \
+            --project ${{ env.GCP_PROJECT_ID }} \
             --region ${{ env.GCP_REGION }} \
             --format='value(status.url)')
           echo "url=$URL" >> $GITHUB_OUTPUT

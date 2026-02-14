@@ -56,6 +56,7 @@ jobs:
         run: |
           PR_NUMBER=${{ github.event.pull_request.number }}
           gcloud run deploy ${{ env.BACKEND_SERVICE_NAME }} \
+            --project ${{ env.GCP_PROJECT_ID }} \
             --image ${{ env.IMAGE }} \
             --region ${{ env.GCP_REGION }} \
             --platform managed \
@@ -82,6 +83,7 @@ jobs:
         run: |
           PR_NUMBER=${{ github.event.pull_request.number }}
           URL=$(gcloud run services describe ${{ env.BACKEND_SERVICE_NAME }} \
+            --project ${{ env.GCP_PROJECT_ID }} \
             --region ${{ env.GCP_REGION }} \
             --format='value(status.traffic[tag=pr-'${PR_NUMBER}'].url)')
           echo "url=$URL" >> $GITHUB_OUTPUT
