@@ -11,8 +11,8 @@ concurrency:
 env:
   GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   GCP_REGION: australia-southeast1
-  ARTIFACT_REGISTRY_REPO: weekday-masters
-  BACKEND_SERVICE_NAME: weekday-masters-api
+  ARTIFACT_REGISTRY_REPO: rally
+  BACKEND_SERVICE_NAME: rally-api
   FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
 
 jobs:
@@ -72,7 +72,7 @@ jobs:
             --set-env-vars="FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}" \
             --set-env-vars="SENDGRID_API_KEY=${{ secrets.SENDGRID_API_KEY }}" \
             --set-env-vars="SENDGRID_FROM_EMAIL=${{ secrets.SENDGRID_FROM_EMAIL }}" \
-            --set-env-vars="SENDGRID_FROM_NAME=RallyUp" \
+            --set-env-vars="SENDGRID_FROM_NAME=Rally" \
             --set-env-vars="SESSION_REMINDER_HOURS_24=24" \
             --set-env-vars="SESSION_REMINDER_HOURS_12=12" \
             --set-env-vars="DEADLINE_REMINDER_HOURS=6"
