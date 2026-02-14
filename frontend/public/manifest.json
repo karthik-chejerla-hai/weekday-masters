@@ -1,7 +1,7 @@
 {
-  "name": "RallyUp Badminton",
-  "short_name": "RallyUp",
-  "description": "RallyUp Badminton Club - Session Management and RSVP",
+  "name": "Rally Badminton",
+  "short_name": "Rally",
+  "description": "Rally - Badminton Club Management App",
   "theme_color": "#0891b2",
   "background_color": "#ffffff",
   "display": "standalone",

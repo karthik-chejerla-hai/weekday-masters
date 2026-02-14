@@ -20,7 +20,7 @@ export default function Home() {
             🏸
           </div>
           <h1 className="text-4xl font-bold mb-4">
-            {club?.name || 'RallyUp'}
+            {club?.name || 'Rally'}
           </h1>
           <p className="text-xl text-primary-100 mb-8">
             Join our badminton community and play with us!
