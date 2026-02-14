@@ -1,6 +1,6 @@
 # Deployment Guide
 
-Deploy RallyUp to Google Cloud (free tier).
+Deploy Rally to Google Cloud (free tier).
 
 ## Architecture
 
@@ -28,10 +28,10 @@ Deploy RallyUp to Google Cloud (free tier).
 gcloud auth login
 
 # Create a new project (or use existing)
-gcloud projects create rallyup --name="RallyUp"
+gcloud projects create rally --name="Rally"
 
 # Set as default project
-gcloud config set project rallyup
+gcloud config set project rally
 
 # Enable required APIs
 gcloud services enable cloudbuild.googleapis.com
@@ -49,7 +49,7 @@ gcloud services enable artifactregistry.googleapis.com
 cd backend
 
 # Deploy to Cloud Run (builds container automatically)
-gcloud run deploy rallyup-api \
+gcloud run deploy rally-api \
   --source . \
   --region australia-southeast1 \
   --allow-unauthenticated \
@@ -63,7 +63,7 @@ After initial deployment, set secrets:
 
 ```bash
 # Set environment variables (replace with your values)
-gcloud run services update rallyup-api \
+gcloud run services update rally-api \
   --region australia-southeast1 \
   --set-env-vars "DATABASE_URL=postgresql://user:pass@ep-xxx.neon.tech/dbname?sslmode=require" \
   --set-env-vars "AUTH0_DOMAIN=your-tenant.auth0.com" \
@@ -75,7 +75,7 @@ gcloud run services update rallyup-api \
 ### 2.3 Get Backend URL
 
 ```bash
-gcloud run services describe rallyup-api \
+gcloud run services describe rally-api \
   --region australia-southeast1 \
   --format 'value(status.url)'
 ```
@@ -93,10 +93,10 @@ Save this URL – you'll need it for the frontend.
 firebase login
 
 # Create a new Firebase project (or link to existing GCP project)
-firebase projects:create rallyup --display-name "RallyUp"
+firebase projects:create rally --display-name "Rally"
 
 # Or use existing GCP project
-firebase projects:addfirebase rallyup
+firebase projects:addfirebase rally
 ```
 
 ### 3.2 Update Firebase Config
@@ -106,7 +106,7 @@ Edit `frontend/.firebaserc`:
 ```json
 {
   "projects": {
-    "default": "rallyup"
+    "default": "rally"
   }
 }
 ```
@@ -118,7 +118,7 @@ cd frontend
 
 # Create .env.production with your values
 cat > .env.production << EOF
-VITE_API_URL=https://rallyup-api-xxxxx-ts.a.run.app/api
+VITE_API_URL=https://rally-api-xxxxx-ts.a.run.app/api
 VITE_AUTH0_DOMAIN=your-tenant.auth0.com
 VITE_AUTH0_CLIENT_ID=your-production-client-id
 VITE_AUTH0_AUDIENCE=https://your-api-identifier
@@ -138,7 +138,7 @@ npm run build
 firebase deploy --only hosting
 ```
 
-Your app will be live at: `https://rallyup.web.app`
+Your app will be live at: `https://rally.web.app`
 
 ---
 
@@ -148,17 +148,17 @@ Add these URLs to your Auth0 application settings:
 
 **Allowed Callback URLs:**
 ```
-https://rallyup.web.app/callback
+https://rally.web.app/callback
 ```
 
 **Allowed Logout URLs:**
 ```
-https://rallyup.web.app
+https://rally.web.app
 ```
 
 **Allowed Web Origins:**
 ```
-https://rallyup.web.app
+https://rally.web.app
 ```
 
 ---
@@ -168,9 +168,9 @@ https://rallyup.web.app
 Update the `FRONTEND_URL` environment variable in Cloud Run:
 
 ```bash
-gcloud run services update rallyup-api \
+gcloud run services update rally-api \
   --region australia-southeast1 \
-  --update-env-vars "FRONTEND_URL=https://rallyup.web.app"
+  --update-env-vars "FRONTEND_URL=https://rally.web.app"
 ```
 
 ---
@@ -182,7 +182,7 @@ gcloud run services update rallyup-api \
 ```bash
 #!/bin/bash
 cd backend
-gcloud run deploy rallyup-api \
+gcloud run deploy rally-api \
   --source . \
   --region australia-southeast1 \
   --allow-unauthenticated

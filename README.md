@@ -1,4 +1,4 @@
-# RallyUp - Badminton Club Management App
+# Rally - Badminton Club Management App
 
 A full-stack application to manage a badminton club, including member management, session scheduling, and RSVP tracking.
 
@@ -178,17 +178,17 @@ weekday-masters/
 
 The app is deployed on Google Cloud (free tier):
 
-| Service | Platform | URL |
-|---------|----------|-----|
-| Frontend | Firebase Hosting | https://rallyup.web.app |
-| Backend | Cloud Run | https://rallyup-api-1011694988612.australia-southeast1.run.app |
-| Database | Neon PostgreSQL | - |
+| Service  | Platform         | URL                                                          |
+|----------|------------------|--------------------------------------------------------------|
+| Frontend | Firebase Hosting | https://rally.web.app                                        |
+| Backend  | Cloud Run        | https://rally-api-1011694988612.australia-southeast1.run.app |
+| Database | Neon PostgreSQL  | -                                                            |
 
 ### Deploy Backend (Cloud Run)
 
 ```bash
 cd backend
-gcloud run deploy rallyup-api \
+gcloud run deploy rally-api \
   --source . \
   --region australia-southeast1 \
   --allow-unauthenticated

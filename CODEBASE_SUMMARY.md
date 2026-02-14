@@ -230,11 +230,11 @@ Triggers on push to `main` or manual dispatch:
 
 ### Production URLs
 
-| Service  | Platform         | URL                                                            |
-|----------|------------------|----------------------------------------------------------------|
-| Frontend | Firebase Hosting | https://rallyup.web.app                                        |
-| Backend  | Cloud Run        | https://rallyup-api-1011694988612.australia-southeast1.run.app |
-| Database | Neon PostgreSQL  | (managed)                                                      |
+| Service  | Platform         | URL                                                          |
+|----------|------------------|--------------------------------------------------------------|
+| Frontend | Firebase Hosting | https://rally.web.app                                        |
+| Backend  | Cloud Run        | https://rally-api-1011694988612.australia-southeast1.run.app |
+| Database | Neon PostgreSQL  | (managed)                                                    |
 
 ### Environment Variables
 
