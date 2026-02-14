@@ -31,7 +31,8 @@ jobs:
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.BACKEND_SA_EMAIL }}
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
@@ -91,9 +92,21 @@ jobs:
     runs-on: ubuntu-latest
     needs: deploy-backend # Wait for backend to get URL
 
+    permissions:
+      contents: read
+      id-token: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        id: auth
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.FRONTEND_SA_EMAIL }}
+          create_credentials_file: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -129,7 +142,7 @@ jobs:
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
-          firebaseServiceAccount: ${{ secrets.GCP_SA_KEY }}
+          firebaseServiceAccount: ${{ steps.auth.outputs.credentials_file_path }}
           projectId: ${{ secrets.FIREBASE_PROJECT_ID }}
           channelId: live
           entryPoint: frontend
