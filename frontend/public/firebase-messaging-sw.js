@@ -29,7 +29,7 @@ function initializeFirebase() {
     messaging.onBackgroundMessage((payload) => {
       console.log('Received background message:', payload);
 
-      const notificationTitle = payload.notification?.title || 'Weekday Masters';
+      const notificationTitle = payload.notification?.title || 'Rally';
       const notificationOptions = {
         body: payload.notification?.body || '',
         icon: '/icons/icon-192x192.svg',

@@ -267,7 +267,7 @@ func (s *NotificationService) buildEmailHTML(subject, body string, notifType mod
 </head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 0; background-color: #f8fafc;">
     <div style="background-color: #0891b2; color: white; padding: 24px; text-align: center;">
-        <h1 style="margin: 0; font-size: 24px;">🏸 Weekday Masters</h1>
+        <h1 style="margin: 0; font-size: 24px;">🏸 Rally</h1>
     </div>
     <div style="padding: 24px; background-color: white;">
         <div style="font-size: 32px; text-align: center; margin-bottom: 16px;">%s</div>
@@ -278,7 +278,7 @@ func (s *NotificationService) buildEmailHTML(subject, body string, notifType mod
         </div>
     </div>
     <div style="background-color: #f1f5f9; padding: 16px; text-align: center; font-size: 12px; color: #64748b;">
-        <p style="margin: 0 0 8px 0;">You received this email because you have notifications enabled for Weekday Masters.</p>
+        <p style="margin: 0 0 8px 0;">You received this email because you have notifications enabled for Rally.</p>
         <p style="margin: 0;"><a href="%s/profile" style="color: #0891b2;">Manage your notification preferences</a></p>
     </div>
 </body>

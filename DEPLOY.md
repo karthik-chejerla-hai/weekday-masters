@@ -1,6 +1,6 @@
 # Deployment Guide
 
-Deploy Weekday Masters to Google Cloud (free tier).
+Deploy Rally to Google Cloud (free tier).
 
 ## Architecture
 
@@ -28,10 +28,10 @@ Deploy Weekday Masters to Google Cloud (free tier).
 gcloud auth login
 
 # Create a new project (or use existing)
-gcloud projects create weekday-masters --name="Weekday Masters"
+gcloud projects create rally --name="Rally"
 
 # Set as default project
-gcloud config set project weekday-masters
+gcloud config set project rally
 
 # Enable required APIs
 gcloud services enable cloudbuild.googleapis.com
@@ -49,7 +49,7 @@ gcloud services enable artifactregistry.googleapis.com
 cd backend
 
 # Deploy to Cloud Run (builds container automatically)
-gcloud run deploy weekday-masters-api \
+gcloud run deploy rally-api \
   --source . \
   --region australia-southeast1 \
   --allow-unauthenticated \
@@ -63,7 +63,7 @@ After initial deployment, set secrets:
 
 ```bash
 # Set environment variables (replace with your values)
-gcloud run services update weekday-masters-api \
+gcloud run services update rally-api \
   --region australia-southeast1 \
   --set-env-vars "DATABASE_URL=postgresql://user:pass@ep-xxx.neon.tech/dbname?sslmode=require" \
   --set-env-vars "AUTH0_DOMAIN=your-tenant.auth0.com" \
@@ -75,28 +75,28 @@ gcloud run services update weekday-masters-api \
 ### 2.3 Get Backend URL
 
 ```bash
-gcloud run services describe weekday-masters-api \
+gcloud run services describe rally-api \
   --region australia-southeast1 \
   --format 'value(status.url)'
 ```
 
-Save this URL - you'll need it for the frontend.
+Save this URL – you'll need it for the frontend.
 
 ---
 
 ## Step 3: Deploy Frontend to Firebase Hosting
 
-### 3.1 Setup Firebase
+### 3.1 Set up Firebase
 
 ```bash
 # Login to Firebase
 firebase login
 
 # Create a new Firebase project (or link to existing GCP project)
-firebase projects:create weekday-masters --display-name "Weekday Masters"
+firebase projects:create rally --display-name "Rally"
 
 # Or use existing GCP project
-firebase projects:addfirebase weekday-masters
+firebase projects:addfirebase rally
 ```
 
 ### 3.2 Update Firebase Config
@@ -106,7 +106,7 @@ Edit `frontend/.firebaserc`:
 ```json
 {
   "projects": {
-    "default": "weekday-masters"
+    "default": "rally"
   }
 }
 ```
@@ -118,7 +118,7 @@ cd frontend
 
 # Create .env.production with your values
 cat > .env.production << EOF
-VITE_API_URL=https://weekday-masters-api-xxxxx-ts.a.run.app/api
+VITE_API_URL=https://rally-api-xxxxx-ts.a.run.app/api
 VITE_AUTH0_DOMAIN=your-tenant.auth0.com
 VITE_AUTH0_CLIENT_ID=your-production-client-id
 VITE_AUTH0_AUDIENCE=https://your-api-identifier
@@ -138,7 +138,7 @@ npm run build
 firebase deploy --only hosting
 ```
 
-Your app will be live at: `https://weekday-masters.web.app`
+Your app will be live at: `https://rally.web.app`
 
 ---
 
@@ -148,17 +148,17 @@ Add these URLs to your Auth0 application settings:
 
 **Allowed Callback URLs:**
 ```
-https://weekday-masters.web.app/callback
+https://rally.web.app/callback
 ```
 
 **Allowed Logout URLs:**
 ```
-https://weekday-masters.web.app
+https://rally.web.app
 ```
 
 **Allowed Web Origins:**
 ```
-https://weekday-masters.web.app
+https://rally.web.app
 ```
 
 ---
@@ -168,9 +168,9 @@ https://weekday-masters.web.app
 Update the `FRONTEND_URL` environment variable in Cloud Run:
 
 ```bash
-gcloud run services update weekday-masters-api \
+gcloud run services update rally-api \
   --region australia-southeast1 \
-  --update-env-vars "FRONTEND_URL=https://weekday-masters.web.app"
+  --update-env-vars "FRONTEND_URL=https://rally.web.app"
 ```
 
 ---
@@ -182,7 +182,7 @@ gcloud run services update weekday-masters-api \
 ```bash
 #!/bin/bash
 cd backend
-gcloud run deploy weekday-masters-api \
+gcloud run deploy rally-api \
   --source . \
   --region australia-southeast1 \
   --allow-unauthenticated
@@ -201,11 +201,11 @@ firebase deploy --only hosting
 
 ## Estimated Free Tier Usage
 
-| Service | Your App (estimated) | Free Tier Limit |
-|---------|---------------------|-----------------|
-| Cloud Run | ~10K requests/month | 2M requests/month |
-| Firebase Hosting | ~1GB transfer/month | 10GB/month |
-| Neon PostgreSQL | ~100MB storage | 500MB storage |
+| Service          | Your App (estimated) | Free Tier Limit   |
+|------------------|----------------------|-------------------|
+| Cloud Run        | ~10K requests/month  | 2M requests/month |
+| Firebase Hosting | ~1GB transfer/month  | 10GB/month        |
+| Neon PostgreSQL  | ~100MB storage       | 500MB storage     |
 
 You should stay well within free tier limits for a small club app.
 
@@ -214,7 +214,7 @@ You should stay well within free tier limits for a small club app.
 ## Troubleshooting
 
 ### Cold Starts
-Cloud Run scales to zero. First request after idle may take 1-2 seconds.
+Cloud Run scales to zero. The first request after idle may take 1–2 seconds.
 
 ### CORS Errors
 Ensure `FRONTEND_URL` env var in Cloud Run matches your Firebase Hosting URL exactly.

@@ -1,9 +1,12 @@
-name: Deploy
+name: Preview Deploy
 
 on:
-  push:
-    branches: [main]
-  workflow_dispatch: # Allow manual trigger
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 env:
   GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
@@ -14,10 +17,10 @@ env:
 
 jobs:
   # ============================================
-  # DEPLOY BACKEND TO CLOUD RUN
+  # DEPLOY PREVIEW BACKEND TO CLOUD RUN
   # ============================================
-  deploy-backend:
-    name: Deploy Backend
+  deploy-preview-backend:
+    name: Deploy Preview Backend
     runs-on: ubuntu-latest
 
     permissions:
@@ -37,27 +40,32 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev
+        run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev --quiet
 
       - name: Build and push Docker image
         working-directory: backend
         run: |
-          IMAGE="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO }}/${{ env.BACKEND_SERVICE_NAME }}:${{ github.sha }}"
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          IMAGE="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO }}/${{ env.BACKEND_SERVICE_NAME }}:pr-${PR_NUMBER}-${SHA}"
           docker build -t $IMAGE .
           docker push $IMAGE
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
 
-      - name: Deploy to Cloud Run
+      - name: Deploy to Cloud Run (no traffic, tagged revision)
         run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
           gcloud run deploy ${{ env.BACKEND_SERVICE_NAME }} \
             --project ${{ env.GCP_PROJECT_ID }} \
             --image ${{ env.IMAGE }} \
             --region ${{ env.GCP_REGION }} \
             --platform managed \
+            --no-traffic \
+            --tag pr-${PR_NUMBER} \
             --allow-unauthenticated \
             --set-env-vars="GIN_MODE=release" \
             --set-env-vars="TIMEZONE=Australia/Sydney" \
-            --set-env-vars="FRONTEND_URL=${{ secrets.FRONTEND_URL }}" \
+            --set-env-vars="FRONTEND_URL=*" \
             --set-env-vars="AUTH0_DOMAIN=${{ secrets.AUTH0_DOMAIN }}" \
             --set-env-vars="AUTH0_AUDIENCE=${{ secrets.AUTH0_AUDIENCE }}" \
             --set-env-vars="ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }}" \
@@ -70,26 +78,32 @@ jobs:
             --set-env-vars="SESSION_REMINDER_HOURS_12=12" \
             --set-env-vars="DEADLINE_REMINDER_HOURS=6"
 
-      - name: Get Backend URL
-        id: backend-url
+      - name: Get preview backend URL
+        id: preview-url
         run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
           URL=$(gcloud run services describe ${{ env.BACKEND_SERVICE_NAME }} \
             --project ${{ env.GCP_PROJECT_ID }} \
             --region ${{ env.GCP_REGION }} \
-            --format='value(status.url)')
+            --format='value(status.traffic[tag=pr-'${PR_NUMBER}'].url)')
           echo "url=$URL" >> $GITHUB_OUTPUT
-          echo "Backend deployed to: $URL"
+          echo "Preview backend deployed to: $URL"
 
     outputs:
-      backend-url: ${{ steps.backend-url.outputs.url }}
+      preview-url: ${{ steps.preview-url.outputs.url }}
 
   # ============================================
-  # DEPLOY FRONTEND TO FIREBASE HOSTING
+  # DEPLOY PREVIEW FRONTEND TO FIREBASE HOSTING
   # ============================================
-  deploy-frontend:
-    name: Deploy Frontend
+  deploy-preview-frontend:
+    name: Deploy Preview Frontend
     runs-on: ubuntu-latest
-    needs: deploy-backend # Wait for backend to get URL
+    needs: deploy-preview-backend
+
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
 
     steps:
       - name: Checkout code
@@ -109,13 +123,10 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         env:
-          # API URL from deployed backend
-          VITE_API_URL: ${{ needs.deploy-backend.outputs.backend-url }}/api
-          # Auth0
+          VITE_API_URL: ${{ needs.deploy-preview-backend.outputs.preview-url }}/api
           VITE_AUTH0_DOMAIN: ${{ secrets.AUTH0_DOMAIN }}
           VITE_AUTH0_CLIENT_ID: ${{ secrets.AUTH0_CLIENT_ID }}
           VITE_AUTH0_AUDIENCE: ${{ secrets.AUTH0_AUDIENCE }}
-          # Firebase (for push notifications)
           VITE_FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.FIREBASE_PROJECT_ID }}.firebaseapp.com
           VITE_FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
@@ -125,11 +136,11 @@ jobs:
           VITE_FIREBASE_VAPID_KEY: ${{ secrets.FIREBASE_VAPID_KEY }}
         run: npm run build
 
-      - name: Deploy to Firebase Hosting
+      - name: Deploy to Firebase Hosting (preview channel)
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.GCP_SA_KEY }}
           projectId: ${{ secrets.FIREBASE_PROJECT_ID }}
-          channelId: live
           entryPoint: frontend
+          expires: 7d

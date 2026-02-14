@@ -1,0 +1,1116 @@
+openapi: 3.0.3
+info:
+  title: RallyUp API
+  description: RallyUp Badminton Club management API — member registration, session scheduling, RSVP tracking, and notifications.
+  version: 1.0.0
+
+servers:
+  - url: /api
+    description: API root
+
+tags:
+  - name: Public
+    description: No authentication required
+  - name: Users
+    description: User profile and member listing
+  - name: Sessions
+    description: Session listing and details
+  - name: RSVP
+    description: RSVP management
+  - name: Notifications
+    description: Notification preferences, push tokens, and history
+  - name: "Admin: Members"
+    description: Admin member management
+  - name: "Admin: Sessions"
+    description: Admin session management
+  - name: "Admin: Club"
+    description: Admin club settings
+  - name: "Admin: Announcements"
+    description: Admin announcements
+
+security:
+  - bearerAuth: []
+
+paths:
+  /club:
+    get:
+      tags: [Public]
+      summary: Get club information
+      operationId: getClub
+      security: []
+      responses:
+        "200":
+          description: Club info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Club"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /users/me:
+    get:
+      tags: [Users]
+      summary: Get current user profile
+      operationId: getMe
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      tags: [Users]
+      summary: Update current user profile
+      operationId: updateMe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProfileRequest"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /users:
+    get:
+      tags: [Users]
+      summary: List approved club members
+      description: Requires approved membership.
+      operationId: listMembers
+      responses:
+        "200":
+          description: List of approved members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /users/me/notifications:
+    get:
+      tags: [Notifications]
+      summary: Get notification preferences
+      operationId: getNotificationPreferences
+      responses:
+        "200":
+          description: Notification preferences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserNotificationPreferences"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      tags: [Notifications]
+      summary: Update notification preferences
+      operationId: updateNotificationPreferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePreferencesRequest"
+      responses:
+        "200":
+          description: Updated preferences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserNotificationPreferences"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /users/me/push-tokens:
+    post:
+      tags: [Notifications]
+      summary: Register FCM push token
+      operationId: registerPushToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterTokenRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      tags: [Notifications]
+      summary: Unregister FCM push token
+      description: If token is omitted, all tokens for the user are removed.
+      operationId: unregisterPushToken
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UnregisterTokenRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /users/me/notifications/history:
+    get:
+      tags: [Notifications]
+      summary: Get notification history
+      operationId: getNotificationHistory
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Notification list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Notification"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /notifications/{id}/read:
+    post:
+      tags: [Notifications]
+      summary: Mark notification as read
+      operationId: markNotificationRead
+      parameters:
+        - $ref: "#/components/parameters/NotificationId"
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /sessions:
+    get:
+      tags: [Sessions]
+      summary: List upcoming sessions
+      description: Requires approved membership.
+      operationId: listSessions
+      responses:
+        "200":
+          description: List of upcoming sessions (with RSVPs preloaded)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Session"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /sessions/cancelled:
+    get:
+      tags: [Sessions]
+      summary: List upcoming cancelled sessions
+      description: Requires approved membership.
+      operationId: listCancelledSessions
+      responses:
+        "200":
+          description: List of cancelled sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Session"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /sessions/{id}:
+    get:
+      tags: [Sessions]
+      summary: Get session details with RSVP summary
+      description: Requires approved membership.
+      operationId: getSession
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Session with RSVP summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session:
+                    $ref: "#/components/schemas/Session"
+                  rsvp_summary:
+                    $ref: "#/components/schemas/RSVPSummary"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /sessions/{id}/rsvp:
+    post:
+      tags: [RSVP]
+      summary: Create RSVP for a session
+      description: Requires approved membership. Subject to 3-day deadline enforcement.
+      operationId: createRSVP
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RSVPRequest"
+      responses:
+        "200":
+          description: RSVP created/updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RSVP"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      tags: [RSVP]
+      summary: Update RSVP for a session
+      description: Requires approved membership. After deadline, IN cannot be changed to OUT.
+      operationId: updateRSVP
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RSVPRequest"
+      responses:
+        "200":
+          description: RSVP updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RSVP"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      tags: [RSVP]
+      summary: Remove RSVP from a session
+      description: Requires approved membership.
+      operationId: deleteRSVP
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /sessions/{id}/rsvp/me:
+    get:
+      tags: [RSVP]
+      summary: Get current user's RSVP for a session
+      description: Requires approved membership.
+      operationId: getMyRSVP
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: User's RSVP
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RSVP"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /admin/join-requests:
+    get:
+      tags: ["Admin: Members"]
+      summary: List pending join requests
+      operationId: listJoinRequests
+      responses:
+        "200":
+          description: List of pending users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/join-requests/{id}/approve:
+    post:
+      tags: ["Admin: Members"]
+      summary: Approve a join request
+      operationId: approveJoinRequest
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Approved user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/join-requests/{id}/reject:
+    post:
+      tags: ["Admin: Members"]
+      summary: Reject a join request
+      operationId: rejectJoinRequest
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Rejected user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/users/{id}/role:
+    put:
+      tags: ["Admin: Members"]
+      summary: Update a user's role
+      operationId: updateUserRole
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRoleRequest"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/sessions:
+    post:
+      tags: ["Admin: Sessions"]
+      summary: Create a session
+      operationId: createSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSessionRequest"
+      responses:
+        "201":
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/sessions/{id}:
+    put:
+      tags: ["Admin: Sessions"]
+      summary: Update a session
+      operationId: updateSession
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSessionRequest"
+      responses:
+        "200":
+          description: Session updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    delete:
+      tags: ["Admin: Sessions"]
+      summary: Delete a session
+      operationId: deleteSession
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/sessions/{id}/cancel:
+    post:
+      tags: ["Admin: Sessions"]
+      summary: Cancel a session
+      operationId: cancelSession
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelSessionRequest"
+      responses:
+        "200":
+          description: Cancelled session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/sessions/{id}/rsvp/{userId}:
+    post:
+      tags: ["Admin: Sessions"]
+      summary: Add or update a player's RSVP (admin override)
+      description: Bypasses deadline enforcement. Flags the RSVP as added_by_admin.
+      operationId: adminAddPlayerRSVP
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RSVPRequest"
+      responses:
+        "200":
+          description: RSVP created/updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RSVP"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/club:
+    put:
+      tags: ["Admin: Club"]
+      summary: Update club settings
+      operationId: updateClub
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateClubRequest"
+      responses:
+        "200":
+          description: Updated club
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Club"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/announcements:
+    post:
+      tags: ["Admin: Announcements"]
+      summary: Send announcement to all approved members
+      operationId: sendAnnouncement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendAnnouncementRequest"
+      responses:
+        "201":
+          description: Announcement created and sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Announcement"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Auth0 JWT token
+
+  parameters:
+    SessionId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    UserId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    NotificationId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Message:
+      description: Success message
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+
+    Club:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        venue_name:
+          type: string
+        venue_address:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        auth0_id:
+          type: string
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        profile_picture:
+          type: string
+        phone_number:
+          type: string
+        role:
+          type: string
+          enum: [pending, player, admin]
+        is_player:
+          type: boolean
+        membership_status:
+          type: string
+          enum: [pending, approved, rejected]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Session:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        session_date:
+          type: string
+          format: date
+        start_time:
+          type: string
+          description: "HH:MM format"
+          example: "18:00"
+        end_time:
+          type: string
+          description: "HH:MM format"
+          example: "20:00"
+        courts:
+          type: integer
+          minimum: 1
+          maximum: 3
+        max_players:
+          type: integer
+        rsvp_deadline:
+          type: string
+          format: date-time
+        is_recurring:
+          type: boolean
+        recurring_day_of_week:
+          type: integer
+          minimum: 0
+          maximum: 6
+          nullable: true
+          description: "0=Sunday, 1=Monday, ..., 6=Saturday"
+        recurring_parent_id:
+          type: string
+          format: uuid
+          nullable: true
+        status:
+          type: string
+          enum: [open, closed, cancelled]
+        cancellation_reason:
+          type: string
+        created_by:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        rsvps:
+          type: array
+          items:
+            $ref: "#/components/schemas/RSVP"
+        creator:
+          $ref: "#/components/schemas/User"
+
+    RSVP:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [in, out, maybe]
+        rsvp_timestamp:
+          type: string
+          format: date-time
+        is_late_rsvp:
+          type: boolean
+        added_by_admin:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        user:
+          $ref: "#/components/schemas/User"
+        session:
+          $ref: "#/components/schemas/Session"
+
+    RSVPSummary:
+      type: object
+      properties:
+        total_in:
+          type: integer
+        total_out:
+          type: integer
+        total_maybe:
+          type: integer
+        max_players:
+          type: integer
+        spots_left:
+          type: integer
+
+    UserNotificationPreferences:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        push_enabled:
+          type: boolean
+        push_session_reminders:
+          type: boolean
+        push_rsvp_deadlines:
+          type: boolean
+        push_waitlist_updates:
+          type: boolean
+        push_admin_announcements:
+          type: boolean
+        email_enabled:
+          type: boolean
+        email_session_reminders:
+          type: boolean
+        email_rsvp_deadlines:
+          type: boolean
+        email_waitlist_updates:
+          type: boolean
+        email_admin_announcements:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Notification:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        notification_type:
+          type: string
+          enum: [session_reminder, rsvp_deadline, waitlist_update, admin_announcement]
+        title:
+          type: string
+        body:
+          type: string
+        data:
+          type: string
+          description: JSON-encoded additional payload
+        push_sent:
+          type: boolean
+        push_sent_at:
+          type: string
+          format: date-time
+          nullable: true
+        email_sent:
+          type: boolean
+        email_sent_at:
+          type: string
+          format: date-time
+          nullable: true
+        read_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    Announcement:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        body:
+          type: string
+        created_by:
+          type: string
+          format: uuid
+        sent_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        creator:
+          $ref: "#/components/schemas/User"
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        phone_number:
+          type: string
+
+    RSVPRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [in, out, maybe]
+
+    UpdateRoleRequest:
+      type: object
+      required: [role]
+      properties:
+        role:
+          type: string
+          enum: [pending, player, admin]
+
+    CreateSessionRequest:
+      type: object
+      required: [title, session_date, start_time, end_time, courts]
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        session_date:
+          type: string
+          format: date
+          description: "YYYY-MM-DD"
+        start_time:
+          type: string
+          description: "HH:MM"
+          example: "18:00"
+        end_time:
+          type: string
+          description: "HH:MM"
+          example: "20:00"
+        courts:
+          type: integer
+          minimum: 1
+          maximum: 3
+        is_recurring:
+          type: boolean
+        recurring_day_of_week:
+          type: integer
+          minimum: 0
+          maximum: 6
+          nullable: true
+        occurrences:
+          type: integer
+          nullable: true
+          description: Number of recurring sessions to create
+
+    UpdateSessionRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        session_date:
+          type: string
+          format: date
+          description: "YYYY-MM-DD"
+        start_time:
+          type: string
+          description: "HH:MM"
+        end_time:
+          type: string
+          description: "HH:MM"
+        courts:
+          type: integer
+          minimum: 1
+          maximum: 3
+        status:
+          type: string
+          enum: [open, closed, cancelled]
+
+    CancelSessionRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+
+    UpdateClubRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        venue_name:
+          type: string
+        venue_address:
+          type: string
+
+    UpdatePreferencesRequest:
+      type: object
+      properties:
+        push_enabled:
+          type: boolean
+        push_session_reminders:
+          type: boolean
+        push_rsvp_deadlines:
+          type: boolean
+        push_waitlist_updates:
+          type: boolean
+        push_admin_announcements:
+          type: boolean
+        email_enabled:
+          type: boolean
+        email_session_reminders:
+          type: boolean
+        email_rsvp_deadlines:
+          type: boolean
+        email_waitlist_updates:
+          type: boolean
+        email_admin_announcements:
+          type: boolean
+
+    RegisterTokenRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+        device_name:
+          type: string
+
+    UnregisterTokenRequest:
+      type: object
+      properties:
+        token:
+          type: string
+          description: If omitted, all tokens for the user are removed.
+
+    SendAnnouncementRequest:
+      type: object
+      required: [title, body]
+      properties:
+        title:
+          type: string
+        body:
+          type: string

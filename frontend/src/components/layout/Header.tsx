@@ -14,7 +14,7 @@ export default function Header() {
             🏸
           </div>
           <span className="font-bold text-lg text-slate-900 hidden sm:block">
-            Weekday Masters
+            Rally
           </span>
         </Link>
 
