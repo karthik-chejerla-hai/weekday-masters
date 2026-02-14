@@ -1,0 +1,30 @@
+terraform {
+  required_version = ">= 1.5"
+
+  required_providers {
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 5.0"
+    }
+    google-beta = {
+      source  = "hashicorp/google-beta"
+      version = "~> 5.0"
+    }
+  }
+
+  backend "gcs" {
+    # Bucket name is provided at init time:
+    #   terraform init -backend-config="bucket=<PROJECT_ID>-terraform-state"
+    prefix = "rally/state"
+  }
+}
+
+provider "google" {
+  project = var.project_id
+  region  = var.region
+}
+
+provider "google-beta" {
+  project = var.project_id
+  region  = var.region
+}
