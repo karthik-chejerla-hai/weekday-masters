@@ -43,3 +43,9 @@ resource "google_project_iam_member" "frontend_firebase_viewer" {
   role    = "roles/firebase.viewer"
   member  = "serviceAccount:${google_service_account.frontend_deployer.email}"
 }
+
+resource "google_project_iam_member" "frontend_service_usage_consumer" {
+  project = var.project_id
+  role    = "roles/serviceusage.serviceUsageConsumer"
+  member  = "serviceAccount:${google_service_account.frontend_deployer.email}"
+}
