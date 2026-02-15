@@ -293,7 +293,11 @@ rally/
 
 ## 📄 License
 
-This project is licensed under the [MIT License](LICENSE).
+| Service  | Platform         | URL                                                  |
+|----------|------------------|------------------------------------------------------|
+| Frontend | Firebase Hosting | https://rally-club-app.web.app                       |
+| Backend  | Cloud Run        | https://rally-club-api-ef7go5yk7q-ts.a.run.app      |
+| Database | Neon PostgreSQL  | -                                                    |
 
 ---
 
