@@ -48,3 +48,11 @@ npm-debug.log*
 # Temporary files
 tmp/
 temp/
+
+# Terraform
+infrastructure/.terraform/
+infrastructure/.terraform.lock.hcl
+infrastructure/*.tfstate
+infrastructure/*.tfstate.backup
+infrastructure/*.tfplan
+infrastructure/terraform.tfvars

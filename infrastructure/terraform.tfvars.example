@@ -1,0 +1,19 @@
+# GCP
+project_id = "your-gcp-project-id"
+region     = "australia-southeast1"
+
+# GitHub (for Workload Identity Federation)
+github_org  = "your-github-org"
+github_repo = "weekday-masters"
+
+# Firebase
+firebase_project_id = "your-firebase-project-id"
+firebase_site_id    = "rally-club"
+
+# Cloud Run
+backend_service_name   = "rally-api"
+artifact_registry_repo = "weekday-masters"
+
+# Workload Identity Federation (defaults are fine for most setups)
+# wif_pool_id     = "github-actions-pool"
+# wif_provider_id = "github-actions-provider"
