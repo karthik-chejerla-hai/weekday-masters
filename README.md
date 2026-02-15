@@ -1,214 +1,306 @@
-# Rally - Badminton Club Management App
+<div align="center">
 
-A full-stack application to manage a badminton club, including member management, session scheduling, and RSVP tracking.
+# 🏸 Rally
 
-## Tech Stack
+### Badminton Club Management, Simplified
 
-- **Frontend**: React + TypeScript + Vite + Tailwind CSS
-- **Backend**: Go + Gin + GORM
-- **Database**: PostgreSQL
-- **Authentication**: Auth0 with Google OAuth
+[![Live App](https://img.shields.io/badge/🌐_Live_App-rally--club--app.web.app-06b6d4?style=for-the-badge)](https://rally-club-app.web.app)
+[![API](https://img.shields.io/badge/🔗_API-Cloud_Run-4285F4?style=for-the-badge)](https://rally-club-api-ef7go5yk7q-ts.a.run.app)
 
-## Features
+[![Go](https://img.shields.io/badge/Go-1.22-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
+[![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://typescriptlang.org)
+[![Tailwind](https://img.shields.io/badge/Tailwind_CSS-3.4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://postgresql.org)
+[![License](https://img.shields.io/badge/License-MIT-22c55e?style=flat-square)](LICENSE)
 
-- User registration with admin approval workflow
-- Role-based access (Admin, Player)
-- Session/GameDay management (one-off and recurring)
-- RSVP system with 3-day deadline enforcement
-- Court-based player limits (1 court = 6 players, 2 courts = 10, 3 courts = 16)
-- Mobile-first responsive design
+---
 
-## Prerequisites
+**Rally** is a full-stack web app for managing badminton clubs — handle member sign-ups,
+schedule game days, track RSVPs, and send notifications, all from one place.
 
-- Go 1.22+
-- Node.js 18+
-- Docker & Docker Compose
-- Auth0 account with Google OAuth configured
+[Getting Started](#-getting-started) · [Features](#-features) · [Architecture](#-architecture) · [Deployment](#-deployment) · [API Reference](#-api-reference)
 
-## Quick Start
+</div>
 
-### 1. Set Up Database
+---
 
-#### Option A: Local PostgreSQL (Docker)
+## ✨ Features
 
-```bash
-docker-compose up -d
+| | Feature | Description |
+|---|---------|-------------|
+| 🔐 | **Auth & Approval** | Google OAuth via Auth0 with admin approval workflow for new members |
+| 📅 | **Session Scheduling** | Create one-off or recurring game days with court-based player limits |
+| ✋ | **Smart RSVPs** | 3-day deadline enforcement, late RSVP tracking, admin overrides |
+| 🏟️ | **Court Calculator** | Auto max players: 1 court → 6, 2 courts → 10, 3 courts → 16 |
+| 🔔 | **Push & Email** | FCM push notifications + SendGrid emails for reminders & announcements |
+| 📱 | **PWA Ready** | Installable progressive web app with offline support |
+| 🛡️ | **Role-Based Access** | Admin and Player roles with layered middleware |
+| 🕐 | **Sydney Timezone** | All scheduling uses `Australia/Sydney` — no timezone confusion |
+
+---
+
+## 🏗️ Architecture
+
+```
+┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
+│                  │     │                  │     │                  │
+│  Firebase        │────▶│  Cloud Run       │────▶│  Neon            │
+│  Hosting         │     │  (Go + Gin)      │     │  (PostgreSQL)    │
+│  React SPA       │     │  REST API        │     │                  │
+│                  │     │                  │     │                  │
+└──────────────────┘     └──────────────────┘     └──────────────────┘
+        │                        │
+        │                        ├── Auth0 (JWT validation)
+        │                        ├── FCM (push notifications)
+        │                        └── SendGrid (email)
+        │
+        └── Auth0 (Google OAuth / PKCE)
 ```
 
-#### Option B: Neon Cloud PostgreSQL (Recommended for Production)
+<details>
+<summary><b>Backend Stack</b></summary>
 
-1. Create a free account at [neon.tech](https://neon.tech)
-2. Create a new project
-3. Copy the connection string from the dashboard
-4. The connection string looks like:
-   ```
-   postgresql://neondb_owner:password@ep-cool-darkness-123456.us-east-2.aws.neon.tech/neondb?sslmode=require
-   ```
+- **Framework:** [Gin](https://gin-gonic.com) — high-performance HTTP router
+- **ORM:** [GORM](https://gorm.io) — with PostgreSQL driver
+- **Auth:** Auth0 JWT with JWKS (cached 1h)
+- **Scheduling:** [robfig/cron](https://github.com/robfig/cron) — session reminders at 24h, 12h, and 6h before deadline
+- **Notifications:** Firebase Cloud Messaging + SendGrid (both optional)
+- **Patterns:** Handler → Service → DB (no dependency injection, global `database.DB`)
 
-### 2. Configure Environment Variables
+</details>
 
-**Backend** (`backend/.env`):
+<details>
+<summary><b>Frontend Stack</b></summary>
+
+- **Framework:** [React 18](https://react.dev) + [TypeScript](https://typescriptlang.org)
+- **Build:** [Vite](https://vitejs.dev) with PWA plugin
+- **Styling:** [Tailwind CSS](https://tailwindcss.com) (cyan primary / amber secondary)
+- **Icons:** [Lucide React](https://lucide.dev)
+- **Routing:** React Router v6 with protected routes
+- **Auth:** `@auth0/auth0-react` (PKCE flow)
+- **API:** Axios with Bearer token interceptor
+
+</details>
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- [Go 1.22+](https://go.dev/dl/)
+- [Node.js 18+](https://nodejs.org)
+- [Docker](https://docker.com) (for local database)
+- [Auth0 account](https://auth0.com) with Google OAuth configured
+
+### 1. Clone & set up the database
+
 ```bash
-cp backend/.env.example backend/.env
-# Edit backend/.env with your settings
+git clone https://github.com/your-org/weekday-masters.git
+cd weekday-masters
+docker-compose up -d   # PostgreSQL 16 on localhost:5432
 ```
 
-**Frontend** (`frontend/.env`):
+### 2. Configure environment
+
 ```bash
-cp frontend/.env.example frontend/.env
-# Edit frontend/.env with your Auth0 settings
+cp backend/.env.example backend/.env       # edit with your Auth0 + DB settings
+cp frontend/.env.example frontend/.env     # edit with your Auth0 + API settings
 ```
 
-### 3. Auth0 Configuration
-
-1. Create a Single Page Application in Auth0
-2. Add `http://localhost:5173` to:
-   - Allowed Callback URLs
-   - Allowed Logout URLs
-   - Allowed Web Origins
-3. Enable Google social connection
-4. Create an API in Auth0 with your audience identifier
-5. Copy the Domain, Client ID, and Audience to your `.env` files
-
-### 4. Run the Backend
+### 3. Start the backend
 
 ```bash
 cd backend
 go mod download
-go run cmd/server/main.go
+go run cmd/server/main.go   # → http://localhost:8080
 ```
 
-The API will be available at `http://localhost:8080`
-
-### 5. Run the Frontend
+### 4. Start the frontend
 
 ```bash
 cd frontend
 npm install
-npm run dev
+npm run dev                 # → http://localhost:5173
 ```
 
-The app will be available at `http://localhost:5173`
+> **Tip:** The Vite dev server proxies `/api` requests to `localhost:8080` automatically.
 
-## Environment Variables
+---
 
-### Backend
+## ⚙️ Environment Variables
+
+<details>
+<summary><b>Backend</b> (<code>backend/.env</code>)</summary>
 
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `PORT` | Server port | `8080` |
-| `DATABASE_URL` | PostgreSQL connection string (local or Neon) | `postgres://user:pass@localhost:5432/db` or `postgresql://user:pass@ep-xxx.neon.tech/db?sslmode=require` |
+| `DATABASE_URL` | PostgreSQL connection string | `postgres://badminton:badminton123@localhost:5432/badminton_club` |
 | `AUTH0_DOMAIN` | Auth0 tenant domain | `your-tenant.auth0.com` |
 | `AUTH0_AUDIENCE` | Auth0 API identifier | `https://your-api` |
-| `ADMIN_EMAIL` | Email of first admin (auto-promoted) | `admin@example.com` |
+| `ADMIN_EMAIL` | Auto-promoted admin email | `admin@example.com` |
 | `FRONTEND_URL` | Frontend URL for CORS | `http://localhost:5173` |
+| `SENDGRID_API_KEY` | *(optional)* SendGrid key | `SG.xxx` |
+| `FIREBASE_PROJECT_ID` | *(optional)* For push notifications | `rally-club-app` |
 
-### Frontend
+</details>
+
+<details>
+<summary><b>Frontend</b> (<code>frontend/.env</code>)</summary>
 
 | Variable | Description |
 |----------|-------------|
-| `VITE_API_URL` | Backend API URL |
+| `VITE_API_URL` | Backend API URL (e.g. `http://localhost:8080/api`) |
 | `VITE_AUTH0_DOMAIN` | Auth0 tenant domain |
 | `VITE_AUTH0_CLIENT_ID` | Auth0 SPA client ID |
 | `VITE_AUTH0_AUDIENCE` | Auth0 API identifier |
+| `VITE_FIREBASE_*` | *(optional)* Firebase config for push notifications |
 
-## API Endpoints
+</details>
 
-### Public
-- `GET /api/club` - Get club info
+---
 
-### Authenticated
-- `POST /api/auth/callback` - User registration/login
-- `GET /api/users/me` - Get current user
-- `PUT /api/users/me` - Update profile
-- `GET /api/users` - List members
-- `GET /api/sessions` - List sessions
-- `GET /api/sessions/:id` - Get session details
-- `POST /api/sessions/:id/rsvp` - Submit RSVP
-- `PUT /api/sessions/:id/rsvp` - Update RSVP
-- `DELETE /api/sessions/:id/rsvp` - Remove RSVP
+## 📡 API Reference
 
-### Admin Only
-- `GET /api/admin/join-requests` - List pending requests
-- `POST /api/admin/join-requests/:id/approve` - Approve request
-- `POST /api/admin/join-requests/:id/reject` - Reject request
-- `POST /api/admin/sessions` - Create session
-- `PUT /api/admin/sessions/:id` - Update session
-- `DELETE /api/admin/sessions/:id` - Delete session
-- `POST /api/admin/sessions/:id/rsvp/:userId` - Admin add RSVP
+All endpoints are prefixed with `/api`. Authentication uses Bearer JWT tokens.
 
-## Project Structure
+<details>
+<summary><b>Public</b></summary>
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/club` | Get club info |
+
+</details>
+
+<details>
+<summary><b>Authenticated</b> — requires valid JWT</summary>
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/auth/callback` | Sync user on login |
+| `GET` | `/api/users/me` | Get current user profile |
+| `PUT` | `/api/users/me` | Update profile |
+
+</details>
+
+<details>
+<summary><b>Approved Members</b> — requires <code>membership_status = approved</code></summary>
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/users` | List all members |
+| `GET` | `/api/sessions` | List sessions |
+| `GET` | `/api/sessions/:id` | Get session details |
+| `POST` | `/api/sessions/:id/rsvp` | Submit RSVP |
+| `PUT` | `/api/sessions/:id/rsvp` | Update RSVP |
+| `DELETE` | `/api/sessions/:id/rsvp` | Remove RSVP |
+
+</details>
+
+<details>
+<summary><b>Admin</b> — requires <code>role = admin</code></summary>
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/admin/join-requests` | List pending join requests |
+| `POST` | `/api/admin/join-requests/:id/approve` | Approve member |
+| `POST` | `/api/admin/join-requests/:id/reject` | Reject member |
+| `POST` | `/api/admin/sessions` | Create session |
+| `PUT` | `/api/admin/sessions/:id` | Update session |
+| `DELETE` | `/api/admin/sessions/:id` | Delete session |
+| `POST` | `/api/admin/sessions/:id/rsvp/:userId` | Admin add RSVP |
+
+</details>
+
+---
+
+## 🏸 RSVP Rules
 
 ```
-weekday-masters/
+┌─ Session Created ─────────────────────────────────────┐
+│                                                       │
+│  Players can freely RSVP IN or OUT                    │
+│                                                       │
+├─ 3 Days Before Session (23:59 AEST) ── DEADLINE ──────┤
+│                                                       │
+│  ❌  Players IN cannot switch to OUT                  │
+│  ✅  Players OUT can still RSVP IN (marked as late)   │
+│  👑  Admins can override any RSVP                     │
+│                                                       │
+├─ Session Day ─────────────────────────────────────────┤
+│                                                       │
+│  Capacity exceeded → first-come-first-served          │
+│  Admin decides overflow situations manually            │
+│                                                       │
+└───────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🚢 Deployment
+
+CI/CD is fully automated via **GitHub Actions** — push to `main` and everything deploys.
+
+| Component | Platform | Region | URL |
+|-----------|----------|--------|-----|
+| **Frontend** | Firebase Hosting | Global CDN | [rally-club-app.web.app](https://rally-club-app.web.app) |
+| **Backend** | Cloud Run | `australia-southeast1` | [rally-club-api-ef7go5yk7q-ts.a.run.app](https://rally-club-api-ef7go5yk7q-ts.a.run.app) |
+| **Database** | Neon PostgreSQL | — | Managed |
+
+```
+git push origin main
+    │
+    ├──▶ Backend: Docker build → Artifact Registry → Cloud Run
+    │
+    └──▶ Frontend: npm build (with Cloud Run URL) → Firebase Hosting
+```
+
+> See **[DEPLOY.md](DEPLOY.md)** for manual deployment and first-time setup instructions.
+
+---
+
+## 📁 Project Structure
+
+```
+rally/
 ├── backend/
-│   ├── cmd/server/main.go       # Entry point
-│   ├── internal/
-│   │   ├── config/              # Configuration
-│   │   ├── database/            # DB connection
-│   │   ├── handlers/            # HTTP handlers
-│   │   ├── middleware/          # Auth middleware
-│   │   ├── models/              # Data models
-│   │   ├── services/            # Business logic
-│   │   └── utils/               # Utilities
-│   └── go.mod
+│   ├── cmd/server/main.go          # Entry point + graceful shutdown
+│   └── internal/
+│       ├── config/                  # Env var loading
+│       ├── database/                # GORM connection
+│       ├── handlers/                # HTTP request handlers
+│       ├── middleware/              # Auth, CORS, role checks
+│       ├── models/                  # GORM models (UUID PKs)
+│       └── services/                # Business logic layer
 ├── frontend/
-│   ├── src/
-│   │   ├── components/          # React components
-│   │   ├── context/             # Auth context
-│   │   ├── hooks/               # Custom hooks
-│   │   ├── pages/               # Page components
-│   │   ├── services/            # API client
-│   │   └── types/               # TypeScript types
-│   └── package.json
-├── docker-compose.yml
-└── README.md
+│   └── src/
+│       ├── components/              # Reusable UI components
+│       ├── context/                 # AuthContext (user state)
+│       ├── hooks/                   # useApi, useApiMutation
+│       ├── pages/                   # Route-level pages
+│       ├── services/                # Axios API client
+│       └── types/                   # TypeScript interfaces
+├── infrastructure/                  # IaC (Terraform)
+├── .github/workflows/deploy.yml    # CI/CD pipeline
+├── docker-compose.yml              # Local PostgreSQL
+└── DEPLOY.md                       # Deployment guide
 ```
 
-## RSVP Rules
+---
 
-1. Players must RSVP 3 days before the session (deadline: Thursday 23:59 for Sunday sessions)
-2. After deadline:
-   - Players who RSVP'd IN cannot change to OUT
-   - Admin can still add late RSVPs
-3. When capacity is exceeded, first-come-first-served based on RSVP timestamp
-4. Admin decides overflow situations manually
+## 📄 License
 
-## Deployment
+This project is licensed under the [MIT License](LICENSE).
 
-The app is deployed on Google Cloud (free tier):
+---
 
-| Service  | Platform         | URL                                                  |
-|----------|------------------|------------------------------------------------------|
-| Frontend | Firebase Hosting | https://rally-club-app.web.app                       |
-| Backend  | Cloud Run        | https://rally-club-api-ef7go5yk7q-ts.a.run.app      |
-| Database | Neon PostgreSQL  | -                                                    |
+<div align="center">
 
-### Deploy Backend (Cloud Run)
+**Built with** ☕ **and** 🏸
 
-```bash
-cd backend
-gcloud run deploy rally-api \
-  --source . \
-  --region australia-southeast1 \
-  --allow-unauthenticated
-```
+[Go](https://go.dev) · [React](https://react.dev) · [Tailwind CSS](https://tailwindcss.com) · [Auth0](https://auth0.com) · [Google Cloud](https://cloud.google.com) · [Firebase](https://firebase.google.com) · [Neon](https://neon.tech)
 
-### Deploy Frontend (Firebase Hosting)
-
-```bash
-cd frontend
-npm run build
-firebase deploy --only hosting
-```
-
-### First-Time Setup
-
-See [DEPLOY.md](DEPLOY.md) for complete setup instructions including:
-- GCP project setup
-- Environment variables configuration
-- Auth0 production URLs
-
-## License
-
-MIT
+</div>
