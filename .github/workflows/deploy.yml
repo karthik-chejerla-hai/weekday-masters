@@ -8,8 +8,8 @@ on:
 env:
   GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   GCP_REGION: australia-southeast1
-  ARTIFACT_REGISTRY_REPO: weekday-masters
-  BACKEND_SERVICE_NAME: rally-api
+  ARTIFACT_REGISTRY_REPO: rally-club-api-registry
+  BACKEND_SERVICE_NAME: rally-club-api
   FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
 
 jobs:
