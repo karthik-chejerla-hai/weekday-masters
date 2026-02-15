@@ -1,9 +1,7 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: badminton-db
+    container_name: rally-db
     environment:
       POSTGRES_USER: badminton
       POSTGRES_PASSWORD: badminton123
@@ -18,5 +16,40 @@ services:
       timeout: 5s
       retries: 5
 
+  backend:
+    build:
+      context: ./backend
+    container_name: rally-backend
+    ports:
+      - "8080:8080"
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgres://badminton:badminton123@postgres:5432/badminton_club?sslmode=disable
+      FRONTEND_URL: http://localhost:5173
+      GIN_MODE: debug
+      PORT: "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    image: node:20-alpine
+    container_name: rally-frontend
+    working_dir: /app
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    environment:
+      VITE_API_URL: http://localhost:8080/api
+    env_file:
+      - ./frontend/.env
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    depends_on:
+      - backend
+
 volumes:
   postgres_data:
+  frontend_node_modules:

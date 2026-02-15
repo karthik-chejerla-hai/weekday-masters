@@ -178,11 +178,11 @@ weekday-masters/
 
 The app is deployed on Google Cloud (free tier):
 
-| Service  | Platform         | URL                                                          |
-|----------|------------------|--------------------------------------------------------------|
-| Frontend | Firebase Hosting | https://rally.web.app                                        |
-| Backend  | Cloud Run        | https://rally-api-1011694988612.australia-southeast1.run.app |
-| Database | Neon PostgreSQL  | -                                                            |
+| Service  | Platform         | URL                                                  |
+|----------|------------------|------------------------------------------------------|
+| Frontend | Firebase Hosting | https://rally-club-app.web.app                       |
+| Backend  | Cloud Run        | https://rally-club-api-ef7go5yk7q-ts.a.run.app      |
+| Database | Neon PostgreSQL  | -                                                    |
 
 ### Deploy Backend (Cloud Run)
 
