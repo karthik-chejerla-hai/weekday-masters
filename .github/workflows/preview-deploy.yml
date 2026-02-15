@@ -152,11 +152,15 @@ jobs:
           VITE_FIREBASE_VAPID_KEY: ${{ secrets.FIREBASE_VAPID_KEY }}
         run: npm run build
 
+      - name: Read WIF credentials
+        id: creds
+        run: echo "json=$(cat '${{ steps.auth.outputs.credentials_file_path }}')" >> $GITHUB_OUTPUT
+
       - name: Deploy to Firebase Hosting (preview channel)
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
-          firebaseServiceAccount: ${{ steps.auth.outputs.credentials_file_path }}
+          firebaseServiceAccount: ${{ steps.creds.outputs.json }}
           projectId: ${{ secrets.FIREBASE_PROJECT_ID }}
           entryPoint: frontend
           expires: 7d
