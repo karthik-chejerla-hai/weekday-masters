@@ -114,6 +114,9 @@ jobs:
           service_account: ${{ secrets.FRONTEND_SA_EMAIL }}
           create_credentials_file: true
 
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -128,8 +131,6 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         env:
-          # API URL from deployed backend
-          VITE_API_URL: ${{ needs.deploy-backend.outputs.backend-url }}/api
           # Auth0
           VITE_AUTH0_DOMAIN: ${{ secrets.AUTH0_DOMAIN }}
           VITE_AUTH0_CLIENT_ID: ${{ secrets.AUTH0_CLIENT_ID }}
@@ -142,7 +143,15 @@ jobs:
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
           VITE_FIREBASE_VAPID_KEY: ${{ secrets.FIREBASE_VAPID_KEY }}
-        run: npm run build
+        run: |
+          # Fetch backend URL directly via gcloud to avoid GitHub secret masking on job outputs
+          BACKEND_URL=$(gcloud run services describe ${{ env.BACKEND_SERVICE_NAME }} \
+            --project ${{ env.GCP_PROJECT_ID }} \
+            --region ${{ env.GCP_REGION }} \
+            --format='value(status.url)')
+          export VITE_API_URL="${BACKEND_URL}/api"
+          echo "Building with VITE_API_URL=${VITE_API_URL}"
+          npm run build
 
       - name: Read WIF credentials
         id: creds
