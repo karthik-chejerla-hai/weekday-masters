@@ -198,7 +198,7 @@ export default function AdminSessions() {
                   type="radio"
                   name="session_type"
                   checked={!formData.is_recurring}
-                  onChange={() => setFormData({ ...formData, is_recurring: false })}
+                  onChange={() => { setFormData({ ...formData, is_recurring: false }); setDeadlineError(''); }}
                   className="w-4 h-4 text-primary-600"
                 />
                 <span className="text-sm text-slate-700">One-off Session</span>
@@ -208,7 +208,7 @@ export default function AdminSessions() {
                   type="radio"
                   name="session_type"
                   checked={formData.is_recurring}
-                  onChange={() => setFormData({ ...formData, is_recurring: true })}
+                  onChange={() => { setFormData({ ...formData, is_recurring: true }); setDeadlineError(''); }}
                   className="w-4 h-4 text-primary-600"
                 />
                 <span className="text-sm text-slate-700">Recurring Weekly</span>
