@@ -92,7 +92,11 @@ jobs:
           URL=$(gcloud run services describe ${{ env.BACKEND_SERVICE_NAME }} \
             --project ${{ env.GCP_PROJECT_ID }} \
             --region ${{ env.GCP_REGION }} \
-            --format='value(status.traffic[tag=pr-'${PR_NUMBER}'].url)')
+            --format="value(status.traffic[tag=pr-${PR_NUMBER}].url)")
+          if [ -z "$URL" ]; then
+            echo "::error::Failed to retrieve preview backend URL for tag pr-${PR_NUMBER}"
+            exit 1
+          fi
           echo "url=$URL" >> $GITHUB_OUTPUT
           echo "Preview backend deployed to: $URL"
 
