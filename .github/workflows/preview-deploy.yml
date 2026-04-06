@@ -89,16 +89,16 @@ jobs:
         id: preview-url
         run: |
           PR_NUMBER=${{ github.event.pull_request.number }}
-          URL=$(gcloud run services describe ${{ env.BACKEND_SERVICE_NAME }} \
+          # Get the base service URL and derive the tagged URL from it
+          BASE_URL=$(gcloud run services describe ${{ env.BACKEND_SERVICE_NAME }} \
             --project ${{ env.GCP_PROJECT_ID }} \
             --region ${{ env.GCP_REGION }} \
-            --format="value(status.traffic[tag=pr-${PR_NUMBER}].url)")
-          if [ -z "$URL" ]; then
-            echo "::error::Failed to retrieve preview backend URL for tag pr-${PR_NUMBER}"
-            exit 1
-          fi
-          echo "url=$URL" >> $GITHUB_OUTPUT
-          echo "Preview backend deployed to: $URL"
+            --format="value(status.url)")
+          # Tagged URL format: https://<tag>---<rest-of-service-url>
+          # e.g. https://pr-7---rally-club-api-abc123.a.run.app
+          TAG_URL=$(echo "$BASE_URL" | sed "s|https://|https://pr-${PR_NUMBER}---|")
+          echo "url=$TAG_URL" >> $GITHUB_OUTPUT
+          echo "Preview backend deployed to: $TAG_URL"
 
     outputs:
       preview-url: ${{ steps.preview-url.outputs.url }}
