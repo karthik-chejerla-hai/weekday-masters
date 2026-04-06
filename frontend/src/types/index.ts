@@ -90,6 +90,7 @@ export interface CreateSessionInput {
   is_recurring?: boolean;
   recurring_day_of_week?: number;
   occurrences?: number;
+  rsvp_deadline?: string; // RFC3339 datetime
 }
 
 export interface UpdateSessionInput {
@@ -100,4 +101,5 @@ export interface UpdateSessionInput {
   end_time?: string;
   courts?: number;
   status?: SessionStatus;
+  rsvp_deadline?: string; // RFC3339 datetime
 }
