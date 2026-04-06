@@ -77,6 +77,13 @@ jobs:
             --set-env-vars="SESSION_REMINDER_HOURS_12=12" \
             --set-env-vars="DEADLINE_REMINDER_HOURS=6"
 
+      - name: Route traffic to latest revision
+        run: |
+          gcloud run services update-traffic ${{ env.BACKEND_SERVICE_NAME }} \
+            --project ${{ env.GCP_PROJECT_ID }} \
+            --region ${{ env.GCP_REGION }} \
+            --to-latest
+
       - name: Get Backend URL
         id: backend-url
         run: |
