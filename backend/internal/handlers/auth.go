@@ -1,49 +1,94 @@
 package handlers
 
 import (
+	"errors"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/weekday-masters/backend/internal/middleware"
 	"github.com/weekday-masters/backend/internal/services"
 )
 
 type AuthHandler struct {
-	userService *services.UserService
+	userService  *services.UserService
+	auth0Service *services.Auth0Service
 }
 
-func NewAuthHandler(userService *services.UserService) *AuthHandler {
-	return &AuthHandler{userService: userService}
+func NewAuthHandler(userService *services.UserService, auth0Service *services.Auth0Service) *AuthHandler {
+	return &AuthHandler{userService: userService, auth0Service: auth0Service}
 }
 
+// AuthCallbackRequest carries display-only fields. Identity (subject and email) is
+// taken from the verified access token, never from this body.
 type AuthCallbackRequest struct {
-	Auth0ID        string `json:"auth0_id" binding:"required"`
-	Email          string `json:"email" binding:"required,email"`
-	Name           string `json:"name" binding:"required"`
+	Name           string `json:"name"`
 	ProfilePicture string `json:"profile_picture"`
 }
 
-// Callback handles user registration/login after Auth0 authentication
+// Callback registers a first-time user or syncs an existing one after Auth0 login.
+// It runs behind RequireValidToken, so the caller holds a valid token but may not
+// have a user row yet.
 func (h *AuthHandler) Callback(c *gin.Context) {
-	var req AuthCallbackRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	user, isNew, err := h.userService.CreateOrUpdateUser(services.CreateUserInput{
-		Auth0ID:        req.Auth0ID,
-		Email:          req.Email,
-		Name:           req.Name,
-		ProfilePicture: req.ProfilePicture,
-	})
-
+	auth0ID, err := middleware.GetAuth0IDFromContext(c)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create/update user"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthenticated"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"user":   user,
-		"is_new": isNew,
-	})
+	var req AuthCallbackRequest
+	// Body is optional; these fields are cosmetic.
+	_ = c.ShouldBindJSON(&req)
+
+	user, err := h.userService.FindByAuth0ID(auth0ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to look up user"})
+		return
+	}
+
+	// Existing user: refresh display fields only.
+	if user != nil {
+		updated, err := h.userService.SyncDisplayFields(user.ID, req.Name, req.ProfilePicture)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"user": updated, "is_new": false})
+		return
+	}
+
+	// First login: pull the authoritative profile from Auth0 so the email — which
+	// governs admin auto-promotion — cannot be chosen by the caller.
+	accessToken, err := middleware.GetAccessTokenFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthenticated"})
+		return
+	}
+
+	profile, err := h.auth0Service.FetchProfile(accessToken)
+	if err != nil {
+		log.Printf("auth callback: %v", err)
+		if errors.Is(err, services.ErrProfileUnavailable) {
+			c.JSON(http.StatusBadGateway, gin.H{"error": "Could not verify your profile with Auth0. Please try again."})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Registration failed"})
+		return
+	}
+
+	// The profile must belong to the token holder.
+	if profile.Sub != auth0ID {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Profile does not match token subject"})
+		return
+	}
+
+	created, err := h.userService.RegisterUser(profile)
+	if err != nil {
+		log.Printf("auth callback: failed to register %s: %v", profile.Sub, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"user": created, "is_new": true})
 }

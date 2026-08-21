@@ -8,7 +8,7 @@ import type {
   AuthCallbackResponse,
   CreateSessionInput,
   UpdateSessionInput,
-  RSVPStatus,
+  SelectableRSVPStatus,
 } from '../types';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
@@ -38,10 +38,10 @@ class ApiService {
   }
 
   // Auth
-  async authCallback(auth0Id: string, email: string, name: string, profilePicture: string): Promise<AuthCallbackResponse> {
+  // The backend reads the Auth0 subject and email from the verified access token;
+  // only display fields are sent here.
+  async authCallback(name: string, profilePicture: string): Promise<AuthCallbackResponse> {
     const response = await this.client.post<AuthCallbackResponse>('/auth/callback', {
-      auth0_id: auth0Id,
-      email,
       name,
       profile_picture: profilePicture,
     });
@@ -87,12 +87,12 @@ class ApiService {
   }
 
   // RSVPs
-  async createRSVP(sessionId: string, status: RSVPStatus): Promise<RSVP> {
+  async createRSVP(sessionId: string, status: SelectableRSVPStatus): Promise<RSVP> {
     const response = await this.client.post<RSVP>(`/sessions/${sessionId}/rsvp`, { status });
     return response.data;
   }
 
-  async updateRSVP(sessionId: string, status: RSVPStatus): Promise<RSVP> {
+  async updateRSVP(sessionId: string, status: SelectableRSVPStatus): Promise<RSVP> {
     const response = await this.client.put<RSVP>(`/sessions/${sessionId}/rsvp`, { status });
     return response.data;
   }
@@ -153,7 +153,7 @@ class ApiService {
   }
 
   // Admin - RSVP Management
-  async adminAddRSVP(sessionId: string, userId: string, status: RSVPStatus): Promise<RSVP> {
+  async adminAddRSVP(sessionId: string, userId: string, status: SelectableRSVPStatus): Promise<RSVP> {
     const response = await this.client.post<RSVP>(`/admin/sessions/${sessionId}/rsvp/${userId}`, { status });
     return response.data;
   }

@@ -78,86 +78,123 @@ func getKeyFromJWKS(jwks *JWKS, kid string) (string, error) {
 	return "", errors.New("unable to find key")
 }
 
-// AuthMiddleware validates JWT tokens from Auth0
-func AuthMiddleware(config Auth0Config) gin.HandlerFunc {
+// extractBearerToken pulls the raw token out of the Authorization header.
+func extractBearerToken(c *gin.Context) (string, error) {
+	authHeader := c.GetHeader("Authorization")
+	if authHeader == "" {
+		return "", errors.New("Authorization header required")
+	}
+
+	tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+	if tokenString == authHeader {
+		return "", errors.New("Bearer token required")
+	}
+
+	return tokenString, nil
+}
+
+// ValidateToken verifies an Auth0 access token's signature, audience and issuer,
+// returning its claims. It performs no database access.
+func ValidateToken(config Auth0Config, tokenString string) (jwt.MapClaims, error) {
+	// Parse token without validation first to get the kid
+	unverifiedToken, _, err := jwt.NewParser().ParseUnverified(tokenString, jwt.MapClaims{})
+	if err != nil {
+		return nil, errors.New("Invalid token format")
+	}
+
+	kid, ok := unverifiedToken.Header["kid"].(string)
+	if !ok {
+		return nil, errors.New("Token missing key ID")
+	}
+
+	jwks, err := getJWKS(config.Domain)
+	if err != nil {
+		// Log the actual error for debugging; don't leak it to the caller.
+		fmt.Printf("JWKS fetch error: %v\n", err)
+		return nil, errJWKSUnavailable
+	}
+
+	certPEM, err := getKeyFromJWKS(jwks, kid)
+	if err != nil {
+		return nil, errors.New("Unable to find key")
+	}
+
+	cert, err := jwt.ParseRSAPublicKeyFromPEM([]byte(certPEM))
+	if err != nil {
+		return nil, errors.New("Invalid certificate")
+	}
+
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return cert, nil
+	}, jwt.WithAudience(config.Audience), jwt.WithIssuer(fmt.Sprintf("https://%s/", config.Domain)))
+
+	if err != nil || !token.Valid {
+		return nil, errors.New("Invalid token")
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return nil, errors.New("Invalid claims")
+	}
+
+	return claims, nil
+}
+
+// errJWKSUnavailable signals an infrastructure failure rather than a bad token.
+var errJWKSUnavailable = errors.New("Failed to verify token")
+
+// RequireValidToken validates the Auth0 access token and stores its claims and the
+// raw token on the context. Unlike AuthMiddleware it does NOT require a matching
+// user row, so it can guard registration endpoints where the row does not exist yet.
+func RequireValidToken(config Auth0Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
-			c.Abort()
-			return
-		}
-
-		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-		if tokenString == authHeader {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Bearer token required"})
-			c.Abort()
-			return
-		}
-
-		// Parse token without validation first to get the kid
-		unverifiedToken, _, err := jwt.NewParser().ParseUnverified(tokenString, jwt.MapClaims{})
+		tokenString, err := extractBearerToken(c)
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token format"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 			c.Abort()
 			return
 		}
 
-		kid, ok := unverifiedToken.Header["kid"].(string)
-		if !ok {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Token missing key ID"})
-			c.Abort()
-			return
-		}
-
-		// Get JWKS
-		jwks, err := getJWKS(config.Domain)
+		claims, err := ValidateToken(config, tokenString)
 		if err != nil {
-			// Log the actual error for debugging
-			fmt.Printf("JWKS fetch error: %v\n", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch JWKS", "details": err.Error()})
-			c.Abort()
-			return
-		}
-
-		// Get the key
-		certPEM, err := getKeyFromJWKS(jwks, kid)
-		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unable to find key"})
-			c.Abort()
-			return
-		}
-
-		cert, err := jwt.ParseRSAPublicKeyFromPEM([]byte(certPEM))
-		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid certificate"})
-			c.Abort()
-			return
-		}
-
-		// Validate the token
-		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
-				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			status := http.StatusUnauthorized
+			if errors.Is(err, errJWKSUnavailable) {
+				status = http.StatusInternalServerError
 			}
-			return cert, nil
-		}, jwt.WithAudience(config.Audience), jwt.WithIssuer(fmt.Sprintf("https://%s/", config.Domain)))
-
-		if err != nil || !token.Valid {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+			c.JSON(status, gin.H{"error": err.Error()})
 			c.Abort()
 			return
 		}
 
-		claims, ok := token.Claims.(jwt.MapClaims)
-		if !ok {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid claims"})
-			c.Abort()
-			return
-		}
-
-		// Extract user info from token
 		sub, _ := claims["sub"].(string)
+		if sub == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Token missing subject"})
+			c.Abort()
+			return
+		}
+
+		c.Set("claims", claims)
+		c.Set("auth0ID", sub)
+		c.Set("accessToken", tokenString)
+
+		c.Next()
+	}
+}
+
+// AuthMiddleware validates JWT tokens from Auth0 and loads the matching user.
+func AuthMiddleware(config Auth0Config) gin.HandlerFunc {
+	validate := RequireValidToken(config)
+
+	return func(c *gin.Context) {
+		validate(c)
+		if c.IsAborted() {
+			return
+		}
+
+		sub := c.GetString("auth0ID")
 
 		// Get user from database
 		var user models.User
@@ -171,10 +208,27 @@ func AuthMiddleware(config Auth0Config) gin.HandlerFunc {
 		// Store user in context
 		c.Set("user", &user)
 		c.Set("userID", user.ID)
-		c.Set("auth0ID", sub)
 
 		c.Next()
 	}
+}
+
+// GetAuth0IDFromContext returns the verified Auth0 subject for the request.
+func GetAuth0IDFromContext(c *gin.Context) (string, error) {
+	sub := c.GetString("auth0ID")
+	if sub == "" {
+		return "", errors.New("no verified subject on request")
+	}
+	return sub, nil
+}
+
+// GetAccessTokenFromContext returns the raw bearer token for the request.
+func GetAccessTokenFromContext(c *gin.Context) (string, error) {
+	token := c.GetString("accessToken")
+	if token == "" {
+		return "", errors.New("no access token on request")
+	}
+	return token, nil
 }
 
 // RequireApproved ensures the user has approved membership

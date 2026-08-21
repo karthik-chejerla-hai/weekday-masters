@@ -18,6 +18,7 @@ docker-compose up -d   # PostgreSQL 16 on localhost:5432 (user: badminton, pass:
 cd backend
 cp .env.example .env        # configure environment
 go mod download
+go run ./cmd/migrate        # apply schema — NOT run by the server
 go run cmd/server/main.go   # starts on :8080
 ```
 
@@ -35,10 +36,32 @@ npm run lint                # eslint
 ```bash
 cd backend
 docker build -t rally-api .
-# Multi-stage: golang:1.22-alpine → alpine:3.19, binary at ./server, port 8080
+# Multi-stage: golang:1.22-alpine → alpine:3.19, binaries ./server and ./migrate, port 8080
 ```
 
-**No tests exist** in this project currently.
+### Tests
+
+```bash
+cd backend
+go test ./...              # database-backed tests skip without TEST_DATABASE_URL
+
+# To actually run them, point at a scratch database:
+docker run -d --name rally-test-db -p 5433:5432 \
+  -e POSTGRES_USER=badminton -e POSTGRES_PASSWORD=badminton123 \
+  -e POSTGRES_DB=badminton_club_test postgres:16-alpine
+TEST_DATABASE_URL="postgres://badminton:badminton123@localhost:5433/badminton_club_test?sslmode=disable" \
+  go test -race ./...
+```
+
+`internal/services/main_test.go` owns the harness: it migrates the scratch database in
+`TestMain`, and `requireDB(t)` truncates every table before each test — so **never point
+`TEST_DATABASE_URL` at a database you care about**. Tests skip (not fail) when it is
+unset, keeping `go test ./...` green without a database. CI runs them against a
+PostgreSQL service container.
+
+Coverage today is the RSVP capacity and waitlist rules (`internal/services/rsvp_service_test.go`),
+including a concurrency test that asserts the session row lock prevents oversubscription.
+The frontend has no tests.
 
 ## Architecture
 
@@ -46,7 +69,9 @@ docker build -t rally-api .
 
 **Module:** `github.com/weekday-masters/backend` (Go 1.22, Gin framework, GORM ORM)
 
-**Entry point:** `cmd/server/main.go` — initializes config, DB, services, router, and graceful shutdown.
+**Entry points:**
+- `cmd/server/main.go` — initializes config, DB, services, router, and graceful shutdown.
+- `cmd/migrate/main.go` — applies the schema (`AutoMigrate` + club seed) and exits. Migrations are deliberately **not** run by the server: doing so races across Cloud Run revisions. CI runs this as an explicit step before deploying, and `docker-compose` runs it as a one-shot service.
 
 **Middleware chain (applied in order):**
 1. `middleware.CORS` — global, allows frontend origin
@@ -56,18 +81,22 @@ docker build -t rally-api .
 
 **Route group nesting:**
 ```
-/api                    → public (auth/callback, club info)
-/api [+AuthMiddleware]  → authenticated (user profile, notifications, push tokens)
-/api [+RequireApproved] → approved members (sessions, RSVPs, member list)
-/api/admin [+RequireAdmin] → admin (join requests, session CRUD, announcements, club settings)
+/api                        → public (club info, OpenAPI docs)
+/api [+RequireValidToken]   → registration (auth/callback) — valid JWT, user row may not exist yet
+/api [+AuthMiddleware]      → authenticated (user profile, notifications, push tokens)
+/api [+RequireApproved]     → approved members (sessions, RSVPs, member list)
+/api/admin [+RequireAdmin]  → admin (join requests, session CRUD, announcements, club settings)
 ```
+
+Register approved-only routes on the `approved` group, not `protected` — Gin binds the
+handler chain at registration time, so using the wrong group silently skips the middleware.
 
 **Service layer pattern:** Handlers → Services → GORM/DB. Services contain business logic; handlers do request parsing and response formatting. The global `database.DB` is used directly by services (no DI).
 
 **Key business rules in services:**
-- `RSVPService`: enforces 3-day deadline, prevents IN→OUT after deadline (unless admin), tracks `is_late_rsvp` and `added_by_admin` flags
+- `RSVPService`: enforces 3-day deadline, prevents IN→OUT after deadline (unless admin), tracks `is_late_rsvp` and `added_by_admin` flags. Enforces session capacity inside a transaction that locks the session row (`SELECT ... FOR UPDATE`): an "in" request for a full session is stored as `waitlisted` instead, and freeing a confirmed spot auto-promotes the longest-waiting player and notifies them. Admins bypass the cap.
 - `SessionService`: calculates `max_players` from courts (1→6, 2→10, 3→16), generates recurring sessions, sets RSVP deadline at sessionDate - 3 days 23:59:59 Sydney time
-- `UserService`: auto-promotes user matching `ADMIN_EMAIL` env var on first login
+- `UserService`: auto-promotes user matching `ADMIN_EMAIL` env var on first login — only when the email is **verified and sourced from Auth0**, never from the request body
 - `SchedulerService`: hourly cron sends 24h/12h session reminders and 6h deadline alerts
 - `NotificationService`: FCM push + SendGrid email, both optional and independently initialized
 
@@ -77,7 +106,7 @@ docker build -t rally-api .
 
 **Stack:** React 18, TypeScript, Vite, Tailwind CSS (cyan primary / amber secondary palette), PWA-enabled.
 
-**Auth flow:** Auth0 with Google OAuth (PKCE). `AuthContext` wraps the app — on Auth0 authentication, calls `POST /api/auth/callback` to sync user with backend, stores JWT for API calls.
+**Auth flow:** Auth0 with Google OAuth (PKCE). `AuthContext` wraps the app — on Auth0 authentication, calls `POST /api/auth/callback` to sync user with backend, stores JWT for API calls. That endpoint requires a valid access token; the backend reads the subject from the token and, for first-time registrations, fetches the authoritative email from Auth0's `/userinfo`. Only display fields (`name`, `profile_picture`) are read from the request body.
 
 **Routing pattern:** `App.tsx` defines routes wrapped in `ProtectedRoute` which checks `isAuthenticated`, `isApproved`, and `isAdmin` from `AuthContext`. Unapproved users are redirected to `/pending`.
 
@@ -90,7 +119,7 @@ docker build -t rally-api .
 ## Deployment
 
 CI/CD via GitHub Actions (`.github/workflows/deploy.yml`) on push to `main`:
-1. Backend: Docker build → GCP Artifact Registry → Cloud Run (australia-southeast1)
+1. Backend: Docker build → GCP Artifact Registry → **run `./cmd/migrate` against `DATABASE_URL`** → Cloud Run (australia-southeast1)
 2. Frontend: npm build (with Cloud Run URL injected as `VITE_API_URL`) → Firebase Hosting
 
 All secrets are in GitHub repository secrets. See `DEPLOY.md` for manual deployment steps.

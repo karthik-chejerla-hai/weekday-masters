@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -205,6 +206,11 @@ func (h *AdminHandler) UpdateSession(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Adding a court raises max_players, which may free spots for waitlisted players.
+	if err := h.rsvpService.PromoteFromWaitlist(id); err != nil {
+		log.Printf("failed to promote from waitlist for session %s: %v", id, err)
 	}
 
 	c.JSON(http.StatusOK, session)

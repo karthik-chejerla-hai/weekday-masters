@@ -42,8 +42,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Sync user with backend
       const response = await api.authCallback(
-        auth0User.sub || '',
-        auth0User.email || '',
         auth0User.name || '',
         auth0User.picture || ''
       );

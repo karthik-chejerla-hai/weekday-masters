@@ -28,12 +28,6 @@ func (h *SessionHandler) ListSessions(c *gin.Context) {
 		return
 	}
 
-	// Add RSVP summary to each session
-	type SessionWithSummary struct {
-		*services.SessionService
-		Summary *services.RSVPSummary `json:"rsvp_summary"`
-	}
-
 	c.JSON(http.StatusOK, sessions)
 }
 
@@ -51,6 +45,8 @@ func (h *SessionHandler) GetSession(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Session not found"})
 		return
 	}
+
+	services.AssignWaitlistPositions(session.RSVPs)
 
 	// Get RSVP summary
 	summary, _ := h.rsvpService.GetRSVPSummary(id)

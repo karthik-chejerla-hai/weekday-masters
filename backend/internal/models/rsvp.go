@@ -10,9 +10,10 @@ import (
 type RSVPStatus string
 
 const (
-	RSVPStatusIn    RSVPStatus = "in"
-	RSVPStatusOut   RSVPStatus = "out"
-	RSVPStatusMaybe RSVPStatus = "maybe"
+	RSVPStatusIn         RSVPStatus = "in"
+	RSVPStatusOut        RSVPStatus = "out"
+	RSVPStatusMaybe      RSVPStatus = "maybe"
+	RSVPStatusWaitlisted RSVPStatus = "waitlisted"
 )
 
 type RSVP struct {
@@ -29,6 +30,9 @@ type RSVP struct {
 	// Associations
 	Session *Session `gorm:"foreignKey:SessionID" json:"session,omitempty"`
 	User    *User    `gorm:"foreignKey:UserID" json:"user,omitempty"`
+
+	// WaitlistPosition is computed on read (1-based) and only set for waitlisted RSVPs.
+	WaitlistPosition int `gorm:"-" json:"waitlist_position,omitempty"`
 }
 
 func (r *RSVP) BeforeCreate(tx *gorm.DB) error {

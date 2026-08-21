@@ -16,6 +16,21 @@ services:
       timeout: 5s
       retries: 5
 
+  # One-shot schema migration. The API server no longer migrates on startup.
+  migrate:
+    build:
+      context: ./backend
+    container_name: rally-migrate
+    command: ["./migrate"]
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgres://badminton:badminton123@postgres:5432/badminton_club?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   backend:
     build:
       context: ./backend
@@ -32,6 +47,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   frontend:
     image: node:20-alpine
