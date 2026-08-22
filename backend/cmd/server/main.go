@@ -21,22 +21,14 @@ func main() {
 	// Set Gin mode
 	gin.SetMode(cfg.GinMode)
 
-	// Connect to database
+	// Connect to database. Schema migrations are NOT run here — they are applied by
+	// the separate `migrate` command as an explicit deploy step (see cmd/migrate).
 	if err := database.Connect(cfg.DatabaseURL); err != nil {
 		log.Fatal("Failed to connect to database:", err)
 	}
 
-	// Run migrations
-	if err := database.Migrate(); err != nil {
-		log.Fatal("Failed to run migrations:", err)
-	}
-
-	// Initialize services
-	userService := services.NewUserService(cfg.AdminEmail)
-	sessionService := services.NewSessionService()
-	rsvpService := services.NewRSVPService()
-
-	// Initialize notification service
+	// Initialize notification service first: the RSVP service uses it to tell players
+	// when they have been promoted off a session waitlist.
 	notificationService := services.NewNotificationService(services.NotificationConfig{
 		FirebaseCredentials: cfg.FirebaseCredentials,
 		SendGridAPIKey:      cfg.SendGridAPIKey,
@@ -44,6 +36,12 @@ func main() {
 		SendGridFromName:    cfg.SendGridFromName,
 		FrontendURL:         cfg.FrontendURL,
 	})
+
+	// Initialize services
+	userService := services.NewUserService(cfg.AdminEmail)
+	auth0Service := services.NewAuth0Service(cfg.Auth0Domain)
+	sessionService := services.NewSessionService()
+	rsvpService := services.NewRSVPService(notificationService)
 
 	// Initialize scheduler for notification cron jobs
 	var scheduler *services.SchedulerService
@@ -63,7 +61,7 @@ func main() {
 	}
 
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(userService)
+	authHandler := handlers.NewAuthHandler(userService, auth0Service)
 	userHandler := handlers.NewUserHandler(userService)
 	sessionHandler := handlers.NewSessionHandler(sessionService, rsvpService)
 	rsvpHandler := handlers.NewRSVPHandler(rsvpService)
@@ -94,8 +92,13 @@ func main() {
 		api.GET("/openapi", handlers.RedirectOpenAPI)
 		api.GET("/openapi/index.html", handlers.ServeOpenAPIIndex)
 		api.GET("/openapi/spec.yaml", handlers.ServeOpenAPISpec)
-		api.POST("/auth/callback", authHandler.Callback)
 		api.GET("/club", adminHandler.GetClub)
+
+		// Registration: requires a valid Auth0 token, but not an existing user row.
+		// Identity is read from the verified token, not the request body.
+		registration := api.Group("")
+		registration.Use(middleware.RequireValidToken(auth0Config))
+		registration.POST("/auth/callback", authHandler.Callback)
 
 		// Protected routes (requires valid JWT)
 		protected := api.Group("")
@@ -117,18 +120,18 @@ func main() {
 			approved := protected.Group("")
 			approved.Use(middleware.RequireApproved())
 			{
-				protected.GET("/users", userHandler.ListMembers)
+				approved.GET("/users", userHandler.ListMembers)
 
 				// Session routes
-				protected.GET("/sessions", sessionHandler.ListSessions)
-				protected.GET("/sessions/cancelled", sessionHandler.ListCancelledSessions)
-				protected.GET("/sessions/:id", sessionHandler.GetSession)
+				approved.GET("/sessions", sessionHandler.ListSessions)
+				approved.GET("/sessions/cancelled", sessionHandler.ListCancelledSessions)
+				approved.GET("/sessions/:id", sessionHandler.GetSession)
 
 				// RSVP routes
-				protected.POST("/sessions/:id/rsvp", rsvpHandler.CreateRSVP)
-				protected.PUT("/sessions/:id/rsvp", rsvpHandler.UpdateRSVP)
-				protected.DELETE("/sessions/:id/rsvp", rsvpHandler.DeleteRSVP)
-				protected.GET("/sessions/:id/rsvp/me", rsvpHandler.GetMyRSVP)
+				approved.POST("/sessions/:id/rsvp", rsvpHandler.CreateRSVP)
+				approved.PUT("/sessions/:id/rsvp", rsvpHandler.UpdateRSVP)
+				approved.DELETE("/sessions/:id/rsvp", rsvpHandler.DeleteRSVP)
+				approved.GET("/sessions/:id/rsvp/me", rsvpHandler.GetMyRSVP)
 			}
 
 			// Admin routes

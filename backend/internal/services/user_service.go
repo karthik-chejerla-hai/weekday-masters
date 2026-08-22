@@ -18,72 +18,70 @@ func NewUserService(adminEmail string) *UserService {
 	return &UserService{adminEmail: adminEmail}
 }
 
-type CreateUserInput struct {
-	Auth0ID        string
-	Email          string
-	Name           string
-	ProfilePicture string
-}
-
-// CreateOrUpdateUser creates a new user or updates an existing one
-func (s *UserService) CreateOrUpdateUser(input CreateUserInput) (*models.User, bool, error) {
-	var user models.User
-	isNew := false
-
-	result := database.DB.Where("auth0_id = ?", input.Auth0ID).First(&user)
-	if result.Error != nil {
-		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-			// Create new user
-			isNew = true
-			user = models.User{
-				Auth0ID:          input.Auth0ID,
-				Email:            input.Email,
-				Name:             input.Name,
-				ProfilePicture:   input.ProfilePicture,
-				Role:             models.RolePending,
-				IsPlayer:         true,
-				MembershipStatus: models.MembershipPending,
-			}
-
-			// Check if this is the admin user
-			if s.adminEmail != "" && input.Email == s.adminEmail {
-				user.Role = models.RoleAdmin
-				user.MembershipStatus = models.MembershipApproved
-			}
-
-			if err := database.DB.Create(&user).Error; err != nil {
-				return nil, false, err
-			}
-		} else {
-			return nil, false, result.Error
-		}
-	} else {
-		// Update existing user
-		user.Name = input.Name
-		user.ProfilePicture = input.ProfilePicture
-		user.UpdatedAt = time.Now()
-
-		if err := database.DB.Save(&user).Error; err != nil {
-			return nil, false, err
-		}
+// RegisterUser creates a new user from an Auth0-verified profile.
+//
+// The email MUST come from Auth0 (token claims or /userinfo), never from the request
+// body: it decides admin auto-promotion, so a client-supplied value would let anyone
+// mint an admin account.
+func (s *UserService) RegisterUser(profile *Auth0Profile) (*models.User, error) {
+	user := models.User{
+		Auth0ID:          profile.Sub,
+		Email:            profile.Email,
+		Name:             profile.Name,
+		ProfilePicture:   profile.Picture,
+		Role:             models.RolePending,
+		IsPlayer:         true,
+		MembershipStatus: models.MembershipPending,
 	}
 
-	return &user, isNew, nil
+	// Auto-promote the configured admin, but only on a verified email address.
+	if s.adminEmail != "" && profile.EmailVerified && profile.Email == s.adminEmail {
+		user.Role = models.RoleAdmin
+		user.MembershipStatus = models.MembershipApproved
+	}
+
+	if err := database.DB.Create(&user).Error; err != nil {
+		return nil, err
+	}
+
+	return &user, nil
+}
+
+// FindByAuth0ID looks up a user by Auth0 subject, returning (nil, nil) when absent.
+func (s *UserService) FindByAuth0ID(auth0ID string) (*models.User, error) {
+	var user models.User
+	err := database.DB.Where("auth0_id = ?", auth0ID).First(&user).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &user, nil
+}
+
+// SyncDisplayFields refreshes the cosmetic profile fields on an already-loaded user.
+// Email, role and membership status are deliberately not touchable here.
+func (s *UserService) SyncDisplayFields(user *models.User, name, profilePicture string) (*models.User, error) {
+	if name != "" {
+		user.Name = name
+	}
+	if profilePicture != "" {
+		user.ProfilePicture = profilePicture
+	}
+	user.UpdatedAt = time.Now()
+
+	if err := database.DB.Save(user).Error; err != nil {
+		return nil, err
+	}
+
+	return user, nil
 }
 
 // GetUserByID retrieves a user by ID
 func (s *UserService) GetUserByID(id uuid.UUID) (*models.User, error) {
 	var user models.User
 	if err := database.DB.First(&user, "id = ?", id).Error; err != nil {
-		return nil, err
-	}
-	return &user, nil
-}
-
-// GetUserByAuth0ID retrieves a user by Auth0 ID
-func (s *UserService) GetUserByAuth0ID(auth0ID string) (*models.User, error) {
-	var user models.User
-	if err := database.DB.First(&user, "auth0_id = ?", auth0ID).Error; err != nil {
 		return nil, err
 	}
 	return &user, nil

@@ -4,7 +4,7 @@ import { ArrowLeft, Calendar, Clock, Users, MapPin, AlertCircle, Loader2 } from 
 import { format, parseISO } from 'date-fns';
 import { useAuth } from '../context/useAuth';
 import { api } from '../services/api';
-import type { Session, RSVPSummary, RSVPStatus, RSVP } from '../types';
+import type { Session, RSVPSummary, SelectableRSVPStatus, RSVP } from '../types';
 import RSVPButton from '../components/rsvp/RSVPButton';
 import PlayerList from '../components/rsvp/PlayerList';
 import Badge from '../components/ui/Badge';
@@ -38,7 +38,7 @@ export default function SessionDetail() {
     }
   };
 
-  const handleRSVP = async (status: RSVPStatus) => {
+  const handleRSVP = async (status: SelectableRSVPStatus) => {
     if (!id) return;
     await api.createRSVP(id, status);
     await loadSession();
@@ -69,6 +69,23 @@ export default function SessionDetail() {
   const isCancelled = session.status === 'cancelled';
   const canChangeRsvp = !isDeadlinePassed && !isCancelled;
   const canOnlyChangeToIn = isDeadlinePassed && myRsvp?.status === 'in';
+  const isWaitlisted = myRsvp?.status === 'waitlisted';
+  const confirmedCount = summary?.total_in ?? 0;
+  // The backend is the authority on capacity; spots_left already accounts for
+  // admin-added players pushing the confirmed count past max_players.
+  const isFull = summary ? summary.spots_left <= 0 : false;
+
+  const capacityNotice = isWaitlisted
+    ? {
+        title: `You're on the waitlist${myRsvp?.waitlist_position ? ` at position #${myRsvp.waitlist_position}` : ''}`,
+        body: "This session is full. We'll confirm you automatically — and notify you — as soon as a spot opens up.",
+      }
+    : isFull && myRsvp?.status !== 'in'
+      ? {
+          title: 'This session is full',
+          body: "You can still join the waitlist and you'll be confirmed if someone drops out.",
+        }
+      : null;
 
   return (
     <div className="space-y-6">
@@ -123,7 +140,10 @@ export default function SessionDetail() {
             </div>
             <div>
               <p className="font-medium">
-                {summary?.total_in || 0} / {session.max_players} players
+                {confirmedCount} / {session.max_players} players
+                {!!summary?.total_waitlisted && (
+                  <span className="text-amber-600 font-normal"> · {summary.total_waitlisted} waiting</span>
+                )}
               </p>
               <p className="text-slate-500">{session.courts} court{session.courts > 1 ? 's' : ''}</p>
             </div>
@@ -161,10 +181,19 @@ export default function SessionDetail() {
             </div>
           ) : (
             <>
+              {capacityNotice && (
+                <div className="mb-3 p-3 bg-amber-50 rounded-lg text-amber-800 text-sm">
+                  <p className="font-medium">{capacityNotice.title}</p>
+                  <p>{capacityNotice.body}</p>
+                </div>
+              )}
+
               <RSVPButton
                 currentStatus={myRsvp?.status}
                 onRSVP={handleRSVP}
                 disabled={!canChangeRsvp}
+                isFull={isFull}
+                waitlistPosition={myRsvp?.waitlist_position}
               />
               {!canChangeRsvp && !canOnlyChangeToIn && (
                 <p className="text-sm text-slate-500 mt-2 text-center">

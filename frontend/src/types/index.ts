@@ -1,6 +1,8 @@
 export type UserRole = 'pending' | 'player' | 'admin';
 export type MembershipStatus = 'pending' | 'approved' | 'rejected';
-export type RSVPStatus = 'in' | 'out' | 'maybe';
+export type RSVPStatus = 'in' | 'out' | 'maybe' | 'waitlisted';
+/** Statuses a player may choose. "waitlisted" is assigned by the server. */
+export type SelectableRSVPStatus = Exclude<RSVPStatus, 'waitlisted'>;
 export type SessionStatus = 'open' | 'closed' | 'cancelled';
 
 export interface User {
@@ -56,6 +58,8 @@ export interface RSVP {
   rsvp_timestamp: string;
   is_late_rsvp: boolean;
   added_by_admin: boolean;
+  /** 1-based queue position; only present on waitlisted RSVPs. */
+  waitlist_position?: number;
   created_at: string;
   updated_at: string;
   user?: User;
@@ -66,6 +70,7 @@ export interface RSVPSummary {
   total_in: number;
   total_out: number;
   total_maybe: number;
+  total_waitlisted: number;
   max_players: number;
   spots_left: number;
 }

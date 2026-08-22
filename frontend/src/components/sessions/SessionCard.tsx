@@ -19,6 +19,7 @@ export default function SessionCard({ session, venueName }: SessionCardProps) {
   const isDeadlinePassed = new Date() > new Date(session.rsvp_deadline);
 
   const confirmedRsvps = session.rsvps?.filter(r => r.status === 'in') || [];
+  const waitlistedRsvps = session.rsvps?.filter(r => r.status === 'waitlisted') || [];
   const maybeRsvps = session.rsvps?.filter(r => r.status === 'maybe') || [];
   const declinedRsvps = session.rsvps?.filter(r => r.status === 'out') || [];
 
@@ -52,7 +53,9 @@ export default function SessionCard({ session, venueName }: SessionCardProps) {
           ) : spotsLeft <= 2 && spotsLeft > 0 ? (
             <Badge variant="danger">{spotsLeft} spots left</Badge>
           ) : spotsLeft <= 0 ? (
-            <Badge variant="danger">Full</Badge>
+            <Badge variant="danger">
+              {waitlistedRsvps.length > 0 ? `Full · ${waitlistedRsvps.length} waiting` : 'Full'}
+            </Badge>
           ) : (
             <Badge variant="success">Open</Badge>
           )}

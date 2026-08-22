@@ -36,6 +36,7 @@ schedule game days, track RSVPs, and send notifications, all from one place.
 | 🔐 | **Auth & Approval** | Google OAuth via Auth0 with admin approval workflow for new members |
 | 📅 | **Session Scheduling** | Create one-off or recurring game days with court-based player limits |
 | ✋ | **Smart RSVPs** | 3-day deadline enforcement, late RSVP tracking, admin overrides |
+| ⏳ | **Waitlist** | Once a session is full, further RSVPs queue up and are auto-promoted (with a notification) when a spot frees |
 | 🏟️ | **Court Calculator** | Auto max players: 1 court → 6, 2 courts → 10, 3 courts → 16 |
 | 🔔 | **Push & Email** | FCM push notifications + SendGrid emails for reminders & announcements |
 | 📱 | **PWA Ready** | Installable progressive web app with offline support |
@@ -118,8 +119,12 @@ cp frontend/.env.example frontend/.env     # edit with your Auth0 + API settings
 ```bash
 cd backend
 go mod download
+go run ./cmd/migrate        # apply the database schema (run after every schema change)
 go run cmd/server/main.go   # → http://localhost:8080
 ```
+
+> The server no longer migrates on startup — run `./cmd/migrate` explicitly.
+> `docker-compose up` does this for you via the one-shot `migrate` service.
 
 ### 4. Start the frontend
 
@@ -130,6 +135,22 @@ npm run dev                 # → http://localhost:5173
 ```
 
 > **Tip:** The Vite dev server proxies `/api` requests to `localhost:8080` automatically.
+
+### 5. Run the tests (optional)
+
+```bash
+cd backend
+go test ./...   # database-backed tests skip unless TEST_DATABASE_URL is set
+
+# Run them for real against a scratch database:
+docker run -d --name rally-test-db -p 5433:5432 \
+  -e POSTGRES_USER=badminton -e POSTGRES_PASSWORD=badminton123 \
+  -e POSTGRES_DB=badminton_club_test postgres:16-alpine
+TEST_DATABASE_URL="postgres://badminton:badminton123@localhost:5433/badminton_club_test?sslmode=disable" \
+  go test -race ./...
+```
+
+> ⚠️ Every test truncates the schema — never point `TEST_DATABASE_URL` at a real database.
 
 ---
 

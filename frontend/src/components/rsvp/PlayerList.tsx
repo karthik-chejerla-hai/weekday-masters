@@ -12,6 +12,7 @@ interface PlayerListProps {
 
 export default function PlayerList({ rsvps, maxPlayers, title = 'Confirmed Players' }: PlayerListProps) {
   const confirmedRsvps = rsvps.filter(r => r.status === 'in');
+  const waitlistedRsvps = rsvps.filter(r => r.status === 'waitlisted');
   const maybeRsvps = rsvps.filter(r => r.status === 'maybe');
   const declinedRsvps = rsvps.filter(r => r.status === 'out');
 
@@ -41,6 +42,26 @@ export default function PlayerList({ rsvps, maxPlayers, title = 'Confirmed Playe
           </div>
         )}
       </div>
+
+      {/* Waitlist */}
+      {waitlistedRsvps.length > 0 && (
+        <div>
+          <h4 className="font-medium text-slate-700 mb-2 flex items-center gap-2">
+            Waitlist
+            <Badge variant="warning">{waitlistedRsvps.length}</Badge>
+          </h4>
+          <div className="space-y-2">
+            {waitlistedRsvps.map((rsvp, index) => (
+              <PlayerItem
+                key={rsvp.id}
+                rsvp={rsvp}
+                position={index + 1}
+                variant="waitlisted"
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Maybe */}
       {maybeRsvps.length > 0 && (
@@ -79,14 +100,16 @@ interface PlayerItemProps {
   rsvp: RSVP;
   position?: number;
   isOverCapacity?: boolean;
-  variant?: 'confirmed' | 'maybe' | 'out';
+  variant?: 'confirmed' | 'maybe' | 'out' | 'waitlisted';
 }
 
 function PlayerItem({ rsvp, position, isOverCapacity, variant = 'confirmed' }: PlayerItemProps) {
   const user = rsvp.user;
   if (!user) return null;
 
-  const bgColor = isOverCapacity
+  const isWaitlisted = variant === 'waitlisted';
+
+  const bgColor = isOverCapacity || isWaitlisted
     ? 'bg-amber-50'
     : variant === 'maybe'
       ? 'bg-amber-50/50'
@@ -98,7 +121,7 @@ function PlayerItem({ rsvp, position, isOverCapacity, variant = 'confirmed' }: P
     <div className={`flex items-center gap-3 p-2 rounded-lg ${bgColor}`}>
       {position && (
         <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
-          isOverCapacity ? 'bg-amber-200 text-amber-800' : 'bg-primary-100 text-primary-700'
+          isOverCapacity || isWaitlisted ? 'bg-amber-200 text-amber-800' : 'bg-primary-100 text-primary-700'
         }`}>
           {position}
         </span>
@@ -127,6 +150,9 @@ function PlayerItem({ rsvp, position, isOverCapacity, variant = 'confirmed' }: P
         )}
         {isOverCapacity && (
           <Badge variant="warning">Overflow</Badge>
+        )}
+        {isWaitlisted && (
+          <Badge variant="warning">Waiting</Badge>
         )}
       </div>
     </div>

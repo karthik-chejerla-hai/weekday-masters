@@ -1,3 +1,7 @@
+# Local Postgres connection string, shared by the migrate and backend services so
+# the credentials are written once.
+x-database-url: &database-url postgres://badminton:badminton123@postgres:5432/badminton_club?sslmode=disable
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -16,6 +20,21 @@ services:
       timeout: 5s
       retries: 5
 
+  # One-shot schema migration. The API server no longer migrates on startup.
+  migrate:
+    build:
+      context: ./backend
+    container_name: rally-migrate
+    command: ["./migrate"]
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: *database-url
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   backend:
     build:
       context: ./backend
@@ -25,13 +44,15 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      DATABASE_URL: postgres://badminton:badminton123@postgres:5432/badminton_club?sslmode=disable
+      DATABASE_URL: *database-url
       FRONTEND_URL: http://localhost:5173
       GIN_MODE: debug
       PORT: "8080"
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   frontend:
     image: node:20-alpine

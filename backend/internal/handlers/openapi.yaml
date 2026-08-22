@@ -837,7 +837,13 @@ components:
           format: uuid
         status:
           type: string
-          enum: [in, out, maybe]
+          description: >-
+            Current RSVP state. "waitlisted" is assigned by the server when the
+            session is already at capacity; clients cannot request it directly.
+          enum: [in, out, maybe, waitlisted]
+        waitlist_position:
+          type: integer
+          description: 1-based queue position. Only present while status is "waitlisted".
         rsvp_timestamp:
           type: string
           format: date-time
@@ -864,6 +870,8 @@ components:
         total_out:
           type: integer
         total_maybe:
+          type: integer
+        total_waitlisted:
           type: integer
         max_players:
           type: integer
@@ -979,6 +987,9 @@ components:
       properties:
         status:
           type: string
+          description: >-
+            Requesting "in" for a session that is already full returns an RSVP with
+            status "waitlisted" instead.
           enum: [in, out, maybe]
 
     UpdateRoleRequest:

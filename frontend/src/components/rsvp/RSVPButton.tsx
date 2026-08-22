@@ -1,18 +1,30 @@
 import { useState } from 'react';
-import { Check, X, HelpCircle, Loader2 } from 'lucide-react';
-import type { RSVPStatus } from '../../types';
+import { Check, X, HelpCircle, Loader2, Hourglass } from 'lucide-react';
+import type { RSVPStatus, SelectableRSVPStatus } from '../../types';
 
 interface RSVPButtonProps {
   currentStatus?: RSVPStatus;
-  onRSVP: (status: RSVPStatus) => Promise<void>;
+  onRSVP: (status: SelectableRSVPStatus) => Promise<void>;
   disabled?: boolean;
+  /** Session is at capacity, so picking "in" will join the waitlist instead. */
+  isFull?: boolean;
+  /** 1-based queue position when the current user is waitlisted. */
+  waitlistPosition?: number;
 }
 
-export default function RSVPButton({ currentStatus, onRSVP, disabled }: RSVPButtonProps) {
+export default function RSVPButton({
+  currentStatus,
+  onRSVP,
+  disabled,
+  isFull,
+  waitlistPosition,
+}: RSVPButtonProps) {
   const [isLoading, setIsLoading] = useState(false);
-  const [loadingStatus, setLoadingStatus] = useState<RSVPStatus | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState<SelectableRSVPStatus | null>(null);
 
-  const handleClick = async (status: RSVPStatus) => {
+  const isWaitlisted = currentStatus === 'waitlisted';
+
+  const handleClick = async (status: SelectableRSVPStatus) => {
     if (isLoading || disabled) return;
 
     setIsLoading(true);
@@ -25,16 +37,50 @@ export default function RSVPButton({ currentStatus, onRSVP, disabled }: RSVPButt
     }
   };
 
-  const buttons: { status: RSVPStatus; icon: typeof Check; label: string; activeClass: string }[] = [
-    { status: 'in', icon: Check, label: "I'm In", activeClass: 'bg-green-600 text-white border-green-600' },
-    { status: 'maybe', icon: HelpCircle, label: 'Maybe', activeClass: 'bg-amber-500 text-white border-amber-500' },
-    { status: 'out', icon: X, label: "Can't Make It", activeClass: 'bg-red-600 text-white border-red-600' },
+  // The "in" button doubles as the waitlist control: when the session is full it
+  // joins the queue, and when already queued it reflects the position.
+  const queueing = isWaitlisted || isFull;
+  const inLabel = isWaitlisted
+    ? waitlistPosition
+      ? `Waitlisted #${waitlistPosition}`
+      : 'Waitlisted'
+    : isFull
+      ? 'Join Waitlist'
+      : "I'm In";
+
+  const buttons: {
+    status: SelectableRSVPStatus;
+    icon: typeof Check;
+    label: string;
+    activeClass: string;
+  }[] = [
+    {
+      status: 'in',
+      icon: queueing ? Hourglass : Check,
+      label: inLabel,
+      activeClass: isWaitlisted
+        ? 'bg-amber-500 text-white border-amber-500'
+        : 'bg-green-600 text-white border-green-600',
+    },
+    {
+      status: 'maybe',
+      icon: HelpCircle,
+      label: 'Maybe',
+      activeClass: 'bg-amber-500 text-white border-amber-500',
+    },
+    {
+      status: 'out',
+      icon: X,
+      label: "Can't Make It",
+      activeClass: 'bg-red-600 text-white border-red-600',
+    },
   ];
 
   return (
     <div className="flex gap-2">
       {buttons.map(({ status, icon: Icon, label, activeClass }) => {
-        const isActive = currentStatus === status;
+        // A waitlisted player is queued for the "in" spot, so that button reads active.
+        const isActive = currentStatus === status || (status === 'in' && isWaitlisted);
         const isLoadingThis = loadingStatus === status;
 
         return (
