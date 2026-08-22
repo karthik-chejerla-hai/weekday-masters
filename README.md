@@ -7,6 +7,10 @@
 [![Live App](https://img.shields.io/badge/🌐_Live_App-rally--club--app.web.app-06b6d4?style=for-the-badge)](https://rally-club-app.web.app)
 [![API](https://img.shields.io/badge/🔗_API-Cloud_Run-4285F4?style=for-the-badge)](https://rally-club-api-ef7go5yk7q-ts.a.run.app)
 
+[![deploy](https://img.shields.io/github/actions/workflow/status/karthik-chejerla-hai/weekday-masters/deploy.yml?branch=main&style=flat-square&label=deploy&logo=googlecloud&logoColor=white)](https://github.com/karthik-chejerla-hai/weekday-masters/actions/workflows/deploy.yml?query=branch%3Amain)
+[![backend build](https://img.shields.io/github/actions/workflow/status/karthik-chejerla-hai/weekday-masters/ci-backend.yml?branch=main&style=flat-square&label=backend%20build&logo=go&logoColor=white)](https://github.com/karthik-chejerla-hai/weekday-masters/actions/workflows/ci-backend.yml?query=branch%3Amain)
+[![frontend build](https://img.shields.io/github/actions/workflow/status/karthik-chejerla-hai/weekday-masters/ci-frontend.yml?branch=main&style=flat-square&label=frontend%20build&logo=vite&logoColor=white)](https://github.com/karthik-chejerla-hai/weekday-masters/actions/workflows/ci-frontend.yml?query=branch%3Amain)
+
 [![Go](https://img.shields.io/badge/Go-1.22-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://typescriptlang.org)
@@ -256,6 +260,42 @@ git push origin main
     ├──▶ Backend: Docker build → Artifact Registry → Cloud Run
     │
     └──▶ Frontend: npm build (with Cloud Run URL) → Firebase Hosting
+```
+
+### Checking deployment status
+
+The badges at the top show the latest **`main`** run of each workflow. Click one to open
+its filtered run history.
+
+```bash
+# Recent production deploys
+gh run list --workflow=deploy.yml --branch main --limit 5
+
+# Follow the in-flight one
+gh run watch "$(gh run list --workflow=deploy.yml --branch main --limit 1 --json databaseId --jq '.[0].databaseId')"
+
+# Only the steps that failed
+gh run view <run-id> --log-failed
+```
+
+Each production deploy is also recorded as a GitHub **Deployment**, so the repo home
+page shows an Environments panel (`production-api`, `production-web`) with the live URL
+and which commit is on it, and every commit and PR carries its deploy status.
+
+A green badge means the pipeline succeeded, **not** that a given revision is serving
+traffic. For that, ask the platforms directly:
+
+```bash
+# Which Cloud Run revision has traffic
+gcloud run services describe rally-club-api \
+  --project <project-id> --region australia-southeast1 \
+  --format='value(status.traffic)'
+
+# Backend liveness
+curl -s https://rally-club-api-ef7go5yk7q-ts.a.run.app/health
+
+# Current Firebase Hosting release
+firebase hosting:releases:list --project <project-id>
 ```
 
 > See **[DEPLOY.md](DEPLOY.md)** for manual deployment and first-time setup instructions.
