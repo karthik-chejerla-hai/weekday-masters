@@ -1,5 +1,5 @@
 import { Clock, LogOut } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
 import Avatar from '../components/ui/Avatar';
 
 export default function PendingApproval() {

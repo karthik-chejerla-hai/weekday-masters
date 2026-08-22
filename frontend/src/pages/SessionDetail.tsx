@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Calendar, Clock, Users, MapPin, AlertCircle, Loader2 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
 import { api } from '../services/api';
 import type { Session, RSVPSummary, RSVPStatus, RSVP } from '../types';
 import RSVPButton from '../components/rsvp/RSVPButton';

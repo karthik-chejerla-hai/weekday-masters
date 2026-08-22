@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { User, Mail, Phone, Shield, Save, Loader2, Bell } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
 import { api } from '../services/api';
 import Avatar from '../components/ui/Avatar';
 import Badge from '../components/ui/Badge';
@@ -19,7 +19,7 @@ export default function Profile() {
       await api.updateMe(phoneNumber);
       await refreshUser();
       setMessage({ type: 'success', text: 'Profile updated successfully!' });
-    } catch (error) {
+    } catch {
       setMessage({ type: 'error', text: 'Failed to update profile' });
     } finally {
       setIsSaving(false);
