@@ -20,6 +20,13 @@ jobs:
     name: Deploy Backend
     runs-on: ubuntu-latest
 
+    # Recording this as a GitHub Deployment gives the repo an Environments panel and
+    # per-commit deploy status. No protection rules are set here — add required
+    # reviewers under Settings -> Environments if you want an approval gate.
+    environment:
+      name: production-api
+      url: ${{ steps.backend-url.outputs.url }}
+
     permissions:
       contents: read
       id-token: write
@@ -104,6 +111,10 @@ jobs:
     name: Deploy Frontend
     runs-on: ubuntu-latest
     needs: deploy-backend # Wait for backend to get URL
+
+    environment:
+      name: production-web
+      url: https://rally-club-app.web.app
 
     permissions:
       contents: read

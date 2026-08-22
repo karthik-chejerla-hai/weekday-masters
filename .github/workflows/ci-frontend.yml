@@ -1,9 +1,10 @@
 name: CI Frontend
 
 on:
+  # No paths filter on main: every push must refresh the status badge, otherwise a
+  # broken main keeps showing the last green run from whenever these paths changed.
   push:
     branches: [main]
-    paths: [frontend/**]
   pull_request:
     paths: [frontend/**]
 

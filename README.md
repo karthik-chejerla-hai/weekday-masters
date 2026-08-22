@@ -278,6 +278,10 @@ gh run watch "$(gh run list --workflow=deploy.yml --branch main --limit 1 --json
 gh run view <run-id> --log-failed
 ```
 
+Each production deploy is also recorded as a GitHub **Deployment**, so the repo home
+page shows an Environments panel (`production-api`, `production-web`) with the live URL
+and which commit is on it, and every commit and PR carries its deploy status.
+
 A green badge means the pipeline succeeded, **not** that a given revision is serving
 traffic. For that, ask the platforms directly:
 
