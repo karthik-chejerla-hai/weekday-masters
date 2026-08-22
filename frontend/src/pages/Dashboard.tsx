@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Calendar, ArrowRight, Loader2, AlertTriangle } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
 import { api } from '../services/api';
 import type { Session } from '../types';
 import SessionCard from '../components/sessions/SessionCard';
