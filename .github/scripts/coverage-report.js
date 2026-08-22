@@ -38,12 +38,25 @@ module.exports = async ({ github, context, core }) => {
     core.warning(`Error reading frontend coverage: ${e}`);
   }
 
-  const getBadge = (pctStr) => {
+  // The floors the two test jobs actually enforce. Passed in rather than
+  // hardcoded so the comment cannot drift away from the gate.
+  const backendMin = parseFloat(process.env.BACKEND_MIN || '0');
+  const frontendMin = parseFloat(process.env.FRONTEND_MIN || '0');
+
+  const getBadge = (pctStr, min) => {
     const num = parseFloat(pctStr);
     if (isNaN(num)) return '⚪ `N/A`';
-    if (num >= 80) return `🟢 **${pctStr}**`;
-    if (num >= 60) return `🟡 **${pctStr}**`;
-    return `🔴 **${pctStr}**`;
+    if (num < min) return `🔴 **${pctStr}**`;
+    if (num < min + 10) return `🟡 **${pctStr}**`;
+    return `🟢 **${pctStr}**`;
+  };
+
+  // The job has already failed by the time this runs if a floor was missed;
+  // this column just says which floor each number was measured against.
+  const floor = (pctStr, min) => {
+    const num = parseFloat(pctStr);
+    if (isNaN(num)) return '—';
+    return num >= min ? `✅ ≥ ${min}%` : `❌ < ${min}%`;
   };
 
   // Job results arrive as env vars rather than `${{ }}` interpolation so the
@@ -71,10 +84,10 @@ module.exports = async ({ github, context, core }) => {
   const markdown = [
     '## 📊 Test Coverage & CI Summary',
     '',
-    '| Module | Line / Stmt Coverage | Tests Status |',
-    '|---|:---:|:---:|',
-    `| 🐹 **Backend (Go)** | ${getBadge(backendPct)} | ${beJobPassed ? '✅ Passing' : '❌ Failed'} |`,
-    `| ⚛️ **Frontend (React)** | ${getBadge(frontendPct)} | ${feJobPassed ? '✅ Passing' : '❌ Failed'} |`,
+    '| Module | Line / Stmt Coverage | Floor | Tests Status |',
+    '|---|:---:|:---:|:---:|',
+    `| 🐹 **Backend (Go)** | ${getBadge(backendPct, backendMin)} | ${floor(backendPct, backendMin)} | ${beJobPassed ? '✅ Passing' : '❌ Failed'} |`,
+    `| ⚛️ **Frontend (React)** | ${getBadge(frontendPct, frontendMin)} | ${floor(frontendPct, frontendMin)} | ${feJobPassed ? '✅ Passing' : '❌ Failed'} |`,
     '',
     detail,
     '',

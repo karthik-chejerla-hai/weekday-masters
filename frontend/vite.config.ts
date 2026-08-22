@@ -56,6 +56,15 @@ export default defineConfig({
       // app. Every source file counts, whether or not anything covers it.
       all: true,
       include: ['src/**/*.{ts,tsx}'],
+      // A ratchet set just under where the suite currently sits, so coverage
+      // cannot slide back without someone deciding to lower it. Raise these as
+      // Admin.tsx, AdminSessions.tsx and App.tsx get covered.
+      thresholds: {
+        statements: 55,
+        branches: 52,
+        functions: 52,
+        lines: 56,
+      },
       exclude: [
         'src/main.tsx',
         'src/vite-env.d.ts',
