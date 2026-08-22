@@ -48,7 +48,7 @@ func (h *AuthHandler) Callback(c *gin.Context) {
 
 	// Existing user: refresh display fields only.
 	if user != nil {
-		updated, err := h.userService.SyncDisplayFields(user.ID, req.Name, req.ProfilePicture)
+		updated, err := h.userService.SyncDisplayFields(user, req.Name, req.ProfilePicture)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user"})
 			return

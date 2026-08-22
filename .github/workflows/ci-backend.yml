@@ -36,8 +36,9 @@ jobs:
           cache-dependency-path: backend/go.sum
       - run: go mod download
         working-directory: backend
-      - run: go build ./...
-        working-directory: backend
+      # No separate `go build ./...`: the -race test build below compiles every
+      # package anyway, and it uses a different build cache, so a plain build
+      # shares nothing with it and just doubles compile time.
       - name: Test
         working-directory: backend
         env:

@@ -60,41 +60,28 @@ func (s *UserService) FindByAuth0ID(auth0ID string) (*models.User, error) {
 	return &user, nil
 }
 
-// SyncDisplayFields refreshes the cosmetic profile fields on an existing user.
+// SyncDisplayFields refreshes the cosmetic profile fields on an already-loaded user.
 // Email, role and membership status are deliberately not touchable here.
-func (s *UserService) SyncDisplayFields(userID uuid.UUID, name, profilePicture string) (*models.User, error) {
-	var user models.User
-	if err := database.DB.First(&user, "id = ?", userID).Error; err != nil {
-		return nil, err
-	}
-
+func (s *UserService) SyncDisplayFields(user *models.User, name, profilePicture string) (*models.User, error) {
 	if name != "" {
 		user.Name = name
 	}
 	if profilePicture != "" {
 		user.ProfilePicture = profilePicture
 	}
+	user.UpdatedAt = time.Now()
 
-	if err := database.DB.Save(&user).Error; err != nil {
+	if err := database.DB.Save(user).Error; err != nil {
 		return nil, err
 	}
 
-	return &user, nil
+	return user, nil
 }
 
 // GetUserByID retrieves a user by ID
 func (s *UserService) GetUserByID(id uuid.UUID) (*models.User, error) {
 	var user models.User
 	if err := database.DB.First(&user, "id = ?", id).Error; err != nil {
-		return nil, err
-	}
-	return &user, nil
-}
-
-// GetUserByAuth0ID retrieves a user by Auth0 ID
-func (s *UserService) GetUserByAuth0ID(auth0ID string) (*models.User, error) {
-	var user models.User
-	if err := database.DB.First(&user, "auth0_id = ?", auth0ID).Error; err != nil {
 		return nil, err
 	}
 	return &user, nil

@@ -71,7 +71,21 @@ export default function SessionDetail() {
   const canOnlyChangeToIn = isDeadlinePassed && myRsvp?.status === 'in';
   const isWaitlisted = myRsvp?.status === 'waitlisted';
   const confirmedCount = summary?.total_in ?? 0;
-  const isFull = confirmedCount >= session.max_players;
+  // The backend is the authority on capacity; spots_left already accounts for
+  // admin-added players pushing the confirmed count past max_players.
+  const isFull = summary ? summary.spots_left <= 0 : false;
+
+  const capacityNotice = isWaitlisted
+    ? {
+        title: `You're on the waitlist${myRsvp?.waitlist_position ? ` at position #${myRsvp.waitlist_position}` : ''}`,
+        body: "This session is full. We'll confirm you automatically — and notify you — as soon as a spot opens up.",
+      }
+    : isFull && myRsvp?.status !== 'in'
+      ? {
+          title: 'This session is full',
+          body: "You can still join the waitlist and you'll be confirmed if someone drops out.",
+        }
+      : null;
 
   return (
     <div className="space-y-6">
@@ -167,20 +181,10 @@ export default function SessionDetail() {
             </div>
           ) : (
             <>
-              {isWaitlisted && (
+              {capacityNotice && (
                 <div className="mb-3 p-3 bg-amber-50 rounded-lg text-amber-800 text-sm">
-                  <p className="font-medium">
-                    You're on the waitlist
-                    {myRsvp?.waitlist_position ? ` at position #${myRsvp.waitlist_position}` : ''}
-                  </p>
-                  <p>This session is full. We'll confirm you automatically — and notify you — as soon as a spot opens up.</p>
-                </div>
-              )}
-
-              {isFull && !isWaitlisted && myRsvp?.status !== 'in' && (
-                <div className="mb-3 p-3 bg-amber-50 rounded-lg text-amber-800 text-sm">
-                  <p className="font-medium">This session is full</p>
-                  <p>You can still join the waitlist and you'll be confirmed if someone drops out.</p>
+                  <p className="font-medium">{capacityNotice.title}</p>
+                  <p>{capacityNotice.body}</p>
                 </div>
               )}
 

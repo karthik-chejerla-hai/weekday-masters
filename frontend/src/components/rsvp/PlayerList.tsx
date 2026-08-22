@@ -55,7 +55,7 @@ export default function PlayerList({ rsvps, maxPlayers, title = 'Confirmed Playe
               <PlayerItem
                 key={rsvp.id}
                 rsvp={rsvp}
-                position={rsvp.waitlist_position ?? index + 1}
+                position={index + 1}
                 variant="waitlisted"
               />
             ))}

@@ -39,6 +39,7 @@ export default function RSVPButton({
 
   // The "in" button doubles as the waitlist control: when the session is full it
   // joins the queue, and when already queued it reflects the position.
+  const queueing = isWaitlisted || isFull;
   const inLabel = isWaitlisted
     ? waitlistPosition
       ? `Waitlisted #${waitlistPosition}`
@@ -52,36 +53,34 @@ export default function RSVPButton({
     icon: typeof Check;
     label: string;
     activeClass: string;
-    isActive: boolean;
   }[] = [
     {
       status: 'in',
-      icon: isWaitlisted || isFull ? Hourglass : Check,
+      icon: queueing ? Hourglass : Check,
       label: inLabel,
       activeClass: isWaitlisted
         ? 'bg-amber-500 text-white border-amber-500'
         : 'bg-green-600 text-white border-green-600',
-      isActive: currentStatus === 'in' || isWaitlisted,
     },
     {
       status: 'maybe',
       icon: HelpCircle,
       label: 'Maybe',
       activeClass: 'bg-amber-500 text-white border-amber-500',
-      isActive: currentStatus === 'maybe',
     },
     {
       status: 'out',
       icon: X,
       label: "Can't Make It",
       activeClass: 'bg-red-600 text-white border-red-600',
-      isActive: currentStatus === 'out',
     },
   ];
 
   return (
     <div className="flex gap-2">
-      {buttons.map(({ status, icon: Icon, label, activeClass, isActive }) => {
+      {buttons.map(({ status, icon: Icon, label, activeClass }) => {
+        // A waitlisted player is queued for the "in" spot, so that button reads active.
+        const isActive = currentStatus === status || (status === 'in' && isWaitlisted);
         const isLoadingThis = loadingStatus === status;
 
         return (

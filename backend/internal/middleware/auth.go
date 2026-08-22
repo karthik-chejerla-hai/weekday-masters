@@ -146,39 +146,49 @@ func ValidateToken(config Auth0Config, tokenString string) (jwt.MapClaims, error
 // errJWKSUnavailable signals an infrastructure failure rather than a bad token.
 var errJWKSUnavailable = errors.New("Failed to verify token")
 
-// RequireValidToken validates the Auth0 access token and stores its claims and the
-// raw token on the context. Unlike AuthMiddleware it does NOT require a matching
+// authenticate validates the bearer token and records the verified subject and raw
+// token on the context. It never advances the handler chain, so middlewares can
+// share it and each keep sole ownership of their own c.Next().
+func authenticate(c *gin.Context, config Auth0Config) (int, error) {
+	tokenString, err := extractBearerToken(c)
+	if err != nil {
+		return http.StatusUnauthorized, err
+	}
+
+	claims, err := ValidateToken(config, tokenString)
+	if err != nil {
+		if errors.Is(err, errJWKSUnavailable) {
+			return http.StatusInternalServerError, err
+		}
+		return http.StatusUnauthorized, err
+	}
+
+	sub, _ := claims["sub"].(string)
+	if sub == "" {
+		return http.StatusUnauthorized, errors.New("Token missing subject")
+	}
+
+	c.Set("auth0ID", sub)
+	c.Set("accessToken", tokenString)
+
+	return 0, nil
+}
+
+// abortWithAuthError renders the failure from authenticate and stops the chain.
+func abortWithAuthError(c *gin.Context, status int, err error) {
+	c.JSON(status, gin.H{"error": err.Error()})
+	c.Abort()
+}
+
+// RequireValidToken validates the Auth0 access token and stores the verified subject
+// and raw token on the context. Unlike AuthMiddleware it does NOT require a matching
 // user row, so it can guard registration endpoints where the row does not exist yet.
 func RequireValidToken(config Auth0Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		tokenString, err := extractBearerToken(c)
-		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
-			c.Abort()
+		if status, err := authenticate(c, config); err != nil {
+			abortWithAuthError(c, status, err)
 			return
 		}
-
-		claims, err := ValidateToken(config, tokenString)
-		if err != nil {
-			status := http.StatusUnauthorized
-			if errors.Is(err, errJWKSUnavailable) {
-				status = http.StatusInternalServerError
-			}
-			c.JSON(status, gin.H{"error": err.Error()})
-			c.Abort()
-			return
-		}
-
-		sub, _ := claims["sub"].(string)
-		if sub == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Token missing subject"})
-			c.Abort()
-			return
-		}
-
-		c.Set("claims", claims)
-		c.Set("auth0ID", sub)
-		c.Set("accessToken", tokenString)
 
 		c.Next()
 	}
@@ -186,19 +196,15 @@ func RequireValidToken(config Auth0Config) gin.HandlerFunc {
 
 // AuthMiddleware validates JWT tokens from Auth0 and loads the matching user.
 func AuthMiddleware(config Auth0Config) gin.HandlerFunc {
-	validate := RequireValidToken(config)
-
 	return func(c *gin.Context) {
-		validate(c)
-		if c.IsAborted() {
+		if status, err := authenticate(c, config); err != nil {
+			abortWithAuthError(c, status, err)
 			return
 		}
 
-		sub := c.GetString("auth0ID")
-
 		// Get user from database
 		var user models.User
-		result := database.DB.Where("auth0_id = ?", sub).First(&user)
+		result := database.DB.Where("auth0_id = ?", c.GetString("auth0ID")).First(&user)
 		if result.Error != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found. Please complete registration."})
 			c.Abort()

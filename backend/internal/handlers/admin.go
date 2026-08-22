@@ -208,9 +208,12 @@ func (h *AdminHandler) UpdateSession(c *gin.Context) {
 		return
 	}
 
-	// Adding a court raises max_players, which may free spots for waitlisted players.
-	if err := h.rsvpService.PromoteFromWaitlist(id); err != nil {
-		log.Printf("failed to promote from waitlist for session %s: %v", id, err)
+	// Court count is the only input that moves max_players, so only a courts edit can
+	// free spots. Renames and time changes skip the lock-and-promote pass entirely.
+	if input.Courts != nil {
+		if err := h.rsvpService.PromoteFromWaitlist(id); err != nil {
+			log.Printf("failed to promote from waitlist for session %s: %v", id, err)
+		}
 	}
 
 	c.JSON(http.StatusOK, session)

@@ -40,39 +40,31 @@ type RSVPInput struct {
 // confirmed spot promotes the longest-waiting player automatically.
 func (s *RSVPService) CreateOrUpdateRSVP(input RSVPInput, byAdmin bool) (*models.RSVP, error) {
 	var rsvp models.RSVP
-	var promoted []uuid.UUID
-	var session models.Session
 
-	err := database.DB.Transaction(func(tx *gorm.DB) error {
-		// Lock the session row so concurrent RSVPs cannot both claim the last spot.
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			First(&session, "id = ?", input.SessionID).Error; err != nil {
-			return errors.New("session not found")
-		}
-
+	err := s.withSessionLock(input.SessionID, func(tx *gorm.DB, session models.Session) ([]uuid.UUID, error) {
 		if session.Status != models.SessionStatusOpen {
-			return errors.New("session is not open for RSVPs")
+			return nil, errors.New("session is not open for RSVPs")
 		}
 
 		now := utils.NowInSydney()
 		isLate := now.After(session.RSVPDeadline)
 
 		if !byAdmin && isLate {
-			return errors.New("RSVP deadline has passed")
+			return nil, errors.New("RSVP deadline has passed")
 		}
 
 		existing := true
 		result := tx.Where("session_id = ? AND user_id = ?", input.SessionID, input.UserID).First(&rsvp)
 		if result.Error != nil {
 			if !errors.Is(result.Error, gorm.ErrRecordNotFound) {
-				return result.Error
+				return nil, result.Error
 			}
 			existing = false
 		}
 
 		if existing && !byAdmin && isLate &&
 			rsvp.Status == models.RSVPStatusIn && input.Status != models.RSVPStatusIn {
-			return errors.New("cannot change RSVP from IN after deadline")
+			return nil, errors.New("cannot change RSVP from IN after deadline")
 		}
 
 		wasConfirmed := existing && rsvp.Status == models.RSVPStatusIn
@@ -80,15 +72,16 @@ func (s *RSVPService) CreateOrUpdateRSVP(input RSVPInput, byAdmin bool) (*models
 		// Apply the capacity rule. Admin-added players bypass it.
 		status := input.Status
 		if status == models.RSVPStatusIn && !byAdmin {
-			var confirmed int64
-			if err := tx.Model(&models.RSVP{}).
-				Where("session_id = ? AND status = ? AND user_id <> ?",
-					input.SessionID, models.RSVPStatusIn, input.UserID).
-				Count(&confirmed).Error; err != nil {
-				return err
+			confirmed, err := countConfirmed(tx, input.SessionID)
+			if err != nil {
+				return nil, err
+			}
+			if wasConfirmed {
+				// The spot we already hold is not competition for ourselves.
+				confirmed--
 			}
 
-			if int(confirmed) >= session.MaxPlayers {
+			if confirmed >= session.MaxPlayers {
 				status = models.RSVPStatusWaitlisted
 			}
 		}
@@ -99,7 +92,7 @@ func (s *RSVPService) CreateOrUpdateRSVP(input RSVPInput, byAdmin bool) (*models
 				rsvp.AddedByAdmin = true
 			}
 			if err := tx.Save(&rsvp).Error; err != nil {
-				return err
+				return nil, err
 			}
 		} else {
 			rsvp = models.RSVP{
@@ -111,27 +104,21 @@ func (s *RSVPService) CreateOrUpdateRSVP(input RSVPInput, byAdmin bool) (*models
 				AddedByAdmin:  byAdmin,
 			}
 			if err := tx.Create(&rsvp).Error; err != nil {
-				return err
+				return nil, err
 			}
 		}
 
 		// Giving up a confirmed spot lets the next waitlisted player in.
 		if wasConfirmed && status != models.RSVPStatusIn {
-			ids, err := promoteWithinTx(tx, session)
-			if err != nil {
-				return err
-			}
-			promoted = ids
+			return promoteWithinTx(tx, session)
 		}
 
-		return nil
+		return nil, nil
 	})
 
 	if err != nil {
 		return nil, err
 	}
-
-	s.notifyPromoted(promoted, session)
 
 	if err := database.DB.Preload("User").First(&rsvp, "id = ?", rsvp.ID).Error; err != nil {
 		return nil, err
@@ -143,8 +130,46 @@ func (s *RSVPService) CreateOrUpdateRSVP(input RSVPInput, byAdmin bool) (*models
 
 // DeleteRSVP removes an RSVP, promoting from the waitlist if a spot is freed.
 func (s *RSVPService) DeleteRSVP(sessionID, userID uuid.UUID, byAdmin bool) error {
-	var promoted []uuid.UUID
+	return s.withSessionLock(sessionID, func(tx *gorm.DB, session models.Session) ([]uuid.UUID, error) {
+		var rsvp models.RSVP
+		if err := tx.Where("session_id = ? AND user_id = ?", sessionID, userID).First(&rsvp).Error; err != nil {
+			return nil, errors.New("RSVP not found")
+		}
+
+		isLate := utils.NowInSydney().After(session.RSVPDeadline)
+		if !byAdmin && isLate && rsvp.Status == models.RSVPStatusIn {
+			return nil, errors.New("cannot remove IN RSVP after deadline")
+		}
+
+		wasConfirmed := rsvp.Status == models.RSVPStatusIn
+
+		if err := tx.Delete(&rsvp).Error; err != nil {
+			return nil, err
+		}
+
+		if wasConfirmed {
+			return promoteWithinTx(tx, session)
+		}
+
+		return nil, nil
+	})
+}
+
+// PromoteFromWaitlist fills any free spots from the waitlist. Call it after the
+// session's capacity grows (for example when an admin adds a court).
+func (s *RSVPService) PromoteFromWaitlist(sessionID uuid.UUID) error {
+	return s.withSessionLock(sessionID, promoteWithinTx)
+}
+
+// withSessionLock runs fn with the session row locked FOR UPDATE, so concurrent
+// RSVPs cannot both claim the last spot. Players fn promotes are notified only
+// after the transaction commits.
+func (s *RSVPService) withSessionLock(
+	sessionID uuid.UUID,
+	fn func(tx *gorm.DB, session models.Session) ([]uuid.UUID, error),
+) error {
 	var session models.Session
+	var promoted []uuid.UUID
 
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -152,31 +177,9 @@ func (s *RSVPService) DeleteRSVP(sessionID, userID uuid.UUID, byAdmin bool) erro
 			return errors.New("session not found")
 		}
 
-		var rsvp models.RSVP
-		if err := tx.Where("session_id = ? AND user_id = ?", sessionID, userID).First(&rsvp).Error; err != nil {
-			return errors.New("RSVP not found")
-		}
-
-		isLate := utils.NowInSydney().After(session.RSVPDeadline)
-		if !byAdmin && isLate && rsvp.Status == models.RSVPStatusIn {
-			return errors.New("cannot remove IN RSVP after deadline")
-		}
-
-		wasConfirmed := rsvp.Status == models.RSVPStatusIn
-
-		if err := tx.Delete(&rsvp).Error; err != nil {
-			return err
-		}
-
-		if wasConfirmed {
-			ids, err := promoteWithinTx(tx, session)
-			if err != nil {
-				return err
-			}
-			promoted = ids
-		}
-
-		return nil
+		var err error
+		promoted, err = fn(tx, session)
+		return err
 	})
 
 	if err != nil {
@@ -187,52 +190,33 @@ func (s *RSVPService) DeleteRSVP(sessionID, userID uuid.UUID, byAdmin bool) erro
 	return nil
 }
 
-// PromoteFromWaitlist fills any free spots from the waitlist. Call it after the
-// session's capacity grows (for example when an admin adds a court).
-func (s *RSVPService) PromoteFromWaitlist(sessionID uuid.UUID) error {
-	var promoted []uuid.UUID
-	var session models.Session
-
-	err := database.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			First(&session, "id = ?", sessionID).Error; err != nil {
-			return err
-		}
-
-		ids, err := promoteWithinTx(tx, session)
-		if err != nil {
-			return err
-		}
-		promoted = ids
-		return nil
-	})
-
-	if err != nil {
-		return err
+// countConfirmed counts the players holding a confirmed spot in a session.
+func countConfirmed(db *gorm.DB, sessionID uuid.UUID) (int, error) {
+	var n int64
+	if err := db.Model(&models.RSVP{}).
+		Where("session_id = ? AND status = ?", sessionID, models.RSVPStatusIn).
+		Count(&n).Error; err != nil {
+		return 0, err
 	}
-
-	s.notifyPromoted(promoted, session)
-	return nil
+	return int(n), nil
 }
 
 // promoteWithinTx moves the longest-waiting players into any free spots. The caller
 // must already hold the session row lock.
 func promoteWithinTx(tx *gorm.DB, session models.Session) ([]uuid.UUID, error) {
-	var confirmed int64
-	if err := tx.Model(&models.RSVP{}).
-		Where("session_id = ? AND status = ?", session.ID, models.RSVPStatusIn).
-		Count(&confirmed).Error; err != nil {
+	confirmed, err := countConfirmed(tx, session.ID)
+	if err != nil {
 		return nil, err
 	}
 
-	spots := session.MaxPlayers - int(confirmed)
+	spots := session.MaxPlayers - confirmed
 	if spots <= 0 {
 		return nil, nil
 	}
 
 	var waiting []models.RSVP
 	if err := tx.Where("session_id = ? AND status = ?", session.ID, models.RSVPStatusWaitlisted).
-		Order("rsvp_timestamp ASC, id ASC").
+		Order(waitlistOrder).
 		Limit(spots).
 		Find(&waiting).Error; err != nil {
 		return nil, err
@@ -281,12 +265,16 @@ func (s *RSVPService) notifyPromoted(userIDs []uuid.UUID, session models.Session
 	}
 }
 
+// waitlistOrder is the single definition of queue order: earliest RSVP first, with
+// id breaking ties so promotion and displayed position always agree.
+const waitlistOrder = "rsvp_timestamp ASC, id ASC"
+
 // GetRSVPsForSession returns all RSVPs for a session, ordered by timestamp
 func (s *RSVPService) GetRSVPsForSession(sessionID uuid.UUID) ([]models.RSVP, error) {
 	var rsvps []models.RSVP
 	if err := database.DB.Where("session_id = ?", sessionID).
 		Preload("User").
-		Order("rsvp_timestamp ASC").
+		Order(waitlistOrder).
 		Find(&rsvps).Error; err != nil {
 		return nil, err
 	}
@@ -307,20 +295,29 @@ func (s *RSVPService) GetUserRSVPForSession(sessionID, userID uuid.UUID) (*model
 	return &rsvp, nil
 }
 
-// fillWaitlistPosition sets the 1-based queue position on a waitlisted RSVP.
+// fillWaitlistPosition sets the 1-based queue position on a waitlisted RSVP, reading
+// it off the same ordered queue that promotion uses.
 func (s *RSVPService) fillWaitlistPosition(rsvp *models.RSVP) {
 	if rsvp.Status != models.RSVPStatusWaitlisted {
 		rsvp.WaitlistPosition = 0
 		return
 	}
 
-	var ahead int64
-	database.DB.Model(&models.RSVP{}).
-		Where("session_id = ? AND status = ? AND (rsvp_timestamp < ? OR (rsvp_timestamp = ? AND id < ?))",
-			rsvp.SessionID, models.RSVPStatusWaitlisted, rsvp.RSVPTimestamp, rsvp.RSVPTimestamp, rsvp.ID).
-		Count(&ahead)
+	var waiting []models.RSVP
+	if err := database.DB.
+		Where("session_id = ? AND status = ?", rsvp.SessionID, models.RSVPStatusWaitlisted).
+		Order(waitlistOrder).
+		Find(&waiting).Error; err != nil {
+		return
+	}
 
-	rsvp.WaitlistPosition = int(ahead) + 1
+	AssignWaitlistPositions(waiting)
+	for _, w := range waiting {
+		if w.ID == rsvp.ID {
+			rsvp.WaitlistPosition = w.WaitlistPosition
+			return
+		}
+	}
 }
 
 // RSVPSummary contains summary statistics for a session's RSVPs
@@ -340,30 +337,33 @@ func (s *RSVPService) GetRSVPSummary(sessionID uuid.UUID) (*RSVPSummary, error) 
 		return nil, err
 	}
 
-	counts := map[models.RSVPStatus]int64{}
-	for _, status := range []models.RSVPStatus{
-		models.RSVPStatusIn,
-		models.RSVPStatusOut,
-		models.RSVPStatusMaybe,
-		models.RSVPStatusWaitlisted,
-	} {
-		var count int64
-		database.DB.Model(&models.RSVP{}).
-			Where("session_id = ? AND status = ?", sessionID, status).
-			Count(&count)
-		counts[status] = count
+	var rows []struct {
+		Status models.RSVPStatus
+		N      int
+	}
+	if err := database.DB.Model(&models.RSVP{}).
+		Select("status, count(*) as n").
+		Where("session_id = ?", sessionID).
+		Group("status").
+		Scan(&rows).Error; err != nil {
+		return nil, err
 	}
 
-	spotsLeft := session.MaxPlayers - int(counts[models.RSVPStatusIn])
+	counts := make(map[models.RSVPStatus]int, len(rows))
+	for _, r := range rows {
+		counts[r.Status] = r.N
+	}
+
+	spotsLeft := session.MaxPlayers - counts[models.RSVPStatusIn]
 	if spotsLeft < 0 {
 		spotsLeft = 0
 	}
 
 	return &RSVPSummary{
-		TotalIn:         int(counts[models.RSVPStatusIn]),
-		TotalOut:        int(counts[models.RSVPStatusOut]),
-		TotalMaybe:      int(counts[models.RSVPStatusMaybe]),
-		TotalWaitlisted: int(counts[models.RSVPStatusWaitlisted]),
+		TotalIn:         counts[models.RSVPStatusIn],
+		TotalOut:        counts[models.RSVPStatusOut],
+		TotalMaybe:      counts[models.RSVPStatusMaybe],
+		TotalWaitlisted: counts[models.RSVPStatusWaitlisted],
 		MaxPlayers:      session.MaxPlayers,
 		SpotsLeft:       spotsLeft,
 	}, nil
@@ -374,7 +374,7 @@ func (s *RSVPService) GetConfirmedPlayers(sessionID uuid.UUID) ([]models.RSVP, e
 	var rsvps []models.RSVP
 	if err := database.DB.Where("session_id = ? AND status = ?", sessionID, models.RSVPStatusIn).
 		Preload("User").
-		Order("rsvp_timestamp ASC").
+		Order(waitlistOrder).
 		Find(&rsvps).Error; err != nil {
 		return nil, err
 	}

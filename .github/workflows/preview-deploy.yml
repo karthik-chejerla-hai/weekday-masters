@@ -85,8 +85,10 @@ jobs:
             --set-env-vars="SESSION_REMINDER_HOURS_12=12" \
             --set-env-vars="DEADLINE_REMINDER_HOURS=6"
 
-      - name: Get preview backend URL
-        id: preview-url
+      # Smoke check only. The URL is deliberately NOT exported as a job output: the
+      # frontend job resolves it itself at build time, because passing it between
+      # jobs ran it through secret masking and produced an empty VITE_API_URL.
+      - name: Verify preview backend URL resolves
         run: |
           PR_NUMBER=${{ github.event.pull_request.number }}
           URL=$(gcloud run services describe ${{ env.BACKEND_SERVICE_NAME }} \
@@ -100,11 +102,7 @@ jobs:
             exit 1
           fi
 
-          echo "url=$URL" >> $GITHUB_OUTPUT
           echo "Preview backend deployed to: $URL"
-
-    outputs:
-      preview-url: ${{ steps.preview-url.outputs.url }}
 
   # ============================================
   # DEPLOY PREVIEW FRONTEND TO FIREBASE HOSTING
