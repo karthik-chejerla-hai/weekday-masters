@@ -1,0 +1,142 @@
+name: "CI & Test Coverage"
+
+# Runs alongside the existing ci-backend.yml / ci-frontend.yml workflows for now.
+# Those stay until this one has a green history on main; then they can be removed
+# in a follow-up, so a proven gate is never traded for an unproven one.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  backend-tests:
+    name: "Backend Tests & Coverage"
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: badminton
+          POSTGRES_PASSWORD: badminton123
+          POSTGRES_DB: badminton_club_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: backend/go.sum
+
+      - name: Download Go modules
+        working-directory: backend
+        run: go mod download
+
+      - name: "Run Backend Tests with Race Detection & Coverage"
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: postgres://badminton:badminton123@localhost:5432/badminton_club_test?sslmode=disable
+        run: |
+          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+          go tool cover -func=coverage.out > coverage-summary.txt
+          cat coverage-summary.txt
+
+      - name: Upload Backend Coverage Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: |
+            backend/coverage.out
+            backend/coverage-summary.txt
+          retention-days: 7
+
+  frontend-tests:
+    name: "Frontend Tests & Coverage"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          # 22, not 20: jsdom 30 (via vitest) pulls whatwg-url 17, which requires
+          # Node >= 22.14. On 20 the suite aborts before collecting any test.
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run Linter
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Verify Build
+        working-directory: frontend
+        run: npm run build
+
+      - name: Run Frontend Tests with Coverage
+        working-directory: frontend
+        run: npm run test:coverage
+
+      - name: Upload Frontend Coverage Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/
+          retention-days: 7
+
+  coverage-report:
+    name: "Aggregate Coverage & Decorate PR"
+    needs: [backend-tests, frontend-tests]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Backend Coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend-coverage
+        continue-on-error: true
+
+      - name: Download Frontend Coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend-coverage
+        continue-on-error: true
+
+      - name: "Generate Coverage Report & Decorate PR"
+        uses: actions/github-script@v7
+        env:
+          BACKEND_RESULT: ${{ needs.backend-tests.result }}
+          FRONTEND_RESULT: ${{ needs.frontend-tests.result }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const report = require('./.github/scripts/coverage-report.js')
+            await report({ github, context, core })

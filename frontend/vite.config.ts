@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
@@ -39,4 +40,23 @@ export default defineConfig({
       },
     },
   },
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: './src/test/setup.ts',
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json-summary', 'json', 'lcov'],
+      exclude: [
+        'src/main.tsx',
+        'src/vite-env.d.ts',
+        'src/types/**',
+        'src/test/**',
+        '**/*.d.ts',
+        'vite.config.ts',
+        'tailwind.config.js',
+        'postcss.config.js'
+      ]
+    }
+  }
 })
