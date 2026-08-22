@@ -92,7 +92,14 @@ jobs:
           URL=$(gcloud run services describe ${{ env.BACKEND_SERVICE_NAME }} \
             --project ${{ env.GCP_PROJECT_ID }} \
             --region ${{ env.GCP_REGION }} \
-            --format='value(status.traffic[tag=pr-'${PR_NUMBER}'].url)')
+            --format=json | jq -r --arg tag "pr-${PR_NUMBER}" \
+              '.status.traffic[] | select(.tag == $tag) | .url')
+
+          if [ -z "$URL" ]; then
+            echo "::error::Could not resolve the tagged preview URL for pr-${PR_NUMBER}"
+            exit 1
+          fi
+
           echo "url=$URL" >> $GITHUB_OUTPUT
           echo "Preview backend deployed to: $URL"
 
@@ -125,6 +132,9 @@ jobs:
           service_account: ${{ secrets.FRONTEND_SA_EMAIL }}
           create_credentials_file: true
 
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -139,7 +149,6 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         env:
-          VITE_API_URL: ${{ needs.deploy-preview-backend.outputs.preview-url }}/api
           VITE_AUTH0_DOMAIN: ${{ secrets.AUTH0_DOMAIN }}
           VITE_AUTH0_CLIENT_ID: ${{ secrets.AUTH0_CLIENT_ID }}
           VITE_AUTH0_AUDIENCE: ${{ secrets.AUTH0_AUDIENCE }}
@@ -150,7 +159,27 @@ jobs:
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
           VITE_FIREBASE_VAPID_KEY: ${{ secrets.FIREBASE_VAPID_KEY }}
-        run: npm run build
+        run: |
+          # Resolve the tagged revision URL here rather than reading it from a job
+          # output — see the same fix in deploy.yml (785f14c).
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          BACKEND_URL=$(gcloud run services describe ${{ env.BACKEND_SERVICE_NAME }} \
+            --project ${{ env.GCP_PROJECT_ID }} \
+            --region ${{ env.GCP_REGION }} \
+            --format=json | jq -r --arg tag "pr-${PR_NUMBER}" \
+              '.status.traffic[] | select(.tag == $tag) | .url')
+
+          # Fail loudly: an empty value silently falls back to a relative "/api",
+          # which Firebase's SPA rewrite answers with index.html, so every API call
+          # returns HTML and login breaks with no obvious cause.
+          if [ -z "$BACKEND_URL" ]; then
+            echo "::error::Preview backend URL is empty for pr-${PR_NUMBER}; refusing to build a frontend that cannot reach its API"
+            exit 1
+          fi
+
+          export VITE_API_URL="${BACKEND_URL}/api"
+          echo "Building with VITE_API_URL=${VITE_API_URL}"
+          npm run build
 
       - name: Read WIF credentials
         id: creds
