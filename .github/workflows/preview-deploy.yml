@@ -62,7 +62,10 @@ jobs:
       - name: Deploy to Cloud Run (no traffic, tagged revision)
         run: |
           PR_NUMBER=${{ github.event.pull_request.number }}
-          gcloud run deploy ${{ env.BACKEND_SERVICE_NAME }} \
+          # Previews and the production deploy all write to the same service, so
+          # overlapping runs lose an optimistic-concurrency race. See the script.
+          .github/scripts/gcloud-retry-on-conflict.sh \
+            gcloud run deploy ${{ env.BACKEND_SERVICE_NAME }} \
             --project ${{ env.GCP_PROJECT_ID }} \
             --image ${{ env.IMAGE }} \
             --region ${{ env.GCP_REGION }} \
