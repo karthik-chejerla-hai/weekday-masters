@@ -15,8 +15,8 @@ func TestMaxPlayersForCourts(t *testing.T) {
 		{courts: 1, want: 6},
 		{courts: 2, want: 10},
 		{courts: 3, want: 16},
-		{courts: 4, want: 6},  // fallback
-		{courts: 0, want: 6},  // fallback
+		{courts: 4, want: 6}, // fallback
+		{courts: 0, want: 6}, // fallback
 	}
 
 	for _, tt := range tests {
@@ -175,6 +175,30 @@ func TestModelBeforeCreateHooks(t *testing.T) {
 	_ = notif.BeforeCreate(nil)
 	if notif.ID == uuid.Nil {
 		t.Error("expected notification ID to be initialized")
+	}
+
+	rsvp := &RSVP{}
+	_ = rsvp.BeforeCreate(nil)
+	if rsvp.ID == uuid.Nil {
+		t.Error("expected rsvp ID to be initialized")
+	}
+	if rsvp.RSVPTimestamp.IsZero() {
+		t.Error("expected rsvp timestamp to be stamped, since waitlist order depends on it")
+	}
+
+	// An explicit timestamp is the arrival order the waitlist sorts on, so the
+	// hook must not overwrite one that was set deliberately.
+	arrived := time.Now().Add(-time.Hour)
+	backdated := &RSVP{RSVPTimestamp: arrived}
+	_ = backdated.BeforeCreate(nil)
+	if !backdated.RSVPTimestamp.Equal(arrived) {
+		t.Errorf("expected an explicit rsvp timestamp to be preserved, got %s", backdated.RSVPTimestamp)
+	}
+
+	club := &Club{}
+	_ = club.BeforeCreate(nil)
+	if club.ID == uuid.Nil {
+		t.Error("expected club ID to be initialized")
 	}
 
 	announcement := &Announcement{}

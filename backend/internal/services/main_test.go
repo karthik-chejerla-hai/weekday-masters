@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"sync"
 	"testing"
@@ -12,42 +11,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/weekday-masters/backend/internal/database"
 	"github.com/weekday-masters/backend/internal/models"
-	"gorm.io/gorm/logger"
+	"github.com/weekday-masters/backend/internal/testsupport"
 )
 
 // These tests exercise real SQL — transaction boundaries and row locks are the whole
-// point of the capacity logic, so an in-memory fake would not prove anything.
-//
-// Point TEST_DATABASE_URL at a scratch database to run them:
-//
-//	docker run -d --name rally-test-db -p 5433:5432 \
-//	  -e POSTGRES_USER=badminton -e POSTGRES_PASSWORD=badminton123 \
-//	  -e POSTGRES_DB=badminton_club_test postgres:16-alpine
-//	TEST_DATABASE_URL="postgres://badminton:badminton123@localhost:5433/badminton_club_test?sslmode=disable" \
-//	  go test ./internal/services/
-//
-// With the variable unset the database-backed tests skip, so `go test ./...` stays
-// green on a machine with no database. NEVER point this at a real database: every
-// test truncates the schema.
-var dbAvailable bool
+// point of the capacity logic, so an in-memory fake would not prove anything. See
+// package testsupport for how to point them at a scratch database.
 
 func TestMain(m *testing.M) {
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		log.Println("TEST_DATABASE_URL not set — skipping database-backed tests")
-		os.Exit(m.Run())
-	}
-
-	if err := database.Connect(url); err != nil {
-		log.Fatalf("TEST_DATABASE_URL is set but unusable: %v", err)
-	}
-	database.DB.Logger = logger.Default.LogMode(logger.Silent)
-
-	if err := database.Migrate(); err != nil {
-		log.Fatalf("failed to migrate test database: %v", err)
-	}
-
-	dbAvailable = true
+	testsupport.Setup("services_test")
 	os.Exit(m.Run())
 }
 
@@ -55,17 +27,7 @@ func TestMain(m *testing.M) {
 // hands it an empty schema.
 func requireDB(t *testing.T) {
 	t.Helper()
-
-	if !dbAvailable {
-		t.Skip("set TEST_DATABASE_URL to run database-backed tests")
-	}
-
-	const stmt = `TRUNCATE TABLE rsvps, notifications, user_push_tokens,
-		user_notification_preferences, announcements, sessions, users
-		RESTART IDENTITY CASCADE`
-	if err := database.DB.Exec(stmt).Error; err != nil {
-		t.Fatalf("failed to reset test database: %v", err)
-	}
+	testsupport.RequireDB(t)
 }
 
 // recordingNotifier captures waitlist promotion notifications.

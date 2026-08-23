@@ -11,10 +11,6 @@ import (
 	"github.com/weekday-masters/backend/internal/models"
 )
 
-func init() {
-	gin.SetMode(gin.TestMode)
-}
-
 func TestRequireApproved_ApprovedUser(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, r := gin.CreateTestContext(w)
