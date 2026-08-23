@@ -4,6 +4,7 @@ node_modules/
 # Build outputs
 dist/
 build/
+*.tsbuildinfo
 
 # Environment files (NEVER commit secrets)
 .env
@@ -44,6 +45,10 @@ npm-debug.log*
 *.dylib
 *.test
 *.out
+
+# Test coverage
+coverage/
+coverage-summary.txt
 
 # Temporary files
 tmp/
