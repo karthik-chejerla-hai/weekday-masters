@@ -1,8 +1,11 @@
 name: "CI & Test Coverage"
 
-# Runs alongside the existing ci-backend.yml / ci-frontend.yml workflows for now.
-# Those stay until this one has a green history on main; then they can be removed
-# in a follow-up, so a proven gate is never traded for an unproven one.
+# The only CI workflow: lint, build and both test suites, with coverage floors.
+#
+# No paths filter, deliberately. Branch protection requires these checks by name,
+# and a path-filtered workflow creates no check runs on a PR that misses its
+# paths — a required context that never reports leaves the PR pending forever
+# rather than failing it.
 
 on:
   push:
