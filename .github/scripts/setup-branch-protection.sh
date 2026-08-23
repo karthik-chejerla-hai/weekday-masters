@@ -17,14 +17,10 @@ echo "Protecting ${repo}@${branch}..."
 
 # The three jobs of the CI & Test Coverage workflow.
 #
-# Never add "build" here, whether or not ci-backend.yml and ci-frontend.yml
-# still exist. Both name their job "build", so the context is ambiguous between
-# them — and both filter on paths, so on a PR that touches neither backend/ nor
-# frontend/ no check run by that name is ever created. A required context that
-# never reports leaves the PR pending forever rather than failing it.
-#
-# Those two workflows are a subset of this one and can be deleted whenever;
-# nothing here depends on that.
+# Only require checks from a workflow that runs on every pull request. A
+# path-filtered workflow creates no check runs on a PR that misses its paths,
+# and a required context that never reports leaves the PR pending forever
+# rather than failing it. ci.yml has no paths filter for exactly this reason.
 gh api -X PUT "repos/${repo}/branches/${branch}/protection" \
   --input - <<'JSON'
 {

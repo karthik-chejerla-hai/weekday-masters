@@ -173,12 +173,10 @@ Every pull request runs `.github/workflows/ci.yml`, which produces three checks:
 | `Frontend Tests & Coverage` | lint, build, and Vitest with coverage thresholds |
 | `Aggregate Coverage & Decorate PR` | posts a sticky coverage comment and fails if either suite failed |
 
-`ci-backend.yml` and `ci-frontend.yml` also still run, each producing a check
-named `build`. They are a subset of the workflow above and can be deleted at any
-point. Whatever you do with them, never add `build` to the required checks: both
-name their job that, so the context is ambiguous between them, and both filter
-on paths — on a PR touching neither `backend/` nor `frontend/`, no check by that
-name is ever created and a required one would leave the PR pending forever.
+It runs on every pull request with no paths filter. Anything required by branch
+protection has to, since a path-filtered workflow creates no check runs on a PR
+that misses its paths, and a required check that never reports leaves the PR
+pending forever rather than failing it.
 
 **Coverage floors** are a ratchet, not a target — they sit just under where the
 suites currently are so coverage cannot slide back unnoticed. Raise them as
