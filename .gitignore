@@ -46,9 +46,11 @@ npm-debug.log*
 *.test
 *.out
 
-# Test coverage
+# Test coverage & reports
 coverage/
 coverage-summary.txt
+playwright-report/
+test-results/
 
 # Temporary files
 tmp/
