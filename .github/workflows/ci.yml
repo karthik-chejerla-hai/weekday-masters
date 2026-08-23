@@ -39,10 +39,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: '1.22'
           cache-dependency-path: backend/go.sum
@@ -69,7 +69,7 @@ jobs:
         run: ../.github/scripts/check-go-coverage.sh coverage-summary.txt
 
       - name: Upload Backend Coverage Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: backend-coverage
           path: |
@@ -83,10 +83,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           # 22, not 20: jsdom 30 (via vitest) pulls whatwg-url 17, which requires
           # Node >= 22.14. On 20 the suite aborts before collecting any test.
@@ -111,7 +111,7 @@ jobs:
         run: npm run test:coverage
 
       - name: Upload Frontend Coverage Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: frontend-coverage
           path: frontend/coverage/
@@ -125,24 +125,24 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Download Backend Coverage
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: backend-coverage
           path: backend-coverage
         continue-on-error: true
 
       - name: Download Frontend Coverage
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: frontend-coverage
           path: frontend-coverage
         continue-on-error: true
 
       - name: "Generate Coverage Report & Decorate PR"
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           BACKEND_RESULT: ${{ needs.backend-tests.result }}
           FRONTEND_RESULT: ${{ needs.frontend-tests.result }}
