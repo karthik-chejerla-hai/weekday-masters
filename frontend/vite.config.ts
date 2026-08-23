@@ -51,11 +51,20 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json-summary', 'json', 'lcov'],
+      // Without `all`, v8 only reports on files a test happened to import, so
+      // the percentage describes the tested corner of the app rather than the
+      // app. Every source file counts, whether or not anything covers it.
+      all: true,
+      include: ['src/**/*.{ts,tsx}'],
       exclude: [
         'src/main.tsx',
         'src/vite-env.d.ts',
         'src/types/**',
         'src/test/**',
+        // Thin wrappers over the Firebase SDK: exercising them in jsdom would
+        // test the mock, not the integration.
+        'src/services/firebase.ts',
+        'src/services/notifications.ts',
         '**/*.d.ts',
         'vite.config.ts',
         'tailwind.config.js',
