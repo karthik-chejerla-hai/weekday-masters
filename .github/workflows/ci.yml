@@ -57,6 +57,14 @@ jobs:
           go tool cover -func=coverage.out > coverage-summary.txt
           cat coverage-summary.txt
 
+      - name: "Enforce Backend Coverage Floor"
+        working-directory: backend
+        env:
+          # A ratchet, not a target. Raise it as coverage rises; lowering it
+          # should come with a reason in the commit message.
+          MIN_COVERAGE: '54'
+        run: ../.github/scripts/check-go-coverage.sh coverage-summary.txt
+
       - name: Upload Backend Coverage Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -135,6 +143,9 @@ jobs:
         env:
           BACKEND_RESULT: ${{ needs.backend-tests.result }}
           FRONTEND_RESULT: ${{ needs.frontend-tests.result }}
+          # Kept in step with the floors enforced in the two test jobs.
+          BACKEND_MIN: '54'
+          FRONTEND_MIN: '55'
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |

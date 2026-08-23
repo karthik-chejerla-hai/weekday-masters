@@ -8,8 +8,7 @@
 [![API](https://img.shields.io/badge/🔗_API-Cloud_Run-4285F4?style=for-the-badge)](https://rally-club-api-ef7go5yk7q-ts.a.run.app)
 
 [![deploy](https://img.shields.io/github/actions/workflow/status/karthik-chejerla-hai/weekday-masters/deploy.yml?branch=main&style=flat-square&label=deploy&logo=googlecloud&logoColor=white)](https://github.com/karthik-chejerla-hai/weekday-masters/actions/workflows/deploy.yml?query=branch%3Amain)
-[![backend build](https://img.shields.io/github/actions/workflow/status/karthik-chejerla-hai/weekday-masters/ci-backend.yml?branch=main&style=flat-square&label=backend%20build&logo=go&logoColor=white)](https://github.com/karthik-chejerla-hai/weekday-masters/actions/workflows/ci-backend.yml?query=branch%3Amain)
-[![frontend build](https://img.shields.io/github/actions/workflow/status/karthik-chejerla-hai/weekday-masters/ci-frontend.yml?branch=main&style=flat-square&label=frontend%20build&logo=vite&logoColor=white)](https://github.com/karthik-chejerla-hai/weekday-masters/actions/workflows/ci-frontend.yml?query=branch%3Amain)
+[![CI](https://img.shields.io/github/actions/workflow/status/karthik-chejerla-hai/weekday-masters/ci.yml?branch=main&style=flat-square&label=tests&logo=githubactions&logoColor=white)](https://github.com/karthik-chejerla-hai/weekday-masters/actions/workflows/ci.yml?query=branch%3Amain)
 
 [![Go](https://img.shields.io/badge/Go-1.22-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev)
@@ -150,7 +149,64 @@ TEST_DATABASE_URL="postgres://badminton:badminton123@localhost:5433/badminton_cl
   go test -race ./...
 ```
 
+```bash
+cd frontend
+npm test              # unit tests
+npm run test:coverage # unit tests + coverage, enforces the coverage floor
+npm run test:e2e      # Playwright (needs `npx playwright install` once)
+```
+
 > ⚠️ Every test truncates the schema — never point `TEST_DATABASE_URL` at a real database.
+
+Each Go package runs against its own PostgreSQL schema, so `go test ./...` stays
+safe to run with packages in parallel.
+
+---
+
+## ✅ CI and merge gates
+
+Every pull request runs `.github/workflows/ci.yml`, which produces three checks:
+
+| Check | What it does |
+|---|---|
+| `Backend Tests & Coverage` | `go test -race` against a PostgreSQL service container, then enforces a coverage floor |
+| `Frontend Tests & Coverage` | lint, build, and Vitest with coverage thresholds |
+| `Aggregate Coverage & Decorate PR` | posts a sticky coverage comment and fails if either suite failed |
+
+`ci-backend.yml` and `ci-frontend.yml` also still run, each producing a check
+named `build`. They are a subset of the workflow above and can be deleted at any
+point. Whatever you do with them, never add `build` to the required checks: both
+name their job that, so the context is ambiguous between them, and both filter
+on paths — on a PR touching neither `backend/` nor `frontend/`, no check by that
+name is ever created and a required one would leave the PR pending forever.
+
+**Coverage floors** are a ratchet, not a target — they sit just under where the
+suites currently are so coverage cannot slide back unnoticed. Raise them as
+coverage rises; lowering one should come with a reason.
+
+| | Floor | Where it lives |
+|---|---|---|
+| Backend (Go, statements) | 54% | `MIN_COVERAGE` in `.github/workflows/ci.yml` |
+| Frontend (Vitest) | 55% statements / 52% branches / 52% functions / 56% lines | `test.coverage.thresholds` in `frontend/vite.config.ts` |
+
+Frontend coverage is measured with `all: true`, so every file under `src/`
+counts whether or not a test imports it. Without that, the percentage only
+describes the files the tests happened to reach.
+
+### Enabling branch protection and auto-merge
+
+Requires **admin** on the repository:
+
+```bash
+.github/scripts/setup-branch-protection.sh
+```
+
+It requires the three checks above on `main`, enables auto-merge, and turns on
+squash merges with branch cleanup. Then a PR can be queued to land on green:
+
+```bash
+gh pr merge <number> --squash --auto
+```
 
 ---
 
