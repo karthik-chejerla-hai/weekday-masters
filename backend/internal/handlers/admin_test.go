@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/weekday-masters/backend/internal/database"
 	"github.com/weekday-masters/backend/internal/models"
@@ -139,6 +140,106 @@ func TestCreateSession_SetsTheRSVPDeadlineThreeDaysBefore(t *testing.T) {
 	}
 	if h, m, sec := deadline.Clock(); h != 23 || m != 59 || sec != 59 {
 		t.Fatalf("expected the deadline at end of day Sydney time, got %s", deadline.Format("15:04:05"))
+	}
+}
+
+func TestCreateSession_AcceptsAnExplicitRSVPDeadline(t *testing.T) {
+	h := newHarness(t)
+	admin := makeAdmin(t)
+
+	want := utils.NowInSydney().AddDate(0, 0, 6).Truncate(time.Second)
+
+	var session models.Session
+	h.as(admin).post("/api/admin/sessions", map[string]any{
+		"title":         "Friday Social",
+		"session_date":  sydneyDate(14),
+		"start_time":    "18:00",
+		"end_time":      "20:00",
+		"courts":        2,
+		"rsvp_deadline": want.Format(time.RFC3339),
+	}).expect(http.StatusCreated).decode(&session)
+
+	if !session.RSVPDeadline.Equal(want) {
+		t.Fatalf("expected the deadline %s, got %s",
+			want.Format(time.RFC3339), session.RSVPDeadline.Format(time.RFC3339))
+	}
+}
+
+func TestCreateSession_RejectsAMalformedRSVPDeadline(t *testing.T) {
+	h := newHarness(t)
+	admin := makeAdmin(t)
+
+	h.as(admin).post("/api/admin/sessions", map[string]any{
+		"title":         "Friday Social",
+		"session_date":  sydneyDate(14),
+		"start_time":    "18:00",
+		"end_time":      "20:00",
+		"courts":        2,
+		"rsvp_deadline": "8 April, sometime after lunch",
+	}).expect(http.StatusBadRequest)
+}
+
+func TestCreateSession_RejectsAnRSVPDeadlineInThePast(t *testing.T) {
+	h := newHarness(t)
+	admin := makeAdmin(t)
+
+	past := utils.NowInSydney().AddDate(0, 0, -1)
+
+	h.as(admin).post("/api/admin/sessions", map[string]any{
+		"title":         "Friday Social",
+		"session_date":  sydneyDate(14),
+		"start_time":    "18:00",
+		"end_time":      "20:00",
+		"courts":        2,
+		"rsvp_deadline": past.Format(time.RFC3339),
+	}).expect(http.StatusBadRequest)
+}
+
+// A session created at short notice has a defaulted deadline that is already
+// past. That must not block the admin from creating it.
+func TestCreateSession_AllowsShortNoticeWithoutAnExplicitDeadline(t *testing.T) {
+	h := newHarness(t)
+	admin := makeAdmin(t)
+
+	var session models.Session
+	h.as(admin).post("/api/admin/sessions", map[string]any{
+		"title":        "Tomorrow Night",
+		"session_date": sydneyDate(1),
+		"start_time":   "18:00",
+		"end_time":     "20:00",
+		"courts":       2,
+	}).expect(http.StatusCreated).decode(&session)
+
+	if !session.RSVPDeadline.Before(utils.NowInSydney()) {
+		t.Fatal("expected the defaulted deadline to be in the past for this fixture")
+	}
+}
+
+func TestUpdateSession_RejectsAMalformedRSVPDeadline(t *testing.T) {
+	h := newHarness(t)
+	admin := makeAdmin(t)
+	session := makeSession(t, admin.ID, 2)
+
+	h.as(admin).put("/api/admin/sessions/"+session.ID.String(), map[string]any{
+		"rsvp_deadline": "next Tuesday-ish",
+	}).expect(http.StatusBadRequest)
+}
+
+func TestUpdateSession_AppliesAnExplicitRSVPDeadline(t *testing.T) {
+	h := newHarness(t)
+	admin := makeAdmin(t)
+	session := makeSession(t, admin.ID, 2)
+
+	want := utils.NowInSydney().AddDate(0, 0, 4).Truncate(time.Second)
+
+	var updated models.Session
+	h.as(admin).put("/api/admin/sessions/"+session.ID.String(), map[string]any{
+		"rsvp_deadline": want.Format(time.RFC3339),
+	}).expect(http.StatusOK).decode(&updated)
+
+	if !updated.RSVPDeadline.Equal(want) {
+		t.Fatalf("expected the deadline %s, got %s",
+			want.Format(time.RFC3339), updated.RSVPDeadline.Format(time.RFC3339))
 	}
 }
 

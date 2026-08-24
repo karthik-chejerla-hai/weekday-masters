@@ -3,6 +3,7 @@ package handlers
 import (
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -103,15 +104,16 @@ func (h *AdminHandler) UpdateUserRole(c *gin.Context) {
 }
 
 type CreateSessionRequest struct {
-	Title              string `json:"title" binding:"required"`
-	Description        string `json:"description"`
-	SessionDate        string `json:"session_date" binding:"required"` // YYYY-MM-DD
-	StartTime          string `json:"start_time" binding:"required"`   // HH:MM
-	EndTime            string `json:"end_time" binding:"required"`     // HH:MM
-	Courts             int    `json:"courts" binding:"required,min=1,max=3"`
-	IsRecurring        bool   `json:"is_recurring"`
-	RecurringDayOfWeek *int   `json:"recurring_day_of_week"`
-	Occurrences        *int   `json:"occurrences"` // Number of recurring sessions to create
+	Title              string  `json:"title" binding:"required"`
+	Description        string  `json:"description"`
+	SessionDate        string  `json:"session_date" binding:"required"` // YYYY-MM-DD
+	StartTime          string  `json:"start_time" binding:"required"`   // HH:MM
+	EndTime            string  `json:"end_time" binding:"required"`     // HH:MM
+	Courts             int     `json:"courts" binding:"required,min=1,max=3"`
+	IsRecurring        bool    `json:"is_recurring"`
+	RecurringDayOfWeek *int    `json:"recurring_day_of_week"`
+	Occurrences        *int    `json:"occurrences"`   // Number of recurring sessions to create
+	RSVPDeadline       *string `json:"rsvp_deadline"` // Optional ISO datetime (RFC3339)
 }
 
 // CreateSession creates a new session
@@ -134,7 +136,7 @@ func (h *AdminHandler) CreateSession(c *gin.Context) {
 		return
 	}
 
-	session, err := h.sessionService.CreateSession(services.CreateSessionInput{
+	input := services.CreateSessionInput{
 		Title:              req.Title,
 		Description:        req.Description,
 		SessionDate:        sessionDate,
@@ -145,7 +147,18 @@ func (h *AdminHandler) CreateSession(c *gin.Context) {
 		RecurringDayOfWeek: req.RecurringDayOfWeek,
 		Occurrences:        req.Occurrences,
 		CreatedBy:          user.ID,
-	})
+	}
+
+	if req.RSVPDeadline != nil {
+		deadline, err := time.Parse(time.RFC3339, *req.RSVPDeadline)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid RSVP deadline format. Use RFC3339 (e.g. 2026-04-08T23:59:59+11:00)"})
+			return
+		}
+		input.RSVPDeadline = &deadline
+	}
+
+	session, err := h.sessionService.CreateSession(input)
 
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -156,13 +169,14 @@ func (h *AdminHandler) CreateSession(c *gin.Context) {
 }
 
 type UpdateSessionRequest struct {
-	Title       *string `json:"title"`
-	Description *string `json:"description"`
-	SessionDate *string `json:"session_date"` // YYYY-MM-DD
-	StartTime   *string `json:"start_time"`   // HH:MM
-	EndTime     *string `json:"end_time"`     // HH:MM
-	Courts      *int    `json:"courts"`
-	Status      *string `json:"status"`
+	Title        *string `json:"title"`
+	Description  *string `json:"description"`
+	SessionDate  *string `json:"session_date"` // YYYY-MM-DD
+	StartTime    *string `json:"start_time"`   // HH:MM
+	EndTime      *string `json:"end_time"`     // HH:MM
+	Courts       *int    `json:"courts"`
+	Status       *string `json:"status"`
+	RSVPDeadline *string `json:"rsvp_deadline"` // Optional ISO datetime (RFC3339)
 }
 
 // UpdateSession updates a session
@@ -195,6 +209,15 @@ func (h *AdminHandler) UpdateSession(c *gin.Context) {
 			return
 		}
 		input.SessionDate = &sessionDate
+	}
+
+	if req.RSVPDeadline != nil {
+		deadline, err := time.Parse(time.RFC3339, *req.RSVPDeadline)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid RSVP deadline format. Use RFC3339 (e.g. 2026-04-08T23:59:59+11:00)"})
+			return
+		}
+		input.RSVPDeadline = &deadline
 	}
 
 	if req.Status != nil {

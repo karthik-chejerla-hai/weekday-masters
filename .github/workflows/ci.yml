@@ -65,7 +65,7 @@ jobs:
         env:
           # A ratchet, not a target. Raise it as coverage rises; lowering it
           # should come with a reason in the commit message.
-          MIN_COVERAGE: '54'
+          MIN_COVERAGE: '56'
         run: ../.github/scripts/check-go-coverage.sh coverage-summary.txt
 
       - name: Upload Backend Coverage Artifact
