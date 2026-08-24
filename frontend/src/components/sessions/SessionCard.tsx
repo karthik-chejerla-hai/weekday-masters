@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, Clock, Check, HelpCircle, X, ChevronDown, ChevronUp, MapPin } from 'lucide-react';
+import { Calendar, Clock, Check, HelpCircle, X, ChevronDown, ChevronUp, MapPin, Timer } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import type { Session } from '../../types';
 import Badge from '../ui/Badge';
@@ -74,6 +74,12 @@ export default function SessionCard({ session, venueName }: SessionCardProps) {
             <div className="flex items-center gap-1.5">
               <MapPin className="w-4 h-4 text-primary-500" />
               <span className="truncate max-w-[180px]">{venueName}</span>
+            </div>
+          )}
+          {!isDeadlinePassed && session.status !== 'cancelled' && (
+            <div className="flex items-center gap-1.5">
+              <Timer className="w-4 h-4 text-amber-500" />
+              <span className="text-amber-700">RSVP by {format(new Date(session.rsvp_deadline), 'EEE, d MMM')}</span>
             </div>
           )}
         </div>

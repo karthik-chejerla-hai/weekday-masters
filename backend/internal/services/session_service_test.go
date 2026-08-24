@@ -4,7 +4,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/weekday-masters/backend/internal/database"
 	"github.com/weekday-masters/backend/internal/models"
+	"github.com/weekday-masters/backend/internal/utils"
 )
 
 func TestCreateSession_ValidationAndDefaults(t *testing.T) {
@@ -187,5 +189,192 @@ func TestDeleteSession_WithAndWithoutRSVPs(t *testing.T) {
 	}
 	if found.Status != models.SessionStatusCancelled {
 		t.Fatalf("expected session to be marked cancelled, got %s", found.Status)
+	}
+}
+
+func TestCreateSession_DefaultDeadlineAllowsShortNotice(t *testing.T) {
+	_, ss, _ := newTestServices(t)
+	creator := newUser(t, "admin")
+
+	// Two days out: the 3-day default deadline lands in the past. Admins must
+	// still be able to create the session.
+	session, err := ss.CreateSession(CreateSessionInput{
+		Title:       "Short Notice",
+		SessionDate: time.Now().AddDate(0, 0, 2),
+		StartTime:   "18:00",
+		EndTime:     "20:00",
+		Courts:      1,
+		CreatedBy:   creator.ID,
+	})
+	if err != nil {
+		t.Fatalf("expected short-notice session to be created, got %v", err)
+	}
+	if !session.RSVPDeadline.Before(utils.NowInSydney()) {
+		t.Fatal("expected the defaulted deadline to be in the past for this fixture")
+	}
+}
+
+func TestCreateSession_CustomDeadline(t *testing.T) {
+	_, ss, _ := newTestServices(t)
+	creator := newUser(t, "admin")
+
+	sessionDate := time.Now().AddDate(0, 0, 10)
+	custom := utils.NowInSydney().AddDate(0, 0, 5).Truncate(time.Second)
+
+	session, err := ss.CreateSession(CreateSessionInput{
+		Title:        "Custom Deadline",
+		SessionDate:  sessionDate,
+		StartTime:    "18:00",
+		EndTime:      "20:00",
+		Courts:       1,
+		CreatedBy:    creator.ID,
+		RSVPDeadline: &custom,
+	})
+	if err != nil {
+		t.Fatalf("failed to create session with custom deadline: %v", err)
+	}
+	if !session.RSVPDeadline.Equal(custom) {
+		t.Fatalf("expected deadline %v, got %v", custom, session.RSVPDeadline)
+	}
+
+	// The 3-day default must not have been applied.
+	if session.RSVPDeadline.Equal(utils.CalculateRSVPDeadline(sessionDate)) {
+		t.Fatal("custom deadline was overwritten by the default")
+	}
+}
+
+func TestCreateSession_RejectsExplicitPastDeadline(t *testing.T) {
+	_, ss, _ := newTestServices(t)
+	creator := newUser(t, "admin")
+
+	past := utils.NowInSydney().AddDate(0, 0, -1)
+	_, err := ss.CreateSession(CreateSessionInput{
+		Title:        "Past Deadline",
+		SessionDate:  time.Now().AddDate(0, 0, 10),
+		StartTime:    "18:00",
+		EndTime:      "20:00",
+		Courts:       1,
+		CreatedBy:    creator.ID,
+		RSVPDeadline: &past,
+	})
+	if err == nil {
+		t.Fatal("expected an error for an explicitly past deadline, got nil")
+	}
+}
+
+func TestRecurringSessions_InheritCustomDeadlineOffset(t *testing.T) {
+	_, ss, _ := newTestServices(t)
+	creator := newUser(t, "admin")
+
+	// Parent sits 14 days out with a deadline 5 days before it at 18:00 Sydney.
+	parentDate := time.Now().In(utils.SydneyLocation).AddDate(0, 0, 14)
+	deadlineDay := parentDate.AddDate(0, 0, -5)
+	custom := time.Date(
+		deadlineDay.Year(), deadlineDay.Month(), deadlineDay.Day(),
+		18, 0, 0, 0, utils.SydneyLocation,
+	)
+
+	dayOfWeek := int(parentDate.Weekday())
+	occurrences := 3
+
+	parent, err := ss.CreateSession(CreateSessionInput{
+		Title:              "Weekly With Custom Deadline",
+		SessionDate:        parentDate,
+		StartTime:          "18:00",
+		EndTime:            "20:00",
+		Courts:             1,
+		IsRecurring:        true,
+		RecurringDayOfWeek: &dayOfWeek,
+		Occurrences:        &occurrences,
+		CreatedBy:          creator.ID,
+		RSVPDeadline:       &custom,
+	})
+	if err != nil {
+		t.Fatalf("failed to create recurring session: %v", err)
+	}
+
+	var children []models.Session
+	if err := database.DB.
+		Where("recurring_parent_id = ?", parent.ID).
+		Order("session_date asc").
+		Find(&children).Error; err != nil {
+		t.Fatalf("failed to load children: %v", err)
+	}
+	if len(children) != 2 {
+		t.Fatalf("expected 2 child sessions, got %d", len(children))
+	}
+
+	for _, child := range children {
+		childDate := child.SessionDate.In(utils.SydneyLocation)
+		deadline := child.RSVPDeadline.In(utils.SydneyLocation)
+
+		// Same 5-day offset, same 18:00 wall-clock time as the parent.
+		wantDay := time.Date(childDate.Year(), childDate.Month(), childDate.Day(), 0, 0, 0, 0, time.UTC).
+			AddDate(0, 0, -5)
+		gotDay := time.Date(deadline.Year(), deadline.Month(), deadline.Day(), 0, 0, 0, 0, time.UTC)
+
+		if !gotDay.Equal(wantDay) {
+			t.Fatalf("child %s: expected deadline day %v, got %v",
+				child.SessionDate.Format("2006-01-02"), wantDay.Format("2006-01-02"), gotDay.Format("2006-01-02"))
+		}
+		if deadline.Hour() != 18 || deadline.Minute() != 0 {
+			t.Fatalf("child %s: expected deadline at 18:00 Sydney, got %02d:%02d",
+				child.SessionDate.Format("2006-01-02"), deadline.Hour(), deadline.Minute())
+		}
+	}
+}
+
+func TestUpdateSession_DeadlineRules(t *testing.T) {
+	_, ss, _ := newTestServices(t)
+	creator := newUser(t, "admin")
+
+	session := newSession(t, ss, creator.ID, 2)
+	original := session.RSVPDeadline
+
+	// Updating an unrelated field leaves the deadline alone.
+	desc := "Updated description"
+	updated, err := ss.UpdateSession(session.ID, UpdateSessionInput{Description: &desc})
+	if err != nil {
+		t.Fatalf("failed to update description: %v", err)
+	}
+	if !updated.RSVPDeadline.Equal(original) {
+		t.Fatalf("expected deadline unchanged, got %v (was %v)", updated.RSVPDeadline, original)
+	}
+
+	// An explicit future deadline is applied.
+	future := utils.NowInSydney().AddDate(0, 0, 3).Truncate(time.Second)
+	updated, err = ss.UpdateSession(session.ID, UpdateSessionInput{RSVPDeadline: &future})
+	if err != nil {
+		t.Fatalf("failed to update deadline: %v", err)
+	}
+	if !updated.RSVPDeadline.Equal(future) {
+		t.Fatalf("expected deadline %v, got %v", future, updated.RSVPDeadline)
+	}
+
+	// An explicit past deadline is rejected.
+	past := utils.NowInSydney().AddDate(0, 0, -1)
+	if _, err := ss.UpdateSession(session.ID, UpdateSessionInput{RSVPDeadline: &past}); err == nil {
+		t.Fatal("expected an error for an explicitly past deadline, got nil")
+	}
+
+	// Moving the date with an explicit deadline keeps the explicit one.
+	newDate := time.Now().AddDate(0, 0, 21)
+	keep := utils.NowInSydney().AddDate(0, 0, 9).Truncate(time.Second)
+	updated, err = ss.UpdateSession(session.ID, UpdateSessionInput{SessionDate: &newDate, RSVPDeadline: &keep})
+	if err != nil {
+		t.Fatalf("failed to update date and deadline: %v", err)
+	}
+	if !updated.RSVPDeadline.Equal(keep) {
+		t.Fatalf("expected explicit deadline %v to survive a date change, got %v", keep, updated.RSVPDeadline)
+	}
+
+	// Moving the date without one recalculates from the default.
+	laterDate := time.Now().AddDate(0, 0, 28)
+	updated, err = ss.UpdateSession(session.ID, UpdateSessionInput{SessionDate: &laterDate})
+	if err != nil {
+		t.Fatalf("failed to update date: %v", err)
+	}
+	if !updated.RSVPDeadline.Equal(utils.CalculateRSVPDeadline(laterDate)) {
+		t.Fatalf("expected recalculated default deadline, got %v", updated.RSVPDeadline)
 	}
 }
