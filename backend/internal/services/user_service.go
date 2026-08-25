@@ -145,6 +145,12 @@ func (s *UserService) ApproveJoinRequest(userID uuid.UUID) (*models.User, error)
 		return nil, err
 	}
 
+	// A member without a ledger account cannot be topped up or charged. Creating
+	// it here means that never has to be checked for at the point of use.
+	if _, err := NewLedgerService().EnsurePlayerAccount(user.ID, user.Name); err != nil {
+		return nil, err
+	}
+
 	return &user, nil
 }
 

@@ -28,7 +28,8 @@ import (
 
 // truncateAll empties every table between tests. Kept in one place so a new
 // table cannot be added to the schema and forgotten in one suite's reset.
-const truncateAll = `TRUNCATE TABLE rsvps, notifications, user_push_tokens,
+const truncateAll = `TRUNCATE TABLE ledger_entries, transactions, accounts,
+	rsvps, notifications, user_push_tokens,
 	user_notification_preferences, announcements, sessions, users
 	RESTART IDENTITY CASCADE`
 
@@ -109,5 +110,12 @@ func RequireDB(t *testing.T) {
 
 	if err := database.DB.Exec(truncateAll).Error; err != nil {
 		t.Fatalf("failed to reset test database: %v", err)
+	}
+
+	// Truncating accounts takes the club's singleton accounts with it. They are
+	// part of the schema rather than test data, so put them back — every ledger
+	// test starts from a club that has a bank, court credit, stock and surplus.
+	if err := database.SeedClubAccounts(); err != nil {
+		t.Fatalf("failed to reseed club accounts: %v", err)
 	}
 }
