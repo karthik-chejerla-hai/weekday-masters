@@ -143,28 +143,28 @@ Web app: `backend/internal/...`, `frontend/src/...` per plan.md.
 
 ### Backend
 
-- [ ] T049 [P] [US2] Create `Settlement` model with snapshotted rates and `reversed_at` in backend/internal/models/settlement.go
-- [ ] T050 [P] [US2] Create `ChargeLine` model with `in_base`, `in_extra`, `comped`, `guest_name` in backend/internal/models/settlement.go
-- [ ] T051 [US2] Add the club rate and threshold settings fields, with defaults, to backend/internal/models/club.go
-- [ ] T052 [US2] Register the new models and seed club setting defaults in backend/internal/database/db.go
-- [ ] T053 [US2] Implement band costing — court cost per band, shuttle units per band, per-band split — in backend/internal/services/settlement_service.go
-- [ ] T054 [US2] Implement `Preview`, returning bands, lines and `stock_after` without writing, in backend/internal/services/settlement_service.go
-- [ ] T055 [US2] Implement `Settle` — session row lock, live-settlement check, stock sufficiency check, then a single `LedgerService.post()` covering court credit, shuttle stock, player charges and comped surplus — in backend/internal/services/settlement_service.go
-- [ ] T056 [US2] Make settlement reversal stamp `settlements.reversed_at` so the session can be settled again, in backend/internal/services/settlement_service.go
-- [ ] T057 [US2] Implement session history listing and the public settlement breakdown in backend/internal/services/settlement_service.go
-- [ ] T058 [US2] Create settlement handlers per contracts/settlement.md in backend/internal/handlers/settlement.go
-- [ ] T059 [US2] Register preview and settle on `admin`, history and breakdown on `approved`, in backend/cmd/server/main.go — Principle III
+- [X] T049 [P] [US2] Create `Settlement` model with snapshotted rates and `reversed_at` in backend/internal/models/settlement.go
+- [X] T050 [P] [US2] Create `ChargeLine` model with `in_base`, `in_extra`, `comped`, `guest_name` in backend/internal/models/settlement.go
+- [X] T051 [US2] Add the club rate and threshold settings fields, with defaults, to backend/internal/models/club.go
+- [X] T052 [US2] Register the new models and seed club setting defaults in backend/internal/database/db.go
+- [X] T053 [US2] Implement band costing — court cost per band, shuttle units per band, per-band split — in backend/internal/services/settlement_service.go
+- [X] T054 [US2] Implement `Preview`, returning bands, lines and `stock_after` without writing, in backend/internal/services/settlement_service.go
+- [X] T055 [US2] Implement `Settle` — session row lock, live-settlement check, stock sufficiency check, then a single `LedgerService.post()` covering court credit, shuttle stock, player charges and comped surplus — in backend/internal/services/settlement_service.go
+- [X] T056 [US2] Make settlement reversal stamp `settlements.reversed_at` so the session can be settled again, in backend/internal/services/settlement_service.go
+- [X] T057 [US2] Implement session history listing and the public settlement breakdown in backend/internal/services/settlement_service.go
+- [X] T058 [US2] Create settlement handlers per contracts/settlement.md in backend/internal/handlers/settlement.go
+- [X] T059 [US2] Register preview and settle on `admin`, history and breakdown on `approved`, in backend/cmd/server/main.go — Principle III
 
 ### Backend tests
 
-- [ ] T060 [P] [US2] Test the worked example from data-model.md end to end: band totals, the 1695/1694 and 1096/1095 splits, and stock at 9 units / $37.50 afterwards, in backend/internal/services/settlement_service_test.go
-- [ ] T061 [P] [US2] Test an early leaver pays nothing toward the extra hour and stayers cover it, in backend/internal/services/settlement_service_test.go
-- [ ] T062 [P] [US2] Test a comped line charges zero, leaves every other charge unchanged, and moves surplus by exactly that share, in backend/internal/services/settlement_service_test.go
-- [ ] T063 [P] [US2] Test a guest counts as a head and charges the host, in backend/internal/services/settlement_service_test.go
-- [ ] T064 [P] [US2] Test short stock returns `shuttle_stock_short` with the shortfall and writes nothing, in backend/internal/services/settlement_service_test.go
-- [ ] T065 [P] [US2] Test a second settle returns `session_already_settled`, and that reversing then re-settling works, in backend/internal/services/settlement_service_test.go
-- [ ] T066 [US2] Concurrency test: two simultaneous settle calls produce exactly one settlement, mirroring the existing RSVP capacity test, in backend/internal/services/settlement_service_test.go
-- [ ] T067 [P] [US2] Test that changing club rates does not alter an already-settled session, in backend/internal/services/settlement_service_test.go
+- [X] T060 [P] [US2] Test the worked example from data-model.md end to end: band totals, the 1695/1694 and 1096/1095 splits, and stock at 9 units / $37.50 afterwards, in backend/internal/services/settlement_service_test.go
+- [X] T061 [P] [US2] Test an early leaver pays nothing toward the extra hour and stayers cover it, in backend/internal/services/settlement_service_test.go
+- [X] T062 [P] [US2] Test a comped line charges zero, leaves every other charge unchanged, and moves surplus by exactly that share, in backend/internal/services/settlement_service_test.go
+- [X] T063 [P] [US2] Test a guest counts as a head and charges the host, in backend/internal/services/settlement_service_test.go
+- [X] T064 [P] [US2] Test short stock returns `shuttle_stock_short` with the shortfall and writes nothing, in backend/internal/services/settlement_service_test.go
+- [X] T065 [P] [US2] Test a second settle returns `session_already_settled`, and that reversing then re-settling works, in backend/internal/services/settlement_service_test.go
+- [X] T066 [US2] Concurrency test: two simultaneous settle calls produce exactly one settlement, mirroring the existing RSVP capacity test, in backend/internal/services/settlement_service_test.go
+- [X] T067 [P] [US2] Test that changing club rates does not alter an already-settled session, in backend/internal/services/settlement_service_test.go
 
 ### Frontend
 

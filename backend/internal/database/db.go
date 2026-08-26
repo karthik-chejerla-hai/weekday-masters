@@ -41,6 +41,8 @@ func Migrate() error {
 		&models.Account{},
 		&models.Transaction{},
 		&models.LedgerEntry{},
+		&models.Settlement{},
+		&models.ChargeLine{},
 	)
 	if err != nil {
 		return err
@@ -54,20 +56,8 @@ func Migrate() error {
 		return err
 	}
 
-	// Seed default club if not exists
-	var count int64
-	DB.Model(&models.Club{}).Count(&count)
-	if count == 0 {
-		club := models.Club{
-			Name:                     "Rally Badminton Club",
-			BaseHours:                2,
-			BaseRateCents:            3000,
-			ExtraRateCents:           2300,
-			ShuttlesPerHour:          5,
-			LowBalanceThresholdCents: 2000,
-		}
-		DB.Create(&club)
-		log.Println("Created default club")
+	if err := SeedDefaultClub(); err != nil {
+		return err
 	}
 
 	if err := SeedClubAccounts(); err != nil {
@@ -94,6 +84,12 @@ func applyLedgerConstraints() error {
 		// Ledger entries are read by account constantly and written once.
 		`CREATE INDEX IF NOT EXISTS idx_ledger_entries_account_created
 		   ON ledger_entries (account_id, created_at)`,
+
+		// At most one live settlement per session. The service enforces this
+		// under the session row lock; this survives a caller who forgets to.
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_settlements_one_live_per_session
+		   ON settlements (session_id)
+		 WHERE reversed_at IS NULL`,
 	}
 
 	for _, stmt := range statements {
@@ -156,4 +152,33 @@ func backfillSessionTimestamps() error {
 		   AND start_time <> ''
 		   AND end_time <> ''
 	`).Error
+}
+
+// SeedDefaultClub creates the single club row with its settlement defaults.
+//
+// Exported so the test harness can restore it after truncation: club settings
+// are schema-shaped configuration rather than test data, and a suite where one
+// test's rate change leaks into the next is worse than useless.
+func SeedDefaultClub() error {
+	var count int64
+	if err := DB.Model(&models.Club{}).Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+
+	club := models.Club{
+		Name:                     "Rally Badminton Club",
+		BaseHours:                2,
+		BaseRateCents:            3000,
+		ExtraRateCents:           2300,
+		ShuttlesPerHour:          5,
+		LowBalanceThresholdCents: 2000,
+	}
+	if err := DB.Create(&club).Error; err != nil {
+		return err
+	}
+	log.Println("Created default club")
+	return nil
 }

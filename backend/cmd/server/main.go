@@ -69,6 +69,8 @@ func main() {
 	notificationHandler := handlers.NewNotificationHandler(notificationService)
 	ledgerService := services.NewLedgerService()
 	ledgerHandler := handlers.NewLedgerHandler(ledgerService)
+	settlementService := services.NewSettlementService(ledgerService)
+	settlementHandler := handlers.NewSettlementHandler(settlementService)
 
 	// Auth0 config for middleware
 	auth0Config := middleware.Auth0Config{
@@ -140,6 +142,11 @@ func main() {
 				approved.GET("/accounts", ledgerHandler.ListBalances)
 				approved.GET("/accounts/me", ledgerHandler.GetMyBalance)
 				approved.GET("/accounts/me/entries", ledgerHandler.GetMyEntries)
+
+				// Session history and settlement breakdowns are readable by any
+				// approved member, so the split can be checked by the people in it.
+				approved.GET("/sessions/history", settlementHandler.ListSessionHistory)
+				approved.GET("/sessions/:id/settlement", settlementHandler.GetSessionSettlement)
 			}
 
 			// Admin routes
@@ -174,6 +181,11 @@ func main() {
 				admin.POST("/transactions/shuttle-purchase", ledgerHandler.RecordShuttlePurchase)
 				admin.POST("/transactions/opening-balances", ledgerHandler.RecordOpeningBalances)
 				admin.POST("/transactions/:id/reverse", ledgerHandler.ReverseTransaction)
+
+				// Settlement. Preview writes nothing; settle moves money.
+				admin.POST("/sessions/:id/settlement/preview", settlementHandler.PreviewSettlement)
+				admin.POST("/sessions/:id/settle", settlementHandler.SettleSession)
+				admin.POST("/settlements/:id/reverse", settlementHandler.ReverseSettlement)
 
 				// Announcements
 				admin.POST("/announcements", notificationHandler.SendAnnouncement)
