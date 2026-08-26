@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/weekday-masters/backend/internal/database"
 	"github.com/weekday-masters/backend/internal/models"
+	"github.com/weekday-masters/backend/internal/utils"
 )
 
 // newLedger returns the service with an approved member and their account ready.
@@ -563,5 +564,209 @@ func TestMyEntriesFlagsReversedTransactions(t *testing.T) {
 	}
 	if flagged != 1 {
 		t.Errorf("%d entries flagged as reversed, want exactly 1 (the original)", flagged)
+	}
+}
+
+// --- User Story 3: the club's true position -------------------------------
+
+// Buying court credit converts cash into a different asset. No member is any
+// better or worse off, and the club's total position is unchanged — which is
+// precisely why a single "club balance" cannot answer anything useful.
+func TestCourtCreditPurchaseIsAnAssetSwap(t *testing.T) {
+	ls, user, _ := newLedger(t)
+
+	if _, err := ls.RecordTopup(CashInput{UserID: user.ID, AmountCents: 20000, CreatedBy: user.ID}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := ls.Position()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := ls.RecordCourtCreditPurchase(AssetPurchaseInput{
+		AmountCents: 10000, Description: "venue top-up", CreatedBy: user.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	after, err := ls.Position()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if after.Assets.TotalCents != before.Assets.TotalCents {
+		t.Errorf("total assets moved from %d to %d during an asset swap",
+			before.Assets.TotalCents, after.Assets.TotalCents)
+	}
+	if after.Liabilities.PlayerBalancesCents != before.Liabilities.PlayerBalancesCents {
+		t.Error("buying court credit moved a player balance")
+	}
+	if after.Assets.BankCents != 10000 || after.Assets.CourtCreditCents != 10000 {
+		t.Errorf("bank = %d, court credit = %d; want 10000 each",
+			after.Assets.BankCents, after.Assets.CourtCreditCents)
+	}
+	if !after.Balanced {
+		t.Error("position reports unbalanced")
+	}
+}
+
+// Buying at a new price blends the average without revaluing what is already in
+// the bag.
+func TestShuttlePurchaseBlendsWithoutRevaluing(t *testing.T) {
+	ls, user, _ := newLedger(t)
+
+	if _, err := ls.RecordShuttlePurchase(AssetPurchaseInput{
+		AmountCents: 5000, Units: 12, Description: "tube at $50", CreatedBy: user.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ls.RecordShuttlePurchase(AssetPurchaseInput{
+		AmountCents: 6000, Units: 12, Description: "dearer tube", CreatedBy: user.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	stock, err := ls.StockPosition(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stock.Units != 24 || stock.ValueCents != 11000 {
+		t.Errorf("stock = %+v, want {11000 24} — the first tube's value untouched", stock)
+	}
+	if got := stock.UnitCostCents(); got != 458 {
+		t.Errorf("blended unit cost = %d, want 458", got)
+	}
+	assertBalanced(t)
+}
+
+// The identity, checked independently of the code that maintains it, after a
+// full sequence of everything the club does.
+func TestIntegrityAfterAFullSequence(t *testing.T) {
+	ls, user, _ := newLedger(t)
+	other := newUser(t, "other")
+	if _, err := ls.EnsurePlayerAccount(other.ID, other.Name); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := ls.RecordOpeningBalances(OpeningBalancesInput{
+		Players:      []OpeningPlayerBalance{{UserID: user.ID, BalanceCents: 4250}},
+		BankCents:    4250,
+		ShuttleUnits: 9,
+		ShuttleCents: 3750,
+		CreatedBy:    user.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ls.RecordTopup(CashInput{UserID: other.ID, AmountCents: 10000, CreatedBy: user.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ls.RecordCourtCreditPurchase(AssetPurchaseInput{AmountCents: 10000, CreatedBy: user.ID}); err != nil {
+		t.Fatal(err)
+	}
+	shuttles, err := ls.RecordShuttlePurchase(AssetPurchaseInput{AmountCents: 5000, Units: 12, CreatedBy: user.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ls.ReverseTransaction(shuttles.ID, "returned", user.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ls.RecordWithdrawal(CashInput{UserID: user.ID, AmountCents: 1000, CreatedBy: user.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := ls.Integrity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.Balanced || report.ResidualCents != 0 {
+		t.Errorf("integrity: balanced=%v residual=%d, want balanced with no residual",
+			report.Balanced, report.ResidualCents)
+	}
+	if report.EntriesCheck == 0 {
+		t.Error("integrity checked zero entries")
+	}
+}
+
+// The venue sells credit in fixed blocks, so running out is not a gentle slide
+// into overdraft — it is a session that cannot be paid for.
+func TestPositionWarnsWhenCourtCreditWillNotCoverTheNextSession(t *testing.T) {
+	requireDB(t)
+	_, sessionService, _ := newTestServices(t)
+
+	ls := NewLedgerService()
+	admin := newUser(t, "admin")
+	if _, err := sessionService.CreateSession(CreateSessionInput{
+		Title:       "Next Tuesday",
+		SessionDate: utils.NowInSydney().AddDate(0, 0, 7),
+		StartTime:   "20:00",
+		EndTime:     "22:00",
+		Courts:      1,
+		CreatedBy:   admin.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// $17 of credit against a $60 session, and an empty bag.
+	if _, err := ls.RecordTopup(CashInput{UserID: admin.ID, AmountCents: 1700, CreatedBy: admin.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ls.RecordCourtCreditPurchase(AssetPurchaseInput{AmountCents: 1700, CreatedBy: admin.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	position, err := ls.Position()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	codes := map[string]bool{}
+	for _, w := range position.Warnings {
+		codes[w.Code] = true
+	}
+	if !codes["court_credit_short"] {
+		t.Errorf("expected a court_credit_short warning, got %+v", position.Warnings)
+	}
+	if !codes["shuttle_stock_short"] {
+		t.Errorf("expected a shuttle_stock_short warning, got %+v", position.Warnings)
+	}
+}
+
+// A well-stocked club should not be nagged.
+func TestPositionIsQuietWhenTheClubIsReady(t *testing.T) {
+	requireDB(t)
+	_, sessionService, _ := newTestServices(t)
+
+	ls := NewLedgerService()
+	admin := newUser(t, "admin")
+	if _, err := sessionService.CreateSession(CreateSessionInput{
+		Title:       "Next Tuesday",
+		SessionDate: utils.NowInSydney().AddDate(0, 0, 7),
+		StartTime:   "20:00",
+		EndTime:     "22:00",
+		Courts:      1,
+		CreatedBy:   admin.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := ls.RecordTopup(CashInput{UserID: admin.ID, AmountCents: 30000, CreatedBy: admin.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ls.RecordCourtCreditPurchase(AssetPurchaseInput{AmountCents: 10000, CreatedBy: admin.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ls.RecordShuttlePurchase(AssetPurchaseInput{AmountCents: 5000, Units: 12, CreatedBy: admin.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	position, err := ls.Position()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(position.Warnings) != 0 {
+		t.Errorf("expected no warnings, got %+v", position.Warnings)
+	}
+	if !position.Balanced {
+		t.Error("position reports unbalanced")
 	}
 }

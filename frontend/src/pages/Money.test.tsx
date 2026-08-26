@@ -14,6 +14,7 @@ vi.mock('../services/api', () => ({
     getMyBalance: vi.fn(),
     getMyEntries: vi.fn(),
     getClub: vi.fn(),
+    getClubPosition: vi.fn(),
     recordTopup: vi.fn(),
   },
 }));
@@ -139,5 +140,94 @@ describe('Money', () => {
     await waitFor(() =>
       expect(screen.getByText(/Could not load balances/)).toBeInTheDocument()
     );
+  });
+});
+
+describe('Money — club assets', () => {
+  const position = {
+    assets: {
+      bank_cents: 18500,
+      court_credit_cents: 1700,
+      shuttle_stock_cents: 3750,
+      shuttle_stock_units: 9,
+      total_cents: 23950,
+    },
+    liabilities: { player_balances_cents: 23950 },
+    surplus_cents: 0,
+    balanced: true,
+    warnings: [],
+  };
+
+  function mockAdmin() {
+    mockAuth({ isAdmin: true });
+    vi.mocked(api.getClub).mockResolvedValue({
+      id: 'c1',
+      name: 'Rally',
+      venue_name: '',
+      venue_address: '',
+      created_at: '',
+      updated_at: '',
+      low_balance_threshold_cents: 2000,
+    });
+  }
+
+  it('hides the club assets tab from members who are not admins', async () => {
+    mockAuth({ isAdmin: false });
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText('Karthik')).toBeInTheDocument());
+    expect(screen.queryByRole('tab', { name: 'Club assets' })).not.toBeInTheDocument();
+  });
+
+  // The point of three asset lines rather than one total: only the first is cash.
+  it('shows the three places club money sits', async () => {
+    mockAdmin();
+    vi.mocked(api.getClubPosition).mockResolvedValue(position);
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Club assets' })).toBeInTheDocument());
+    await user.click(screen.getByRole('tab', { name: 'Club assets' }));
+
+    expect(screen.getByText('In the bank')).toBeInTheDocument();
+    expect(screen.getByText('$185.00')).toBeInTheDocument();
+    expect(screen.getByText('Credit at the venue')).toBeInTheDocument();
+    expect(screen.getByText('$17.00')).toBeInTheDocument();
+    expect(screen.getByText('Shuttles in the bag')).toBeInTheDocument();
+    expect(screen.getByText('9 left')).toBeInTheDocument();
+    expect(screen.getByText(/The books balance/)).toBeInTheDocument();
+  });
+
+  it('surfaces a warning that the club cannot pay for the next session', async () => {
+    mockAdmin();
+    vi.mocked(api.getClubPosition).mockResolvedValue({
+      ...position,
+      warnings: [
+        {
+          code: 'court_credit_short',
+          message: 'Court credit covers $17.00; the next session needs $60.00.',
+          next_session_id: 's1',
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Club assets' })).toBeInTheDocument());
+    await user.click(screen.getByRole('tab', { name: 'Club assets' }));
+
+    expect(screen.getByText(/the next session needs \$60\.00/)).toBeInTheDocument();
+  });
+
+  it('says plainly when the books do not balance', async () => {
+    mockAdmin();
+    vi.mocked(api.getClubPosition).mockResolvedValue({ ...position, balanced: false });
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Club assets' })).toBeInTheDocument());
+    await user.click(screen.getByRole('tab', { name: 'Club assets' }));
+
+    expect(screen.getByText(/The books do not balance/)).toBeInTheDocument();
   });
 });

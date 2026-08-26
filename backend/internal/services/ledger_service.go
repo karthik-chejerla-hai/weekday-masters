@@ -662,3 +662,195 @@ func (s *LedgerService) MyEntries(userID uuid.UUID, limit, offset int) ([]Ledger
 	}
 	return views, total, nil
 }
+
+// --- club position --------------------------------------------------------
+
+// ClubAssets is where the club's money actually is.
+//
+// Only one of the three is cash. The other two are money already spent on things
+// the club will consume: credit sitting at the venue, and shuttles sitting in a
+// bag. Looking at any one of them in isolation answers nothing.
+type ClubAssets struct {
+	BankCents         int64 `json:"bank_cents"`
+	CourtCreditCents  int64 `json:"court_credit_cents"`
+	ShuttleStockCents int64 `json:"shuttle_stock_cents"`
+	ShuttleStockUnits int   `json:"shuttle_stock_units"`
+	TotalCents        int64 `json:"total_cents"`
+}
+
+type ClubLiabilities struct {
+	PlayerBalancesCents int64 `json:"player_balances_cents"`
+}
+
+// PositionWarning is something the admin should act on before the next session.
+type PositionWarning struct {
+	Code          string     `json:"code"`
+	Message       string     `json:"message"`
+	NextSessionID *uuid.UUID `json:"next_session_id,omitempty"`
+}
+
+// ClubPosition answers the question the club actually cares about: is what we
+// hold equal to what members have prepaid?
+type ClubPosition struct {
+	Assets       ClubAssets        `json:"assets"`
+	Liabilities  ClubLiabilities   `json:"liabilities"`
+	SurplusCents int64             `json:"surplus_cents"`
+	Balanced     bool              `json:"balanced"`
+	Warnings     []PositionWarning `json:"warnings"`
+}
+
+// Position assembles the club's standing.
+//
+// Balanced restates the invariant for the reader. It is always true in normal
+// operation, because a posting that would falsify it is rolled back — so a false
+// here means something wrote entries without going through LedgerService.
+func (s *LedgerService) Position() (*ClubPosition, error) {
+	bank, err := s.BalanceOfKind(nil, models.AccountKindBank)
+	if err != nil {
+		return nil, err
+	}
+	courtCredit, err := s.BalanceOfKind(nil, models.AccountKindCourtCredit)
+	if err != nil {
+		return nil, err
+	}
+	stock, err := s.StockPosition(nil)
+	if err != nil {
+		return nil, err
+	}
+	surplus, err := s.BalanceOfKind(nil, models.AccountKindSurplus)
+	if err != nil {
+		return nil, err
+	}
+
+	var playerTotal int64
+	if err := database.DB.Raw(`
+		SELECT COALESCE(SUM(e.amount_cents), 0)
+		FROM ledger_entries e
+		JOIN accounts a ON a.id = e.account_id
+		WHERE a.kind = ?
+	`, models.AccountKindPlayer).Scan(&playerTotal).Error; err != nil {
+		return nil, err
+	}
+
+	assets := ClubAssets{
+		BankCents:         bank,
+		CourtCreditCents:  courtCredit,
+		ShuttleStockCents: stock.ValueCents,
+		ShuttleStockUnits: stock.Units,
+		TotalCents:        bank + courtCredit + stock.ValueCents,
+	}
+
+	warnings, err := s.positionWarnings(courtCredit, stock)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ClubPosition{
+		Assets:       assets,
+		Liabilities:  ClubLiabilities{PlayerBalancesCents: playerTotal},
+		SurplusCents: surplus,
+		Balanced:     assets.TotalCents-playerTotal-surplus == 0,
+		Warnings:     warnings,
+	}, nil
+}
+
+// positionWarnings looks ahead to the next session and says whether the club can
+// actually pay for it.
+//
+// The venue only sells credit in fixed blocks, so running out is not a smooth
+// slide into overdraft — it is a session that cannot be paid for until someone
+// remembers to top up.
+func (s *LedgerService) positionWarnings(courtCredit int64, stock money.Stock) ([]PositionWarning, error) {
+	warnings := []PositionWarning{}
+
+	var club models.Club
+	if err := database.DB.First(&club).Error; err != nil {
+		return warnings, nil
+	}
+
+	var next models.Session
+	err := database.DB.
+		Where("ends_at IS NOT NULL AND ends_at >= ? AND status = ?", utils.NowInSydney(), models.SessionStatusOpen).
+		Order("ends_at ASC").
+		First(&next).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return warnings, nil
+	}
+	if err != nil {
+		return warnings, err
+	}
+
+	nextCourtCost := int64(club.BaseHours * float64(club.BaseRateCents))
+	if courtCredit < nextCourtCost {
+		warnings = append(warnings, PositionWarning{
+			Code: "court_credit_short",
+			Message: fmt.Sprintf(
+				"Court credit covers %s; the next session needs %s. Top up the venue account.",
+				formatCents(courtCredit), formatCents(nextCourtCost)),
+			NextSessionID: &next.ID,
+		})
+	}
+
+	nextShuttles := int(club.BaseHours * club.ShuttlesPerHour)
+	if stock.Units < nextShuttles {
+		warnings = append(warnings, PositionWarning{
+			Code: "shuttle_stock_short",
+			Message: fmt.Sprintf(
+				"The bag holds %d shuttles; the next session uses %d. Buy another tube.",
+				stock.Units, nextShuttles),
+			NextSessionID: &next.ID,
+		})
+	}
+
+	return warnings, nil
+}
+
+// IntegrityReport recomputes everything from the entries themselves.
+type IntegrityReport struct {
+	Balanced      bool  `json:"balanced"`
+	ResidualCents int64 `json:"residual_cents"`
+	EntriesCheck  int64 `json:"entries_checked"`
+	Accounts      int64 `json:"accounts"`
+}
+
+// Integrity checks the invariant independently of the code that maintains it.
+//
+// LedgerService asserts the identity on every write, so this should never
+// disagree. That is exactly why it is worth having: a check that can only ever
+// confirm what another part of the system already believes is worth running when
+// you want to know whether to trust the system at all.
+func (s *LedgerService) Integrity() (*IntegrityReport, error) {
+	residual, err := clubPositionResidual(database.DB)
+	if err != nil {
+		return nil, err
+	}
+
+	var entries, accounts int64
+	if err := database.DB.Model(&models.LedgerEntry{}).Count(&entries).Error; err != nil {
+		return nil, err
+	}
+	if err := database.DB.Model(&models.Account{}).Count(&accounts).Error; err != nil {
+		return nil, err
+	}
+
+	return &IntegrityReport{
+		Balanced:      residual == 0,
+		ResidualCents: residual,
+		EntriesCheck:  entries,
+		Accounts:      accounts,
+	}, nil
+}
+
+// formatCents renders cents as dollars for warning copy. Display only — never
+// feed the result back into a calculation.
+func formatCents(cents int64) string {
+	negative := cents < 0
+	if negative {
+		cents = -cents
+	}
+	text := fmt.Sprintf("$%d.%02d", cents/100, cents%100)
+	if negative {
+		return "-" + text
+	}
+	return text
+}

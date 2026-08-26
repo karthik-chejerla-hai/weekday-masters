@@ -196,20 +196,20 @@ Web app: `backend/internal/...`, `frontend/src/...` per plan.md.
 
 **Depends on**: Phase 2. Reads better after Phase 5 but does not require it.
 
-- [ ] T080 [US3] Implement `RecordCourtCreditPurchase` and `RecordShuttlePurchase` in backend/internal/services/ledger_service.go
-- [ ] T081 [US3] Implement `Position`, returning assets, liabilities, surplus and `balanced`, in backend/internal/services/ledger_service.go
-- [ ] T082 [US3] Implement the `court_credit_short` warning by comparing remaining credit against the next scheduled session's cost, in backend/internal/services/ledger_service.go
-- [ ] T083 [US3] Implement the integrity check that recomputes balances from entries and reports the residual, in backend/internal/services/ledger_service.go
-- [ ] T084 [US3] Create position and asset-purchase handlers in backend/internal/handlers/ledger.go
-- [ ] T085 [US3] Register all of these on the `admin` group in backend/cmd/server/main.go — Principle III
-- [ ] T086 [P] [US3] Test a court-credit purchase moves no player balance and keeps the identity balanced, in backend/internal/services/ledger_service_test.go
-- [ ] T087 [P] [US3] Test buying a tube at a new price blends the average without altering existing stock value, in backend/internal/services/ledger_service_test.go
-- [ ] T088 [P] [US3] Test the integrity check reports balanced after a full sequence of top-ups, purchases and settlements, in backend/internal/services/ledger_service_test.go
-- [ ] T089 [P] [US3] Add position and purchase calls to frontend/src/services/api.ts
-- [ ] T090 [US3] Add the admin-only Club assets tab to frontend/src/pages/Money.tsx
-- [ ] T091 [P] [US3] Create the position panel with the assets-vs-liabilities reconciliation and warnings in frontend/src/components/money/PositionPanel.tsx
-- [ ] T092 [P] [US3] Create the court-credit and shuttle purchase forms in frontend/src/components/money/AssetPurchaseForms.tsx
-- [ ] T093 [P] [US3] Test the Club assets tab is hidden from non-admins, in frontend/src/pages/Money.test.tsx
+- [X] T080 [US3] Implement `RecordCourtCreditPurchase` and `RecordShuttlePurchase` in backend/internal/services/ledger_service.go
+- [X] T081 [US3] Implement `Position`, returning assets, liabilities, surplus and `balanced`, in backend/internal/services/ledger_service.go
+- [X] T082 [US3] Implement the `court_credit_short` warning by comparing remaining credit against the next scheduled session's cost, in backend/internal/services/ledger_service.go
+- [X] T083 [US3] Implement the integrity check that recomputes balances from entries and reports the residual, in backend/internal/services/ledger_service.go
+- [X] T084 [US3] Create position and asset-purchase handlers in backend/internal/handlers/ledger.go
+- [X] T085 [US3] Register all of these on the `admin` group in backend/cmd/server/main.go — Principle III
+- [X] T086 [P] [US3] Test a court-credit purchase moves no player balance and keeps the identity balanced, in backend/internal/services/ledger_service_test.go
+- [X] T087 [P] [US3] Test buying a tube at a new price blends the average without altering existing stock value, in backend/internal/services/ledger_service_test.go
+- [X] T088 [P] [US3] Test the integrity check reports balanced after a full sequence of top-ups, purchases and settlements, in backend/internal/services/ledger_service_test.go
+- [X] T089 [P] [US3] Add position and purchase calls to frontend/src/services/api.ts
+- [X] T090 [US3] Add the admin-only Club assets tab to frontend/src/pages/Money.tsx
+- [X] T091 [P] [US3] Create the position panel with the assets-vs-liabilities reconciliation and warnings in frontend/src/components/money/PositionPanel.tsx
+- [X] T092 [P] [US3] Create the court-credit and shuttle purchase forms in frontend/src/components/money/AssetPurchaseForms.tsx
+- [X] T093 [P] [US3] Test the Club assets tab is hidden from non-admins, in frontend/src/pages/Money.test.tsx
 
 **Checkpoint**: The club's true position is legible.
 

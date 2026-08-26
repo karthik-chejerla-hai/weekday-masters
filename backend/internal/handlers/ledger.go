@@ -336,3 +336,26 @@ func lowBalanceThreshold() (int64, error) {
 	}
 	return club.LowBalanceThresholdCents, nil
 }
+
+// --- club position (admin only) -------------------------------------------
+
+// GetPosition answers whether the club is square with its players.
+func (h *LedgerHandler) GetPosition(c *gin.Context) {
+	position, err := h.ledgerService.Position()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": "internal", "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, position)
+}
+
+// GetIntegrity recomputes the invariant from the entries themselves, so it can
+// be checked independently of the code that maintains it.
+func (h *LedgerHandler) GetIntegrity(c *gin.Context) {
+	report, err := h.ledgerService.Integrity()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": "internal", "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, report)
+}

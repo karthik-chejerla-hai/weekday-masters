@@ -6,13 +6,16 @@ import BalancesList from '../components/money/BalancesList';
 import LedgerList from '../components/money/LedgerList';
 import TopupForm from '../components/money/TopupForm';
 import BalanceChip from '../components/money/BalanceChip';
-import type { LedgerEntryView, MyBalance, PlayerBalance } from '../types';
+import PositionPanel from '../components/money/PositionPanel';
+import AssetPurchaseForms from '../components/money/AssetPurchaseForms';
+import type { ClubPosition, LedgerEntryView, MyBalance, PlayerBalance } from '../types';
 
-type Tab = 'balances' | 'ledger';
+type Tab = 'balances' | 'ledger' | 'club';
 
-const TABS: Array<{ id: Tab; label: string }> = [
+const TABS: Array<{ id: Tab; label: string; adminOnly?: boolean }> = [
   { id: 'balances', label: 'Balances' },
   { id: 'ledger', label: 'My ledger' },
+  { id: 'club', label: 'Club assets', adminOnly: true },
 ];
 
 export default function Money() {
@@ -23,6 +26,7 @@ export default function Money() {
   const [myBalance, setMyBalance] = useState<MyBalance | null>(null);
   const [entries, setEntries] = useState<LedgerEntryView[]>([]);
   const [lowThreshold, setLowThreshold] = useState(2000);
+  const [position, setPosition] = useState<ClubPosition | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,12 +46,13 @@ export default function Money() {
       // rule the server applied to ours.
       if (isAdmin) {
         try {
-          const club = await api.getClub();
+          const [club, clubPosition] = await Promise.all([api.getClub(), api.getClubPosition()]);
           if (typeof club.low_balance_threshold_cents === 'number') {
             setLowThreshold(club.low_balance_threshold_cents);
           }
+          setPosition(clubPosition);
         } catch {
-          // Non-fatal: fall back to the default threshold for colouring only.
+          // Non-fatal: the balances still render without the club's own figures.
         }
       }
     } catch {
@@ -86,7 +91,7 @@ export default function Money() {
       )}
 
       <div className="flex gap-1 border-b border-slate-200" role="tablist">
-        {TABS.map(({ id, label }) => (
+        {TABS.filter((t) => !t.adminOnly || isAdmin).map(({ id, label }) => (
           <button
             key={id}
             role="tab"
@@ -115,6 +120,13 @@ export default function Money() {
       )}
 
       {tab === 'ledger' && <LedgerList entries={entries} />}
+
+      {tab === 'club' && isAdmin && (
+        <div className="space-y-6">
+          {position && <PositionPanel position={position} />}
+          <AssetPurchaseForms onRecorded={load} />
+        </div>
+      )}
     </div>
   );
 }

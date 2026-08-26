@@ -187,6 +187,11 @@ func main() {
 				admin.POST("/sessions/:id/settle", settlementHandler.SettleSession)
 				admin.POST("/settlements/:id/reverse", settlementHandler.ReverseSettlement)
 
+				// The club's asset position is admin-only: balances are shared
+				// with everyone, but what the club holds is not the same thing.
+				admin.GET("/position", ledgerHandler.GetPosition)
+				admin.GET("/position/integrity", ledgerHandler.GetIntegrity)
+
 				// Announcements
 				admin.POST("/announcements", notificationHandler.SendAnnouncement)
 			}

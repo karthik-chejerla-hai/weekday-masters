@@ -17,6 +17,7 @@ import type {
   SettlementPreview,
   SettlementView,
   PastSession,
+  ClubPosition,
 } from '../types';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
@@ -335,6 +336,13 @@ class ApiService {
 
   async getSessionSettlement(sessionId: string): Promise<SettlementView> {
     const response = await this.client.get<SettlementView>(`/sessions/${sessionId}/settlement`);
+    return response.data;
+  }
+
+  // --- Club position (admin) ----------------------------------------------
+
+  async getClubPosition(): Promise<ClubPosition> {
+    const response = await this.client.get<ClubPosition>('/admin/position');
     return response.data;
   }
 }
