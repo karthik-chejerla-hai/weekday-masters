@@ -97,20 +97,20 @@ Web app: `backend/internal/...`, `frontend/src/...` per plan.md.
 
 ### Frontend
 
-- [ ] T030 [P] [US1] Add ledger calls (`getAccounts`, `getMyAccount`, `getMyEntries`, `recordTopup`, `recordWithdrawal`, `recordOpeningBalances`, `reverseTransaction`) to frontend/src/services/api.ts
-- [ ] T031 [P] [US1] Create `formatCents` and `BalanceChip` (colour-coded ok/low/negative) in frontend/src/components/money/BalanceChip.tsx
-- [ ] T032 [US1] Add the balance chip to the header, right of the avatar, in frontend/src/components/layout/Header.tsx
-- [ ] T033 [US1] Add the Money item to the bottom nav in frontend/src/components/layout/Navigation.tsx
-- [ ] T034 [US1] Create the Money page shell with Balances / My ledger tabs (Club assets tab added in US3) in frontend/src/pages/Money.tsx
-- [ ] T035 [P] [US1] Create the balances list in frontend/src/components/money/BalancesList.tsx
-- [ ] T036 [P] [US1] Create the itemised ledger list with running balance in frontend/src/components/money/LedgerList.tsx
-- [ ] T037 [US1] Create the admin top-up form in frontend/src/components/money/TopupForm.tsx
-- [ ] T038 [US1] Register the `/money` route in frontend/src/App.tsx
+- [X] T030 [P] [US1] Add ledger calls (`getAccounts`, `getMyAccount`, `getMyEntries`, `recordTopup`, `recordWithdrawal`, `recordOpeningBalances`, `reverseTransaction`) to frontend/src/services/api.ts
+- [X] T031 [P] [US1] Create `formatCents` and `BalanceChip` (colour-coded ok/low/negative) in frontend/src/components/money/BalanceChip.tsx
+- [X] T032 [US1] Add the balance chip to the header, right of the avatar, in frontend/src/components/layout/Header.tsx
+- [X] T033 [US1] Add the Money item to the bottom nav in frontend/src/components/layout/Navigation.tsx
+- [X] T034 [US1] Create the Money page shell with Balances / My ledger tabs (Club assets tab added in US3) in frontend/src/pages/Money.tsx
+- [X] T035 [P] [US1] Create the balances list in frontend/src/components/money/BalancesList.tsx
+- [X] T036 [P] [US1] Create the itemised ledger list with running balance in frontend/src/components/money/LedgerList.tsx
+- [X] T037 [US1] Create the admin top-up form in frontend/src/components/money/TopupForm.tsx
+- [X] T038 [US1] Register the `/money` route in frontend/src/App.tsx
 
 ### Frontend tests
 
-- [ ] T039 [P] [US1] Test `formatCents` never uses floating point and renders negatives correctly, in frontend/src/components/money/BalanceChip.test.tsx
-- [ ] T040 [P] [US1] Test the Money page renders balances and the caller's history, in frontend/src/pages/Money.test.tsx
+- [X] T039 [P] [US1] Test `formatCents` never uses floating point and renders negatives correctly, in frontend/src/components/money/BalanceChip.test.tsx
+- [X] T040 [P] [US1] Test the Money page renders balances and the caller's history, in frontend/src/pages/Money.test.tsx
 
 **Checkpoint**: Splitwise can be switched off. This is the MVP.
 

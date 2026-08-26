@@ -9,6 +9,10 @@ import type {
   CreateSessionInput,
   UpdateSessionInput,
   SelectableRSVPStatus,
+  PlayerBalance,
+  MyBalance,
+  LedgerEntryView,
+  Transaction,
 } from '../types';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
@@ -199,6 +203,89 @@ class ApiService {
   // Admin - Announcements
   async sendAnnouncement(title: string, body: string): Promise<Announcement> {
     const response = await this.client.post<Announcement>('/admin/announcements', { title, body });
+    return response.data;
+  }
+
+  // --- Ledger -------------------------------------------------------------
+  //
+  // Every amount here is integer cents. Nothing in the frontend does arithmetic
+  // on dollars; formatCents divides by 100 at the point of display and nowhere
+  // else.
+
+  async listBalances(): Promise<PlayerBalance[]> {
+    const response = await this.client.get<{ items: PlayerBalance[] }>('/accounts');
+    return response.data.items ?? [];
+  }
+
+  async getMyBalance(): Promise<MyBalance> {
+    const response = await this.client.get<MyBalance>('/accounts/me');
+    return response.data;
+  }
+
+  async getMyEntries(limit = 50, offset = 0): Promise<{ items: LedgerEntryView[]; total: number }> {
+    const response = await this.client.get<{ items: LedgerEntryView[]; total: number }>(
+      '/accounts/me/entries',
+      { params: { limit, offset } }
+    );
+    return { items: response.data.items ?? [], total: response.data.total ?? 0 };
+  }
+
+  async recordTopup(userId: string, amountCents: number, description?: string, occurredAt?: string): Promise<Transaction> {
+    const response = await this.client.post<Transaction>('/admin/transactions/topup', {
+      user_id: userId,
+      amount_cents: amountCents,
+      description,
+      occurred_at: occurredAt,
+    });
+    return response.data;
+  }
+
+  async recordWithdrawal(userId: string, amountCents: number, description?: string, occurredAt?: string): Promise<Transaction> {
+    const response = await this.client.post<Transaction>('/admin/transactions/withdrawal', {
+      user_id: userId,
+      amount_cents: amountCents,
+      description,
+      occurred_at: occurredAt,
+    });
+    return response.data;
+  }
+
+  async recordCourtCredit(amountCents: number, description?: string, occurredAt?: string): Promise<Transaction> {
+    const response = await this.client.post<Transaction>('/admin/transactions/court-credit', {
+      amount_cents: amountCents,
+      description,
+      occurred_at: occurredAt,
+    });
+    return response.data;
+  }
+
+  async recordShuttlePurchase(units: number, amountCents: number, description?: string, occurredAt?: string): Promise<Transaction> {
+    const response = await this.client.post<Transaction>('/admin/transactions/shuttle-purchase', {
+      units,
+      amount_cents: amountCents,
+      description,
+      occurred_at: occurredAt,
+    });
+    return response.data;
+  }
+
+  async recordOpeningBalances(input: {
+    players: Array<{ user_id: string; balance_cents: number }>;
+    bank_cents: number;
+    court_credit_cents: number;
+    shuttle_stock: { units: number; amount_cents: number };
+    occurred_at?: string;
+  }): Promise<Transaction> {
+    const response = await this.client.post<Transaction>('/admin/transactions/opening-balances', input);
+    return response.data;
+  }
+
+  // The only way to undo anything. There is no edit or delete endpoint.
+  async reverseTransaction(transactionId: string, description?: string): Promise<Transaction> {
+    const response = await this.client.post<Transaction>(
+      `/admin/transactions/${transactionId}/reverse`,
+      { description }
+    );
     return response.data;
   }
 }

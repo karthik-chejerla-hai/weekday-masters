@@ -5,6 +5,7 @@ import Layout from './components/layout/Layout';
 import Home from './pages/Home';
 import Dashboard from './pages/Dashboard';
 import Sessions from './pages/Sessions';
+import Money from './pages/Money';
 import SessionDetail from './pages/SessionDetail';
 import Profile from './pages/Profile';
 import Admin from './pages/Admin';
@@ -71,6 +72,12 @@ function AppRoutes() {
         <Route path="/sessions/:id" element={
           <ProtectedRoute>
             <SessionDetail />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/money" element={
+          <ProtectedRoute>
+            <Money />
           </ProtectedRoute>
         } />
 

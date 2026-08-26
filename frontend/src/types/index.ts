@@ -26,6 +26,13 @@ export interface Club {
   venue_address: string;
   created_at: string;
   updated_at: string;
+  // Settlement defaults. Present on the admin view of the club; the public
+  // endpoint does not expose rates.
+  base_hours?: number;
+  base_rate_cents?: number;
+  extra_rate_cents?: number;
+  shuttles_per_hour?: number;
+  low_balance_threshold_cents?: number;
 }
 
 export interface Session {
@@ -143,6 +150,17 @@ export interface PlayerBalance {
 export interface MyBalance {
   balance_cents: number;
   state: BalanceState;
+}
+
+export interface Transaction {
+  id: string;
+  kind: TransactionKind;
+  session_id?: string;
+  reverses_transaction_id?: string;
+  description: string;
+  occurred_at: string;
+  created_by: string;
+  created_at: string;
 }
 
 export interface LedgerEntryView {
