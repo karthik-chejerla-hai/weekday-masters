@@ -67,6 +67,8 @@ func main() {
 	rsvpHandler := handlers.NewRSVPHandler(rsvpService)
 	adminHandler := handlers.NewAdminHandler(userService, sessionService, rsvpService)
 	notificationHandler := handlers.NewNotificationHandler(notificationService)
+	ledgerService := services.NewLedgerService()
+	ledgerHandler := handlers.NewLedgerHandler(ledgerService)
 
 	// Auth0 config for middleware
 	auth0Config := middleware.Auth0Config{
@@ -132,6 +134,12 @@ func main() {
 				approved.PUT("/sessions/:id/rsvp", rsvpHandler.UpdateRSVP)
 				approved.DELETE("/sessions/:id/rsvp", rsvpHandler.DeleteRSVP)
 				approved.GET("/sessions/:id/rsvp/me", rsvpHandler.GetMyRSVP)
+
+				// Ledger reads. Every approved member can see every balance:
+				// the club already worked this way in Splitwise.
+				approved.GET("/accounts", ledgerHandler.ListBalances)
+				approved.GET("/accounts/me", ledgerHandler.GetMyBalance)
+				approved.GET("/accounts/me/entries", ledgerHandler.GetMyEntries)
 			}
 
 			// Admin routes
@@ -157,6 +165,15 @@ func main() {
 
 				// Club management
 				admin.PUT("/club", adminHandler.UpdateClub)
+
+				// Ledger writes. Only admins move money; there is deliberately
+				// no edit or delete route, only reversal.
+				admin.POST("/transactions/topup", ledgerHandler.RecordTopup)
+				admin.POST("/transactions/withdrawal", ledgerHandler.RecordWithdrawal)
+				admin.POST("/transactions/court-credit", ledgerHandler.RecordCourtCredit)
+				admin.POST("/transactions/shuttle-purchase", ledgerHandler.RecordShuttlePurchase)
+				admin.POST("/transactions/opening-balances", ledgerHandler.RecordOpeningBalances)
+				admin.POST("/transactions/:id/reverse", ledgerHandler.ReverseTransaction)
 
 				// Announcements
 				admin.POST("/announcements", notificationHandler.SendAnnouncement)

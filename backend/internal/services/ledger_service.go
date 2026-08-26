@@ -313,3 +313,352 @@ func (s *LedgerService) BalanceOfKind(tx *gorm.DB, kind models.AccountKind) (int
 	`, kind).Scan(&balance).Error
 	return balance, err
 }
+
+// --- recording money ------------------------------------------------------
+
+// CashInput describes money moving between the club's bank and a member.
+type CashInput struct {
+	UserID      uuid.UUID
+	AmountCents int64
+	OccurredAt  time.Time
+	Description string
+	CreatedBy   uuid.UUID
+}
+
+// RecordTopup records a member paying money into the club.
+//
+// The cash arrives in the bank and the member gains credit of the same amount:
+// the club now holds their money and owes them the value of it.
+func (s *LedgerService) RecordTopup(in CashInput) (*models.Transaction, error) {
+	return s.recordCash(in, models.TxnPlayerTopup, 1)
+}
+
+// RecordWithdrawal records the club paying a member back — settling up with
+// someone who is leaving, or refunding an overpayment.
+func (s *LedgerService) RecordWithdrawal(in CashInput) (*models.Transaction, error) {
+	return s.recordCash(in, models.TxnWithdrawal, -1)
+}
+
+func (s *LedgerService) recordCash(in CashInput, kind models.TransactionKind, sign int64) (*models.Transaction, error) {
+	if in.AmountCents <= 0 {
+		return nil, errors.New("ledger: amount must be greater than zero")
+	}
+
+	playerAccount, err := s.PlayerAccountID(in.UserID)
+	if err != nil {
+		return nil, err
+	}
+	bank, err := s.ClubAccountID(nil, models.AccountKindBank)
+	if err != nil {
+		return nil, err
+	}
+
+	amount := sign * in.AmountCents
+	return s.Post(PostInput{
+		Kind:        kind,
+		Description: in.Description,
+		OccurredAt:  in.OccurredAt,
+		CreatedBy:   in.CreatedBy,
+		Movements: []Movement{
+			{AccountID: bank, AmountCents: amount},
+			{AccountID: playerAccount, AmountCents: amount},
+		},
+	})
+}
+
+// AssetPurchaseInput describes the club converting cash into something it will
+// consume later — credit at the venue, or shuttles.
+type AssetPurchaseInput struct {
+	AmountCents int64
+	Units       int // shuttles only
+	OccurredAt  time.Time
+	Description string
+	CreatedBy   uuid.UUID
+}
+
+// RecordCourtCreditPurchase records topping up the venue account.
+//
+// No player balance moves: this is the club swapping one asset for another. It
+// is exactly why a single "club balance" cannot answer whether the club is
+// square — the money has not gone anywhere, it has only changed form.
+func (s *LedgerService) RecordCourtCreditPurchase(in AssetPurchaseInput) (*models.Transaction, error) {
+	if in.AmountCents <= 0 {
+		return nil, errors.New("ledger: amount must be greater than zero")
+	}
+
+	bank, err := s.ClubAccountID(nil, models.AccountKindBank)
+	if err != nil {
+		return nil, err
+	}
+	courtCredit, err := s.ClubAccountID(nil, models.AccountKindCourtCredit)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.Post(PostInput{
+		Kind:        models.TxnCourtCreditPurchase,
+		Description: in.Description,
+		OccurredAt:  in.OccurredAt,
+		CreatedBy:   in.CreatedBy,
+		Movements: []Movement{
+			{AccountID: bank, AmountCents: -in.AmountCents},
+			{AccountID: courtCredit, AmountCents: in.AmountCents},
+		},
+	})
+}
+
+// RecordShuttlePurchase records buying shuttles.
+//
+// Both the value and the count go into stock. Buying at a new price blends
+// automatically and never revalues what is already in the bag.
+func (s *LedgerService) RecordShuttlePurchase(in AssetPurchaseInput) (*models.Transaction, error) {
+	if in.AmountCents <= 0 {
+		return nil, errors.New("ledger: amount must be greater than zero")
+	}
+	if in.Units <= 0 {
+		return nil, errors.New("ledger: shuttle count must be greater than zero")
+	}
+
+	bank, err := s.ClubAccountID(nil, models.AccountKindBank)
+	if err != nil {
+		return nil, err
+	}
+	stock, err := s.ClubAccountID(nil, models.AccountKindShuttleStock)
+	if err != nil {
+		return nil, err
+	}
+
+	units := in.Units
+	return s.Post(PostInput{
+		Kind:        models.TxnShuttlePurchase,
+		Description: in.Description,
+		OccurredAt:  in.OccurredAt,
+		CreatedBy:   in.CreatedBy,
+		Movements: []Movement{
+			{AccountID: bank, AmountCents: -in.AmountCents},
+			{AccountID: stock, AmountCents: in.AmountCents, Units: &units},
+		},
+	})
+}
+
+// --- opening balances -----------------------------------------------------
+
+// OpeningPlayerBalance is one member's carried-over balance at go-live.
+type OpeningPlayerBalance struct {
+	UserID       uuid.UUID `json:"user_id"`
+	BalanceCents int64     `json:"balance_cents"`
+}
+
+// OpeningBalancesInput seeds the ledger from whatever the club was using before.
+type OpeningBalancesInput struct {
+	Players          []OpeningPlayerBalance
+	BankCents        int64
+	CourtCreditCents int64
+	ShuttleUnits     int
+	ShuttleCents     int64
+	OccurredAt       time.Time
+	CreatedBy        uuid.UUID
+}
+
+// RecordOpeningBalances writes the club's starting position in one transaction.
+//
+// Surplus is not supplied by the caller: it is whatever makes the books balance.
+// If the club's assets exceed what members have prepaid, that difference is real
+// and belongs somewhere, and pretending it is zero would only push the error
+// into the first transaction after go-live.
+//
+// Accepted once. A second call is refused rather than merged, because "seed the
+// ledger" twice almost always means someone ran the import script again.
+func (s *LedgerService) RecordOpeningBalances(in OpeningBalancesInput) (*models.Transaction, error) {
+	var existing int64
+	if err := database.DB.Model(&models.Transaction{}).
+		Where("kind = ?", models.TxnOpeningBalance).Count(&existing).Error; err != nil {
+		return nil, err
+	}
+	if existing > 0 {
+		return nil, ErrOpeningBalancesAlreadyRecorded()
+	}
+	if in.ShuttleUnits < 0 || in.ShuttleCents < 0 {
+		return nil, errors.New("ledger: opening shuttle stock cannot be negative")
+	}
+
+	movements := make([]Movement, 0, len(in.Players)+4)
+
+	var playerTotal int64
+	for _, p := range in.Players {
+		if p.BalanceCents == 0 {
+			continue
+		}
+		accountID, err := s.PlayerAccountID(p.UserID)
+		if err != nil {
+			return nil, err
+		}
+		movements = append(movements, Movement{AccountID: accountID, AmountCents: p.BalanceCents})
+		playerTotal += p.BalanceCents
+	}
+
+	assets := map[models.AccountKind]int64{
+		models.AccountKindBank:         in.BankCents,
+		models.AccountKindCourtCredit:  in.CourtCreditCents,
+		models.AccountKindShuttleStock: in.ShuttleCents,
+	}
+	var assetTotal int64
+	for _, kind := range []models.AccountKind{
+		models.AccountKindBank, models.AccountKindCourtCredit, models.AccountKindShuttleStock,
+	} {
+		amount := assets[kind]
+		assetTotal += amount
+		if amount == 0 && !(kind == models.AccountKindShuttleStock && in.ShuttleUnits > 0) {
+			continue
+		}
+		accountID, err := s.ClubAccountID(nil, kind)
+		if err != nil {
+			return nil, err
+		}
+		movement := Movement{AccountID: accountID, AmountCents: amount}
+		if kind == models.AccountKindShuttleStock {
+			units := in.ShuttleUnits
+			movement.Units = &units
+		}
+		movements = append(movements, movement)
+	}
+
+	// The balancing figure.
+	if surplus := assetTotal - playerTotal; surplus != 0 {
+		accountID, err := s.ClubAccountID(nil, models.AccountKindSurplus)
+		if err != nil {
+			return nil, err
+		}
+		movements = append(movements, Movement{AccountID: accountID, AmountCents: surplus})
+	}
+
+	if len(movements) == 0 {
+		return nil, errors.New("ledger: opening balances would move nothing")
+	}
+
+	return s.Post(PostInput{
+		Kind:        models.TxnOpeningBalance,
+		Description: "Opening balances at go-live",
+		OccurredAt:  in.OccurredAt,
+		CreatedBy:   in.CreatedBy,
+		Movements:   movements,
+	})
+}
+
+// --- reversal -------------------------------------------------------------
+
+// ReverseTransaction undoes a transaction by posting its exact negation.
+//
+// Negation is correct by construction: if the original balanced, so does its
+// mirror image, which means a reversal can never fail the invariant check. It
+// also means reversal needs to understand nothing about what the original meant
+// — only what it moved. Balances unwind correctly even if the members involved
+// have transacted since, because entries accumulate rather than snapshot.
+func (s *LedgerService) ReverseTransaction(transactionID uuid.UUID, description string, createdBy uuid.UUID) (*models.Transaction, error) {
+	var original models.Transaction
+	if err := database.DB.Preload("Entries").First(&original, "id = ?", transactionID).Error; err != nil {
+		return nil, err
+	}
+
+	var alreadyReversed int64
+	if err := database.DB.Model(&models.Transaction{}).
+		Where("reverses_transaction_id = ?", transactionID).Count(&alreadyReversed).Error; err != nil {
+		return nil, err
+	}
+	if alreadyReversed > 0 {
+		return nil, ErrTransactionAlreadyReversed()
+	}
+
+	movements := make([]Movement, 0, len(original.Entries))
+	for _, entry := range original.Entries {
+		movement := Movement{AccountID: entry.AccountID, AmountCents: -entry.AmountCents}
+		if entry.Units != nil {
+			negated := -*entry.Units
+			movement.Units = &negated
+		}
+		movements = append(movements, movement)
+	}
+	if len(movements) == 0 {
+		return nil, errors.New("ledger: nothing to reverse")
+	}
+
+	if description == "" {
+		description = "Reversal of " + string(original.Kind)
+	}
+
+	return s.Post(PostInput{
+		Kind:                  models.TxnReversal,
+		SessionID:             original.SessionID,
+		ReversesTransactionID: &original.ID,
+		Description:           description,
+		OccurredAt:            utils.NowInSydney(),
+		CreatedBy:             createdBy,
+		Movements:             movements,
+	})
+}
+
+// --- history --------------------------------------------------------------
+
+// LedgerEntryView is one line of a member's history, carrying the balance that
+// line produced so the reader can follow the arithmetic rather than redo it.
+type LedgerEntryView struct {
+	ID                uuid.UUID              `json:"id"`
+	OccurredAt        time.Time              `json:"occurred_at"`
+	Kind              models.TransactionKind `json:"kind"`
+	Description       string                 `json:"description"`
+	AmountCents       int64                  `json:"amount_cents"`
+	BalanceAfterCents int64                  `json:"balance_after_cents"`
+	SessionID         *uuid.UUID             `json:"session_id,omitempty"`
+	Reversed          bool                   `json:"reversed"`
+}
+
+// MyEntries returns a member's history, newest first.
+//
+// The running balance is computed over the member's whole history and only then
+// paged, so page two does not restart the arithmetic from zero.
+func (s *LedgerService) MyEntries(userID uuid.UUID, limit, offset int) ([]LedgerEntryView, int64, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	var total int64
+	if err := database.DB.Raw(`
+		SELECT COUNT(*)
+		FROM ledger_entries e
+		JOIN accounts a ON a.id = e.account_id
+		WHERE a.user_id = ?
+	`, userID).Scan(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var views []LedgerEntryView
+	err := database.DB.Raw(`
+		SELECT * FROM (
+			SELECT e.id,
+			       t.occurred_at,
+			       t.kind,
+			       t.description,
+			       e.amount_cents,
+			       SUM(e.amount_cents) OVER (
+			           ORDER BY t.occurred_at, e.created_at, e.id
+			       ) AS balance_after_cents,
+			       t.session_id,
+			       EXISTS (
+			           SELECT 1 FROM transactions r WHERE r.reverses_transaction_id = t.id
+			       ) AS reversed
+			FROM ledger_entries e
+			JOIN transactions t ON t.id = e.transaction_id
+			JOIN accounts a ON a.id = e.account_id
+			WHERE a.user_id = ?
+		) history
+		ORDER BY occurred_at DESC, id DESC
+		LIMIT ? OFFSET ?
+	`, userID, limit, offset).Scan(&views).Error
+	if err != nil {
+		return nil, 0, err
+	}
+	return views, total, nil
+}

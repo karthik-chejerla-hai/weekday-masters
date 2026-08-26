@@ -55,7 +55,12 @@ func Migrate() error {
 	DB.Model(&models.Club{}).Count(&count)
 	if count == 0 {
 		club := models.Club{
-			Name: "Rally Badminton Club",
+			Name:                     "Rally Badminton Club",
+			BaseHours:                2,
+			BaseRateCents:            3000,
+			ExtraRateCents:           2300,
+			ShuttlesPerHour:          5,
+			LowBalanceThresholdCents: 2000,
 		}
 		DB.Create(&club)
 		log.Println("Created default club")

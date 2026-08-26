@@ -268,3 +268,300 @@ func TestClubAccountsExist(t *testing.T) {
 		}
 	}
 }
+
+// --- User Story 1 ---------------------------------------------------------
+
+func TestRecordTopupMovesBankAndPlayerTogether(t *testing.T) {
+	ls, user, playerAccount := newLedger(t)
+
+	if _, err := ls.RecordTopup(CashInput{
+		UserID:      user.ID,
+		AmountCents: 5000,
+		Description: "Bank transfer",
+		CreatedBy:   user.ID,
+	}); err != nil {
+		t.Fatalf("topup failed: %v", err)
+	}
+
+	player, _ := ls.BalanceOf(playerAccount)
+	bank, _ := ls.BalanceOfKind(nil, models.AccountKindBank)
+	if player != 5000 {
+		t.Errorf("player balance = %d, want 5000", player)
+	}
+	if bank != 5000 {
+		t.Errorf("bank = %d, want 5000 — the club is holding their money", bank)
+	}
+	assertBalanced(t)
+}
+
+func TestRecordWithdrawalPaysAMemberBack(t *testing.T) {
+	ls, user, playerAccount := newLedger(t)
+
+	if _, err := ls.RecordTopup(CashInput{UserID: user.ID, AmountCents: 5000, CreatedBy: user.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ls.RecordWithdrawal(CashInput{
+		UserID:      user.ID,
+		AmountCents: 2000,
+		Description: "Settled up on leaving",
+		CreatedBy:   user.ID,
+	}); err != nil {
+		t.Fatalf("withdrawal failed: %v", err)
+	}
+
+	player, _ := ls.BalanceOf(playerAccount)
+	bank, _ := ls.BalanceOfKind(nil, models.AccountKindBank)
+	if player != 3000 || bank != 3000 {
+		t.Errorf("player = %d, bank = %d; want 3000 and 3000", player, bank)
+	}
+	assertBalanced(t)
+}
+
+func TestRecordTopupRejectsNonPositiveAmounts(t *testing.T) {
+	ls, user, _ := newLedger(t)
+
+	for _, amount := range []int64{0, -100} {
+		if _, err := ls.RecordTopup(CashInput{UserID: user.ID, AmountCents: amount, CreatedBy: user.ID}); err == nil {
+			t.Errorf("topup of %d was accepted; want an error", amount)
+		}
+	}
+}
+
+// A mistake is corrected by reversing it, and both halves stay on the record.
+func TestReverseRestoresBalancesAndKeepsBothEntries(t *testing.T) {
+	ls, user, playerAccount := newLedger(t)
+
+	txn, err := ls.RecordTopup(CashInput{
+		UserID:      user.ID,
+		AmountCents: 5000,
+		Description: "Recorded against the wrong player",
+		CreatedBy:   user.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := ls.ReverseTransaction(txn.ID, "Wrong player", user.ID); err != nil {
+		t.Fatalf("reversal failed: %v", err)
+	}
+
+	balance, _ := ls.BalanceOf(playerAccount)
+	if balance != 0 {
+		t.Errorf("balance after reversal = %d, want 0", balance)
+	}
+
+	var transactions int64
+	database.DB.Model(&models.Transaction{}).Count(&transactions)
+	if transactions != 2 {
+		t.Errorf("got %d transactions, want 2 — the error and its correction both stay visible", transactions)
+	}
+
+	assertBalanced(t)
+}
+
+func TestReverseRefusesASecondReversal(t *testing.T) {
+	ls, user, _ := newLedger(t)
+
+	txn, err := ls.RecordTopup(CashInput{UserID: user.ID, AmountCents: 5000, CreatedBy: user.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ls.ReverseTransaction(txn.ID, "", user.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = ls.ReverseTransaction(txn.ID, "", user.ID)
+	var ledgerErr *LedgerError
+	if !errors.As(err, &ledgerErr) || ledgerErr.Code != CodeTransactionAlreadyReverse {
+		t.Fatalf("got %v, want %s", err, CodeTransactionAlreadyReverse)
+	}
+}
+
+// Reversing must unwind the shuttle count as well as the value, or the bag and
+// the books stop agreeing.
+func TestReverseUnwindsShuttleUnits(t *testing.T) {
+	ls, user, _ := newLedger(t)
+
+	txn, err := ls.RecordShuttlePurchase(AssetPurchaseInput{
+		AmountCents: 5000, Units: 12, Description: "1 tube", CreatedBy: user.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stock, _ := ls.StockPosition(nil)
+	if stock.Units != 12 || stock.ValueCents != 5000 {
+		t.Fatalf("stock after purchase = %+v, want {5000 12}", stock)
+	}
+
+	if _, err := ls.ReverseTransaction(txn.ID, "Returned the tube", user.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	stock, _ = ls.StockPosition(nil)
+	if stock.Units != 0 || stock.ValueCents != 0 {
+		t.Errorf("stock after reversal = %+v, want empty", stock)
+	}
+	assertBalanced(t)
+}
+
+// Balances carried over from Splitwise, with surplus as the balancing figure.
+func TestOpeningBalancesSeedTheClub(t *testing.T) {
+	ls, user, playerAccount := newLedger(t)
+	other := newUser(t, "other")
+	if _, err := ls.EnsurePlayerAccount(other.ID, other.Name); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := ls.RecordOpeningBalances(OpeningBalancesInput{
+		Players: []OpeningPlayerBalance{
+			{UserID: user.ID, BalanceCents: 4250},
+			{UserID: other.ID, BalanceCents: 3100},
+		},
+		BankCents:        1850,
+		CourtCreditCents: 1700,
+		ShuttleUnits:     9,
+		ShuttleCents:     3750,
+		CreatedBy:        user.ID,
+	}); err != nil {
+		t.Fatalf("opening balances failed: %v", err)
+	}
+
+	if balance, _ := ls.BalanceOf(playerAccount); balance != 4250 {
+		t.Errorf("carried-over balance = %d, want 4250", balance)
+	}
+
+	stock, _ := ls.StockPosition(nil)
+	if stock.Units != 9 || stock.ValueCents != 3750 {
+		t.Errorf("opening stock = %+v, want {3750 9}", stock)
+	}
+
+	// Assets 7300, members hold 7350, so the club is 50 cents short — surplus
+	// carries the difference rather than the books being wrong.
+	surplus, _ := ls.BalanceOfKind(nil, models.AccountKindSurplus)
+	if surplus != -50 {
+		t.Errorf("surplus = %d, want -50 as the balancing figure", surplus)
+	}
+
+	assertBalanced(t)
+}
+
+func TestOpeningBalancesRefuseASecondRun(t *testing.T) {
+	ls, user, _ := newLedger(t)
+
+	in := OpeningBalancesInput{
+		Players:   []OpeningPlayerBalance{{UserID: user.ID, BalanceCents: 4250}},
+		BankCents: 4250,
+		CreatedBy: user.ID,
+	}
+	if _, err := ls.RecordOpeningBalances(in); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := ls.RecordOpeningBalances(in)
+	var ledgerErr *LedgerError
+	if !errors.As(err, &ledgerErr) || ledgerErr.Code != CodeOpeningBalancesRecorded {
+		t.Fatalf("got %v, want %s", err, CodeOpeningBalancesRecorded)
+	}
+}
+
+// A member must be able to follow their own arithmetic: every running balance
+// in the list has to agree with the balance derived from the entries up to it.
+func TestMyEntriesRunningBalanceReconciles(t *testing.T) {
+	ls, user, playerAccount := newLedger(t)
+
+	for _, amount := range []int64{5000, 2500, 1234, 99} {
+		if _, err := ls.RecordTopup(CashInput{
+			UserID: user.ID, AmountCents: amount, Description: "top-up", CreatedBy: user.ID,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := ls.RecordWithdrawal(CashInput{
+		UserID: user.ID, AmountCents: 1000, Description: "refund", CreatedBy: user.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	views, total, err := ls.MyEntries(user.ID, 50, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 5 {
+		t.Fatalf("total = %d, want 5", total)
+	}
+
+	// Newest first, so the first row's running balance is the current balance.
+	current, _ := ls.BalanceOf(playerAccount)
+	if views[0].BalanceAfterCents != current {
+		t.Errorf("newest running balance = %d, but the account holds %d",
+			views[0].BalanceAfterCents, current)
+	}
+
+	// And walking backwards, each row differs from the next by its own amount.
+	for i := 0; i < len(views)-1; i++ {
+		if views[i].BalanceAfterCents-views[i].AmountCents != views[i+1].BalanceAfterCents {
+			t.Errorf("row %d does not follow from row %d: %d − %d ≠ %d",
+				i, i+1, views[i].BalanceAfterCents, views[i].AmountCents, views[i+1].BalanceAfterCents)
+		}
+	}
+}
+
+// Paging must not restart the arithmetic from zero on page two.
+func TestMyEntriesRunningBalanceSurvivesPaging(t *testing.T) {
+	ls, user, _ := newLedger(t)
+
+	for i := 0; i < 6; i++ {
+		if _, err := ls.RecordTopup(CashInput{
+			UserID: user.ID, AmountCents: 1000, Description: "top-up", CreatedBy: user.ID,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	all, _, err := ls.MyEntries(user.ID, 50, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page2, _, err := ls.MyEntries(user.ID, 3, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i, view := range page2 {
+		if view.BalanceAfterCents != all[i+3].BalanceAfterCents {
+			t.Errorf("paged row %d has balance %d, want %d", i, view.BalanceAfterCents, all[i+3].BalanceAfterCents)
+		}
+	}
+}
+
+// A reversed transaction stays in the list, flagged, rather than disappearing.
+func TestMyEntriesFlagsReversedTransactions(t *testing.T) {
+	ls, user, _ := newLedger(t)
+
+	txn, err := ls.RecordTopup(CashInput{UserID: user.ID, AmountCents: 5000, CreatedBy: user.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ls.ReverseTransaction(txn.ID, "wrong player", user.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	views, total, err := ls.MyEntries(user.ID, 50, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 2 {
+		t.Fatalf("total = %d, want 2", total)
+	}
+
+	var flagged int
+	for _, v := range views {
+		if v.Reversed {
+			flagged++
+		}
+	}
+	if flagged != 1 {
+		t.Errorf("%d entries flagged as reversed, want exactly 1 (the original)", flagged)
+	}
+}

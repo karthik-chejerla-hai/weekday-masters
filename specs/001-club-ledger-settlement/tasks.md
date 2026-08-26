@@ -80,20 +80,20 @@ Web app: `backend/internal/...`, `frontend/src/...` per plan.md.
 
 ### Backend
 
-- [ ] T019 [US1] Implement `RecordTopup` and `RecordWithdrawal` on backend/internal/services/ledger_service.go
-- [ ] T020 [US1] Implement `RecordOpeningBalances`, computing surplus as the balancing figure and rejecting a second call, in backend/internal/services/ledger_service.go
-- [ ] T021 [US1] Implement `ReverseTransaction`, posting the exact negation including `units`, in backend/internal/services/ledger_service.go
-- [ ] T022 [US1] Implement `MyEntries` with running `balance_after_cents` over the ordered entries, in backend/internal/services/ledger_service.go
-- [ ] T023 [US1] Create handlers for the read endpoints in contracts/ledger.md (`GET /api/accounts`, `/api/accounts/me`, `/api/accounts/me/entries`) in backend/internal/handlers/ledger.go
-- [ ] T024 [US1] Create handlers for the write endpoints (topup, withdrawal, opening-balances, reverse) in backend/internal/handlers/ledger.go
-- [ ] T025 [US1] Register reads on the `approved` group and every write on the `admin` group in backend/cmd/server/main.go — Principle III, verify the group before moving on
+- [X] T019 [US1] Implement `RecordTopup` and `RecordWithdrawal` on backend/internal/services/ledger_service.go
+- [X] T020 [US1] Implement `RecordOpeningBalances`, computing surplus as the balancing figure and rejecting a second call, in backend/internal/services/ledger_service.go
+- [X] T021 [US1] Implement `ReverseTransaction`, posting the exact negation including `units`, in backend/internal/services/ledger_service.go
+- [X] T022 [US1] Implement `MyEntries` with running `balance_after_cents` over the ordered entries, in backend/internal/services/ledger_service.go
+- [X] T023 [US1] Create handlers for the read endpoints in contracts/ledger.md (`GET /api/accounts`, `/api/accounts/me`, `/api/accounts/me/entries`) in backend/internal/handlers/ledger.go
+- [X] T024 [US1] Create handlers for the write endpoints (topup, withdrawal, opening-balances, reverse) in backend/internal/handlers/ledger.go
+- [X] T025 [US1] Register reads on the `approved` group and every write on the `admin` group in backend/cmd/server/main.go — Principle III, verify the group before moving on
 
 ### Backend tests
 
-- [ ] T026 [P] [US1] Test top-up moves bank and player together and leaves the identity balanced, in backend/internal/services/ledger_service_test.go
-- [ ] T027 [P] [US1] Test reversal restores balances, leaves both transactions visible, and refuses a second reversal, in backend/internal/services/ledger_service_test.go
-- [ ] T028 [P] [US1] Test opening balances seed players, assets and surplus so the identity holds, and reject a second call, in backend/internal/services/ledger_service_test.go
-- [ ] T029 [P] [US1] Test `MyEntries` running balance equals the derived balance at every row, in backend/internal/services/ledger_service_test.go
+- [X] T026 [P] [US1] Test top-up moves bank and player together and leaves the identity balanced, in backend/internal/services/ledger_service_test.go
+- [X] T027 [P] [US1] Test reversal restores balances, leaves both transactions visible, and refuses a second reversal, in backend/internal/services/ledger_service_test.go
+- [X] T028 [P] [US1] Test opening balances seed players, assets and surplus so the identity holds, and reject a second call, in backend/internal/services/ledger_service_test.go
+- [X] T029 [P] [US1] Test `MyEntries` running balance equals the derived balance at every row, in backend/internal/services/ledger_service_test.go
 
 ### Frontend
 
