@@ -356,11 +356,13 @@ export interface NotificationPreferences {
   push_rsvp_deadlines: boolean;
   push_waitlist_updates: boolean;
   push_admin_announcements: boolean;
+  push_balance_alerts: boolean;
   email_enabled: boolean;
   email_session_reminders: boolean;
   email_rsvp_deadlines: boolean;
   email_waitlist_updates: boolean;
   email_admin_announcements: boolean;
+  email_balance_alerts: boolean;
   created_at: string;
   updated_at: string;
 }

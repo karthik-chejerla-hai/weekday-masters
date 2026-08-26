@@ -223,14 +223,14 @@ Web app: `backend/internal/...`, `frontend/src/...` per plan.md.
 
 **Depends on**: Phase 5.
 
-- [ ] T094 [P] [US4] Add `balance_low` and `balance_negative` notification types in backend/internal/models/notification.go
-- [ ] T095 [US4] Add `push_balance_alerts` / `email_balance_alerts` preference fields and the two cases in `IsPushEnabledForType` / `IsEmailEnabledForType`, in backend/internal/models/notification.go
-- [ ] T096 [US4] Dispatch balance reminders after a successful settlement, to that session's participants only, at most once each, in backend/internal/services/settlement_service.go
-- [ ] T097 [US4] Compose reminder copy carrying what the session cost and the resulting balance, in backend/internal/services/notification_service.go
-- [ ] T098 [P] [US4] Test low and negative thresholds notify the right participants and nobody else, in backend/internal/services/settlement_service_test.go
-- [ ] T099 [P] [US4] Test a low-balance member who did not play is not notified, in backend/internal/services/settlement_service_test.go
-- [ ] T100 [P] [US4] Test opted-out members are not notified, in backend/internal/services/settlement_service_test.go
-- [ ] T101 [P] [US4] Add the balance alert toggles to frontend/src/components/notifications/NotificationSettings.tsx
+- [X] T094 [P] [US4] Add `balance_low` and `balance_negative` notification types in backend/internal/models/notification.go
+- [X] T095 [US4] Add `push_balance_alerts` / `email_balance_alerts` preference fields and the two cases in `IsPushEnabledForType` / `IsEmailEnabledForType`, in backend/internal/models/notification.go
+- [X] T096 [US4] Dispatch balance reminders after a successful settlement, to that session's participants only, at most once each, in backend/internal/services/settlement_service.go
+- [X] T097 [US4] Compose reminder copy carrying what the session cost and the resulting balance, in backend/internal/services/notification_service.go
+- [X] T098 [P] [US4] Test low and negative thresholds notify the right participants and nobody else, in backend/internal/services/settlement_service_test.go
+- [X] T099 [P] [US4] Test a low-balance member who did not play is not notified, in backend/internal/services/settlement_service_test.go
+- [X] T100 [P] [US4] Test opted-out members are not notified, in backend/internal/services/settlement_service_test.go
+- [X] T101 [P] [US4] Add the balance alert toggles to frontend/src/components/notifications/NotificationSettings.tsx
 
 **Checkpoint**: All four stories delivered.
 

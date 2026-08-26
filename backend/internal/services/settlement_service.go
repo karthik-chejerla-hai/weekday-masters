@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -20,7 +21,8 @@ import (
 // works out who owes what, and hands the resulting movements over to the one
 // thing allowed to touch the ledger.
 type SettlementService struct {
-	ledger *LedgerService
+	ledger   *LedgerService
+	notifier BalanceNotifier
 }
 
 func NewSettlementService(ledger *LedgerService) *SettlementService {
@@ -536,6 +538,14 @@ func (s *SettlementService) Settle(in SettleInput) (*models.Settlement, *Settlem
 		return nil, nil, err
 	}
 
+	// After the commit, deliberately. A reminder about a balance that was then
+	// rolled back would be a lie, and notification failures must not undo a
+	// settlement that already happened.
+	var session models.Session
+	if err := database.DB.Select("title").First(&session, "id = ?", in.SessionID).Error; err == nil {
+		s.notifyLowBalances(context.Background(), preview, session.Title)
+	}
+
 	return settlement, preview, nil
 }
 
@@ -854,4 +864,84 @@ func (s *SettlementService) SettlementForSession(sessionID uuid.UUID) (*Settleme
 		SettledAt:  settlement.SettledAt,
 		ReversedAt: settlement.ReversedAt,
 	}, nil
+}
+
+// --- balance reminders ----------------------------------------------------
+
+// BalanceNotifier is the slice of NotificationService that settlement needs.
+type BalanceNotifier interface {
+	SendNotification(
+		ctx context.Context,
+		userID uuid.UUID,
+		notifType models.NotificationType,
+		title, body string,
+		data map[string]string,
+	) error
+}
+
+// WithNotifier attaches the notifier used for balance reminders. Optional: the
+// settlement service works without one, it just says nothing afterwards.
+func (s *SettlementService) WithNotifier(notifier BalanceNotifier) *SettlementService {
+	s.notifier = notifier
+	return s
+}
+
+// notifyLowBalances tells the people who just went below the line.
+//
+// Reminders fire on settlement rather than on a schedule for two reasons: it is
+// the moment the balance actually moved, and the message can say what the night
+// cost rather than nagging in the abstract. Only that session's participants are
+// considered — a member who did not play has not just been charged, so there is
+// nothing new to tell them.
+func (s *SettlementService) notifyLowBalances(
+	ctx context.Context,
+	preview *SettlementPreview,
+	sessionTitle string,
+) {
+	if s.notifier == nil {
+		return
+	}
+
+	var club models.Club
+	if err := database.DB.First(&club).Error; err != nil {
+		return
+	}
+
+	// One reminder per person, not one per charge line — a member who hosted a
+	// guest paid twice but is still one person.
+	charged := map[uuid.UUID]int64{}
+	order := make([]uuid.UUID, 0, len(preview.Lines))
+	for _, line := range preview.Lines {
+		if line.AmountCents == 0 {
+			continue
+		}
+		if _, seen := charged[line.UserID]; !seen {
+			order = append(order, line.UserID)
+		}
+		charged[line.UserID] += line.AmountCents
+	}
+
+	for _, userID := range order {
+		balance, err := s.ledger.BalanceOfUser(userID)
+		if err != nil {
+			continue
+		}
+		if balance >= club.LowBalanceThresholdCents {
+			continue
+		}
+
+		notifType := models.NotificationBalanceLow
+		title := "Your balance is running low"
+		if balance < 0 {
+			notifType = models.NotificationBalanceNegative
+			title = "You owe the club"
+		}
+
+		body := fmt.Sprintf("%s cost you %s. Your balance is now %s.",
+			sessionTitle, formatCents(charged[userID]), formatCents(balance))
+
+		_ = s.notifier.SendNotification(ctx, userID, notifType, title, body, map[string]string{
+			"balance_cents": fmt.Sprintf("%d", balance),
+		})
+	}
 }

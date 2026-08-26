@@ -69,7 +69,7 @@ func main() {
 	notificationHandler := handlers.NewNotificationHandler(notificationService)
 	ledgerService := services.NewLedgerService()
 	ledgerHandler := handlers.NewLedgerHandler(ledgerService)
-	settlementService := services.NewSettlementService(ledgerService)
+	settlementService := services.NewSettlementService(ledgerService).WithNotifier(notificationService)
 	settlementHandler := handlers.NewSettlementHandler(settlementService)
 
 	// Auth0 config for middleware

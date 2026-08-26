@@ -652,3 +652,173 @@ func TestSettleSplitIsExactAtEveryHeadcount(t *testing.T) {
 		}
 	}
 }
+
+// --- User Story 4: balance reminders --------------------------------------
+
+// notifierFor attaches a recorder to the fixture's settlement service.
+func (f *settlementFixture) withNotifier() *recordingNotifier {
+	notifier := &recordingNotifier{}
+	f.settlement = f.settlement.WithNotifier(notifier)
+	return notifier
+}
+
+func (n *recordingNotifier) typeFor(userID uuid.UUID) models.NotificationType {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	for _, sent := range n.sent {
+		if sent.UserID == userID {
+			return sent.Type
+		}
+	}
+	return ""
+}
+
+func (n *recordingNotifier) countFor(userID uuid.UUID) int {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	var count int
+	for _, sent := range n.sent {
+		if sent.UserID == userID {
+			count++
+		}
+	}
+	return count
+}
+
+// Two tiers: still positive but low, and actually in debt.
+func TestSettleNotifiesPlayersWhoDroppedBelowTheLine(t *testing.T) {
+	f := newSettlementFixture(t, 24, 10000)
+	notifier := f.withNotifier()
+
+	low := f.member(t, "low")
+	negative := f.member(t, "negative")
+	comfortable := f.member(t, "comfortable")
+
+	// A base band across three heads is about $33.89 each. Top them up so each
+	// lands in a different tier afterwards.
+	for user, amount := range map[uuid.UUID]int64{
+		low.ID:         3500,  // ends just under the $20 threshold
+		negative.ID:    1000,  // ends in debt
+		comfortable.ID: 10000, // ends comfortably clear
+	} {
+		if _, err := f.ledger.RecordTopup(CashInput{UserID: user, AmountCents: amount, CreatedBy: f.admin.ID}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, _, err := f.settlement.Settle(SettleInput{
+		SessionID: f.session.ID,
+		Lines: []LineInput{
+			{UserID: low.ID, InBase: true},
+			{UserID: negative.ID, InBase: true},
+			{UserID: comfortable.ID, InBase: true},
+		},
+		SettledBy: f.admin.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := notifier.typeFor(low.ID); got != models.NotificationBalanceLow {
+		t.Errorf("low-balance player got %q, want %q", got, models.NotificationBalanceLow)
+	}
+	if got := notifier.typeFor(negative.ID); got != models.NotificationBalanceNegative {
+		t.Errorf("player in debt got %q, want %q", got, models.NotificationBalanceNegative)
+	}
+	if got := notifier.countFor(comfortable.ID); got != 0 {
+		t.Errorf("comfortable player was notified %d times, want 0", got)
+	}
+}
+
+// The accepted gap in the design: reminders are settlement-driven, so a member
+// who is low but did not play hears nothing. Asserting it means the behaviour is
+// a decision rather than an accident.
+func TestSettleDoesNotNotifyMembersWhoDidNotPlay(t *testing.T) {
+	f := newSettlementFixture(t, 24, 10000)
+	notifier := f.withNotifier()
+
+	played := f.member(t, "played")
+	absent := f.member(t, "absent")
+
+	// The absent member is already below the threshold.
+	if _, err := f.ledger.RecordTopup(CashInput{UserID: absent.ID, AmountCents: 500, CreatedBy: f.admin.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := f.settlement.Settle(SettleInput{
+		SessionID: f.session.ID,
+		Lines:     []LineInput{{UserID: played.ID, InBase: true}},
+		SettledBy: f.admin.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := notifier.countFor(absent.ID); got != 0 {
+		t.Errorf("a member who did not play was notified %d times, want 0", got)
+	}
+	if got := notifier.countFor(played.ID); got != 1 {
+		t.Errorf("the player who played was notified %d times, want 1", got)
+	}
+}
+
+// A member who hosted a guest paid twice but is still one person.
+func TestSettleNotifiesAHostOnlyOnce(t *testing.T) {
+	f := newSettlementFixture(t, 24, 10000)
+	notifier := f.withNotifier()
+
+	host := f.member(t, "host")
+
+	if _, _, err := f.settlement.Settle(SettleInput{
+		SessionID: f.session.ID,
+		Lines: []LineInput{
+			{UserID: host.ID, InBase: true},
+			{UserID: host.ID, GuestName: "Sanjay", InBase: true},
+		},
+		SettledBy: f.admin.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := notifier.countFor(host.ID); got != 1 {
+		t.Errorf("host notified %d times, want 1", got)
+	}
+}
+
+// A comped player was charged nothing, so there is nothing to tell them.
+func TestSettleDoesNotNotifyACompedPlayer(t *testing.T) {
+	f := newSettlementFixture(t, 24, 10000)
+	notifier := f.withNotifier()
+
+	comped := f.member(t, "comped")
+	paying := f.member(t, "paying")
+
+	if _, _, err := f.settlement.Settle(SettleInput{
+		SessionID: f.session.ID,
+		Lines: []LineInput{
+			{UserID: comped.ID, InBase: true, Comped: true},
+			{UserID: paying.ID, InBase: true},
+		},
+		SettledBy: f.admin.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := notifier.countFor(comped.ID); got != 0 {
+		t.Errorf("comped player notified %d times, want 0", got)
+	}
+}
+
+// Settling without a notifier configured must not blow up — notifications are
+// optional infrastructure, and the club still needs to be able to settle.
+func TestSettleWorksWithoutANotifier(t *testing.T) {
+	f := newSettlementFixture(t, 24, 10000)
+	player := f.member(t, "player")
+
+	if _, _, err := f.settlement.Settle(SettleInput{
+		SessionID: f.session.ID,
+		Lines:     []LineInput{{UserID: player.ID, InBase: true}},
+		SettledBy: f.admin.ID,
+	}); err != nil {
+		t.Fatalf("settling without a notifier failed: %v", err)
+	}
+	assertBalanced(t)
+}

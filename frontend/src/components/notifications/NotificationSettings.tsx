@@ -250,6 +250,16 @@ export default function NotificationSettings() {
               pushDisabled={isSaving || !pushGlobalEnabled}
               emailDisabled={isSaving || !emailGlobalEnabled}
             />
+            <NotificationRow
+              label="Balance Alerts"
+              description="Hear about it when a session leaves you running low"
+              pushEnabled={preferences.push_balance_alerts}
+              emailEnabled={preferences.email_balance_alerts}
+              onPushChange={(enabled) => updatePreference('push_balance_alerts', enabled)}
+              onEmailChange={(enabled) => updatePreference('email_balance_alerts', enabled)}
+              pushDisabled={isSaving || !pushGlobalEnabled}
+              emailDisabled={isSaving || !emailGlobalEnabled}
+            />
           </div>
         )}
       </div>
