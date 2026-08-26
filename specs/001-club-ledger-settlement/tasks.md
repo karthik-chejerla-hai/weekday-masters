@@ -120,14 +120,14 @@ Web app: `backend/internal/...`, `frontend/src/...` per plan.md.
 
 **Purpose**: Give sessions a dependable past/upcoming boundary and remove the read-time `HH:MM` parse. Per research.md R10 this blocks US2's history listing but **not** US1 — it can be done in parallel with Phase 3.
 
-- [ ] T041 Add nullable `starts_at` / `ends_at` `timestamptz` fields to the `Session` model in backend/internal/models/session.go
-- [ ] T042 [P] Implement `ResolveSessionTimes(date time.Time, start, end string)` returning Sydney-resolved instants, DST-safe, in backend/internal/utils/time.go
-- [ ] T043 Populate the timestamps on session create and update in backend/internal/services/session_service.go
-- [ ] T044 Add the idempotent SQL backfill (`WHERE starts_at IS NULL`, using `AT TIME ZONE 'Australia/Sydney'`) to `database.Migrate()` in backend/internal/database/db.go
-- [ ] T045 Replace `parseSessionDateTime` with the stored `starts_at` in backend/internal/services/scheduler_service.go
-- [ ] T046 Switch upcoming/cancelled session listing from `session_date >= today` to `ends_at >= now()` in backend/internal/services/session_service.go
-- [ ] T047 [P] Test resolution across the October and April DST boundaries, in backend/internal/utils/time_test.go
-- [ ] T048 [P] Test that a session which ended earlier today is no longer listed as upcoming, in backend/internal/services/session_service_test.go
+- [X] T041 Add nullable `starts_at` / `ends_at` `timestamptz` fields to the `Session` model in backend/internal/models/session.go
+- [X] T042 [P] Implement `ResolveSessionTimes(date time.Time, start, end string)` returning Sydney-resolved instants, DST-safe, in backend/internal/utils/time.go
+- [X] T043 Populate the timestamps on session create and update in backend/internal/services/session_service.go
+- [X] T044 Add the idempotent SQL backfill (`WHERE starts_at IS NULL`, using `AT TIME ZONE 'Australia/Sydney'`) to `database.Migrate()` in backend/internal/database/db.go
+- [X] T045 Replace `parseSessionDateTime` with the stored `starts_at` in backend/internal/services/scheduler_service.go
+- [X] T046 Switch upcoming/cancelled session listing from `session_date >= today` to `ends_at >= now()` in backend/internal/services/session_service.go
+- [X] T047 [P] Test resolution across the October and April DST boundaries, in backend/internal/utils/time_test.go
+- [X] T048 [P] Test that a session which ended earlier today is no longer listed as upcoming, in backend/internal/services/session_service_test.go
 
 **Checkpoint**: Session times are trustworthy; Principle IV satisfied.
 

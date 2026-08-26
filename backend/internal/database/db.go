@@ -50,6 +50,10 @@ func Migrate() error {
 		return err
 	}
 
+	if err := backfillSessionTimestamps(); err != nil {
+		return err
+	}
+
 	// Seed default club if not exists
 	var count int64
 	DB.Model(&models.Club{}).Count(&count)
@@ -129,4 +133,27 @@ func SeedClubAccounts() error {
 		log.Printf("Created club account: %s", names[kind])
 	}
 	return nil
+}
+
+// backfillSessionTimestamps fills in resolved start and end instants for
+// sessions created before those columns existed.
+//
+// PostgreSQL resolves the Sydney wall-clock time itself, which gets DST right
+// without the application looping over rows. Guarded by IS NULL so it is
+// idempotent and safe to re-run on every migrate.
+//
+// An end time at or before the start means the session ran past midnight.
+func backfillSessionTimestamps() error {
+	return DB.Exec(`
+		UPDATE sessions
+		   SET starts_at = (session_date + start_time::time) AT TIME ZONE 'Australia/Sydney',
+		       ends_at = CASE
+		           WHEN end_time::time > start_time::time
+		           THEN (session_date + end_time::time) AT TIME ZONE 'Australia/Sydney'
+		           ELSE (session_date + INTERVAL '1 day' + end_time::time) AT TIME ZONE 'Australia/Sydney'
+		       END
+		 WHERE starts_at IS NULL
+		   AND start_time <> ''
+		   AND end_time <> ''
+	`).Error
 }
