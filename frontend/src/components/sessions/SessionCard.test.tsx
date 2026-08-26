@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import SessionCard from './SessionCard';
@@ -76,5 +76,56 @@ describe('SessionCard Component', () => {
     );
 
     expect(screen.getByText('Cancelled')).toBeInTheDocument();
+  });
+
+  describe('RSVP deadline', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    // Pin "now" so the deadline on baseSession (9 Apr 2026) is in the future.
+    const freezeBefore = () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-04-01T00:00:00Z'));
+    };
+
+    it('shows the RSVP deadline while the session is still open', () => {
+      freezeBefore();
+
+      render(
+        <MemoryRouter>
+          <SessionCard session={baseSession} />
+        </MemoryRouter>
+      );
+
+      expect(screen.getByText(/^RSVP by /)).toBeInTheDocument();
+      expect(screen.queryByText('RSVP Closed')).not.toBeInTheDocument();
+    });
+
+    it('hides the RSVP deadline once it has passed', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-04-11T00:00:00Z'));
+
+      render(
+        <MemoryRouter>
+          <SessionCard session={baseSession} />
+        </MemoryRouter>
+      );
+
+      expect(screen.queryByText(/^RSVP by /)).not.toBeInTheDocument();
+      expect(screen.getByText('RSVP Closed')).toBeInTheDocument();
+    });
+
+    it('hides the RSVP deadline on a cancelled session', () => {
+      freezeBefore();
+
+      render(
+        <MemoryRouter>
+          <SessionCard session={{ ...baseSession, status: 'cancelled' }} />
+        </MemoryRouter>
+      );
+
+      expect(screen.queryByText(/^RSVP by /)).not.toBeInTheDocument();
+    });
   });
 });

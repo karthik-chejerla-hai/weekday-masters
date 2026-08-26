@@ -28,12 +28,24 @@ type CreateSessionInput struct {
 	RecurringDayOfWeek *int
 	Occurrences        *int
 	CreatedBy          uuid.UUID
+	RSVPDeadline       *time.Time // Optional custom deadline; defaults to 3 days before session
 }
 
 // CreateSession creates a new session
 func (s *SessionService) CreateSession(input CreateSessionInput) (*models.Session, error) {
 	if input.Courts < 1 || input.Courts > 3 {
 		return nil, errors.New("courts must be between 1 and 3")
+	}
+
+	// Determine RSVP deadline. Only an explicitly supplied deadline is validated:
+	// the 3-day default lands in the past for short-notice sessions, and admins
+	// must still be able to create those.
+	rsvpDeadline := utils.CalculateRSVPDeadline(input.SessionDate)
+	if input.RSVPDeadline != nil {
+		if input.RSVPDeadline.Before(utils.NowInSydney()) {
+			return nil, errors.New("RSVP deadline cannot be in the past")
+		}
+		rsvpDeadline = *input.RSVPDeadline
 	}
 
 	session := models.Session{
@@ -44,7 +56,7 @@ func (s *SessionService) CreateSession(input CreateSessionInput) (*models.Sessio
 		EndTime:            input.EndTime,
 		Courts:             input.Courts,
 		MaxPlayers:         models.MaxPlayersForCourts(input.Courts),
-		RSVPDeadline:       utils.CalculateRSVPDeadline(input.SessionDate),
+		RSVPDeadline:       rsvpDeadline,
 		IsRecurring:        input.IsRecurring,
 		RecurringDayOfWeek: input.RecurringDayOfWeek,
 		Status:             models.SessionStatusOpen,
@@ -73,6 +85,20 @@ func (s *SessionService) generateRecurringSessions(parent *models.Session, occur
 		return nil
 	}
 
+	// Derive the relative deadline offset from the parent session.
+	// This preserves any custom deadline the admin set on the parent.
+	parentDateSyd := parent.SessionDate.In(utils.SydneyLocation)
+	parentDeadlineSyd := parent.RSVPDeadline.In(utils.SydneyLocation)
+
+	// Count whole days in UTC: subtracting two Sydney midnights across a DST
+	// boundary yields 71 or 73 hours and would truncate to the wrong offset.
+	sessionDay := time.Date(parentDateSyd.Year(), parentDateSyd.Month(), parentDateSyd.Day(), 0, 0, 0, 0, time.UTC)
+	deadlineDay := time.Date(parentDeadlineSyd.Year(), parentDeadlineSyd.Month(), parentDeadlineSyd.Day(), 0, 0, 0, 0, time.UTC)
+	daysBefore := int(sessionDay.Sub(deadlineDay).Hours() / 24)
+	deadlineHour := parentDeadlineSyd.Hour()
+	deadlineMin := parentDeadlineSyd.Minute()
+	deadlineSec := parentDeadlineSyd.Second()
+
 	// Start from the next week after the parent session
 	nextDate := parent.SessionDate.AddDate(0, 0, 7)
 
@@ -88,6 +114,14 @@ func (s *SessionService) generateRecurringSessions(parent *models.Session, occur
 			// Generate title for this occurrence in format "Day - DD MMM YYYY"
 			childTitle := nextDate.Format("Monday - 02 Jan 2006")
 
+			// Compute child deadline using the same relative offset as the parent
+			childDateSyd := nextDate.In(utils.SydneyLocation)
+			childDeadline := time.Date(
+				childDateSyd.Year(), childDateSyd.Month(), childDateSyd.Day()-daysBefore,
+				deadlineHour, deadlineMin, deadlineSec, 0,
+				utils.SydneyLocation,
+			)
+
 			child := models.Session{
 				Title:             childTitle,
 				Description:       parent.Description,
@@ -96,7 +130,7 @@ func (s *SessionService) generateRecurringSessions(parent *models.Session, occur
 				EndTime:           parent.EndTime,
 				Courts:            parent.Courts,
 				MaxPlayers:        parent.MaxPlayers,
-				RSVPDeadline:      utils.CalculateRSVPDeadline(nextDate),
+				RSVPDeadline:      childDeadline,
 				IsRecurring:       false,
 				RecurringParentID: &parent.ID,
 				Status:            models.SessionStatusOpen,
@@ -177,13 +211,14 @@ func (s *SessionService) ListCancelledUpcomingSessions() ([]models.Session, erro
 }
 
 type UpdateSessionInput struct {
-	Title       *string
-	Description *string
-	SessionDate *time.Time
-	StartTime   *string
-	EndTime     *string
-	Courts      *int
-	Status      *models.SessionStatus
+	Title        *string
+	Description  *string
+	SessionDate  *time.Time
+	StartTime    *string
+	EndTime      *string
+	Courts       *int
+	Status       *models.SessionStatus
+	RSVPDeadline *time.Time // Optional; if set, overrides auto-calculated deadline
 }
 
 // UpdateSession updates a session
@@ -201,7 +236,16 @@ func (s *SessionService) UpdateSession(id uuid.UUID, input UpdateSessionInput) (
 	}
 	if input.SessionDate != nil {
 		session.SessionDate = *input.SessionDate
-		session.RSVPDeadline = utils.CalculateRSVPDeadline(*input.SessionDate)
+		// Only auto-recalculate deadline if no explicit deadline is provided
+		if input.RSVPDeadline == nil {
+			session.RSVPDeadline = utils.CalculateRSVPDeadline(*input.SessionDate)
+		}
+	}
+	if input.RSVPDeadline != nil {
+		if input.RSVPDeadline.Before(utils.NowInSydney()) {
+			return nil, errors.New("RSVP deadline cannot be in the past")
+		}
+		session.RSVPDeadline = *input.RSVPDeadline
 	}
 	if input.StartTime != nil {
 		session.StartTime = *input.StartTime

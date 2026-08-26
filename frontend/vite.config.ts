@@ -58,12 +58,12 @@ export default defineConfig({
       include: ['src/**/*.{ts,tsx}'],
       // A ratchet set just under where the suite currently sits, so coverage
       // cannot slide back without someone deciding to lower it. Raise these as
-      // Admin.tsx, AdminSessions.tsx and App.tsx get covered.
+      // Admin.tsx and App.tsx get covered.
       thresholds: {
-        statements: 58,
-        branches: 55,
-        functions: 53,
-        lines: 59,
+        statements: 65,
+        branches: 62,
+        functions: 60,
+        lines: 67,
       },
       exclude: [
         'src/main.tsx',
