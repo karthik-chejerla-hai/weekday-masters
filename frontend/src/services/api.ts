@@ -13,6 +13,10 @@ import type {
   MyBalance,
   LedgerEntryView,
   Transaction,
+  SettlementInput,
+  SettlementPreview,
+  SettlementView,
+  PastSession,
 } from '../types';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
@@ -286,6 +290,51 @@ class ApiService {
       `/admin/transactions/${transactionId}/reverse`,
       { description }
     );
+    return response.data;
+  }
+
+  // --- Settlement ---------------------------------------------------------
+
+  /**
+   * Cost a settlement without writing anything.
+   *
+   * Called on every change to the form, so the numbers on screen are always the
+   * numbers that pressing settle will post.
+   */
+  async previewSettlement(sessionId: string, input: SettlementInput = {}): Promise<SettlementPreview> {
+    const response = await this.client.post<SettlementPreview>(
+      `/admin/sessions/${sessionId}/settlement/preview`,
+      input
+    );
+    return response.data;
+  }
+
+  async settleSession(sessionId: string, input: SettlementInput = {}): Promise<SettlementPreview> {
+    const response = await this.client.post<SettlementPreview>(
+      `/admin/sessions/${sessionId}/settle`,
+      input
+    );
+    return response.data;
+  }
+
+  async reverseSettlement(settlementId: string, description?: string): Promise<Transaction> {
+    const response = await this.client.post<Transaction>(
+      `/admin/settlements/${settlementId}/reverse`,
+      { description }
+    );
+    return response.data;
+  }
+
+  async listSessionHistory(limit = 50, offset = 0): Promise<{ items: PastSession[]; total: number }> {
+    const response = await this.client.get<{ items: PastSession[]; total: number }>(
+      '/sessions/history',
+      { params: { limit, offset } }
+    );
+    return { items: response.data.items ?? [], total: response.data.total ?? 0 };
+  }
+
+  async getSessionSettlement(sessionId: string): Promise<SettlementView> {
+    const response = await this.client.get<SettlementView>(`/sessions/${sessionId}/settlement`);
     return response.data;
   }
 }

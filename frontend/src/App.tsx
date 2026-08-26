@@ -6,6 +6,8 @@ import Home from './pages/Home';
 import Dashboard from './pages/Dashboard';
 import Sessions from './pages/Sessions';
 import Money from './pages/Money';
+import SessionSettlement from './pages/SessionSettlement';
+import AdminSettlement from './pages/AdminSettlement';
 import SessionDetail from './pages/SessionDetail';
 import Profile from './pages/Profile';
 import Admin from './pages/Admin';
@@ -72,6 +74,18 @@ function AppRoutes() {
         <Route path="/sessions/:id" element={
           <ProtectedRoute>
             <SessionDetail />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/sessions/:id/settlement" element={
+          <ProtectedRoute>
+            <SessionSettlement />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/admin/sessions/:id/settle" element={
+          <ProtectedRoute requireAdmin>
+            <AdminSettlement />
           </ProtectedRoute>
         } />
 

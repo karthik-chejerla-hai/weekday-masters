@@ -168,21 +168,21 @@ Web app: `backend/internal/...`, `frontend/src/...` per plan.md.
 
 ### Frontend
 
-- [ ] T068 [P] [US2] Add settlement calls (`previewSettlement`, `settleSession`, `listSessionHistory`, `getSessionSettlement`) to frontend/src/services/api.ts
-- [ ] T069 [US2] Add Upcoming / History tabs to frontend/src/pages/Sessions.tsx
-- [ ] T070 [P] [US2] Create the past-session card showing total and player count in frontend/src/components/sessions/PastSessionCard.tsx
-- [ ] T071 [P] [US2] Create the settlement breakdown view, readable by any member, in frontend/src/components/settlement/SettlementBreakdown.tsx
-- [ ] T072 [US2] Create the admin settlement form — participant rows pre-ticked, extra-hour toggle, comp toggle, rate overrides — in frontend/src/pages/AdminSettlement.tsx
-- [ ] T073 [P] [US2] Create the participant row and guest row controls in frontend/src/components/settlement/ParticipantRow.tsx
-- [ ] T074 [US2] Re-preview on every form change so displayed numbers always match what will be posted, in frontend/src/pages/AdminSettlement.tsx
-- [ ] T075 [US2] Handle `shuttle_stock_short` by offering to record the purchase inline, then retrying, in frontend/src/pages/AdminSettlement.tsx
-- [ ] T076 [US2] Register the settlement route in frontend/src/App.tsx
+- [X] T068 [P] [US2] Add settlement calls (`previewSettlement`, `settleSession`, `listSessionHistory`, `getSessionSettlement`) to frontend/src/services/api.ts
+- [X] T069 [US2] Add Upcoming / History tabs to frontend/src/pages/Sessions.tsx
+- [X] T070 [P] [US2] Create the past-session card showing total and player count in frontend/src/components/sessions/PastSessionCard.tsx
+- [X] T071 [P] [US2] Create the settlement breakdown view, readable by any member, in frontend/src/components/settlement/SettlementBreakdown.tsx
+- [X] T072 [US2] Create the admin settlement form — participant rows pre-ticked, extra-hour toggle, comp toggle, rate overrides — in frontend/src/pages/AdminSettlement.tsx
+- [X] T073 [P] [US2] Create the participant row and guest row controls in frontend/src/components/settlement/ParticipantRow.tsx
+- [X] T074 [US2] Re-preview on every form change so displayed numbers always match what will be posted, in frontend/src/pages/AdminSettlement.tsx
+- [X] T075 [US2] Handle `shuttle_stock_short` by offering to record the purchase inline, then retrying, in frontend/src/pages/AdminSettlement.tsx
+- [X] T076 [US2] Register the settlement route in frontend/src/App.tsx
 
 ### Frontend tests
 
-- [ ] T077 [P] [US2] Test the settlement form previews on change and posts what it displayed, in frontend/src/pages/AdminSettlement.test.tsx
-- [ ] T078 [P] [US2] Test the short-stock inline purchase prompt appears and retries, in frontend/src/pages/AdminSettlement.test.tsx
-- [ ] T079 [P] [US2] Test the History tab renders past sessions and their breakdowns, in frontend/src/pages/Sessions.test.tsx
+- [X] T077 [P] [US2] Test the settlement form previews on change and posts what it displayed, in frontend/src/pages/AdminSettlement.test.tsx
+- [X] T078 [P] [US2] Test the short-stock inline purchase prompt appears and retries, in frontend/src/pages/AdminSettlement.test.tsx
+- [X] T079 [P] [US2] Test the History tab renders past sessions and their breakdowns, in frontend/src/pages/Sessions.test.tsx
 
 **Checkpoint**: The full Splitwise replacement is live.
 
