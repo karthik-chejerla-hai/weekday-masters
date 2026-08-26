@@ -21,10 +21,14 @@ npm install && npm run dev    # :5173
 A scratch database for the test suite, per CLAUDE.md:
 
 ```bash
-docker run -d --name rally-test-db -p 5433:5432 \
+docker run -d --name rally-test-db -p 5434:5432 \
   -e POSTGRES_USER=badminton -e POSTGRES_PASSWORD=badminton123 \
   -e POSTGRES_DB=badminton_club_test postgres:16-alpine
 ```
+
+> CLAUDE.md documents port 5433 for this container. On a machine already running
+> another project's Postgres there, the bind fails — hence 5434 here. Use
+> whichever port is free and match `TEST_DATABASE_URL` to it.
 
 > `requireDB(t)` truncates every table before each test. Never point `TEST_DATABASE_URL`
 > at a database whose contents matter.
@@ -37,7 +41,7 @@ docker run -d --name rally-test-db -p 5433:5432 \
 cd backend
 go test ./...                                   # DB-backed tests skip; must stay green
 
-TEST_DATABASE_URL="postgres://badminton:badminton123@localhost:5433/badminton_club_test?sslmode=disable" \
+TEST_DATABASE_URL="postgres://badminton:badminton123@localhost:5434/badminton_club_test?sslmode=disable" \
   go test -race ./...                           # full suite, including concurrency
 
 go test ./internal/services/money/...           # pure arithmetic, no database needed

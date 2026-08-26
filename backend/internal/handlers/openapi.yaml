@@ -636,6 +636,399 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  # --- Ledger -------------------------------------------------------------
+
+  /accounts:
+    get:
+      tags: [Ledger]
+      summary: List every member's balance
+      description: >
+        Visible to all approved members. The club already worked this way in
+        Splitwise and is comfortable with it. Amounts are integer cents.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Balances
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PlayerBalance"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /accounts/me:
+    get:
+      tags: [Ledger]
+      summary: The caller's own balance
+      description: >
+        Deliberately minimal — this backs the balance chip in the header and is
+        requested on nearly every screen. The state is derived server-side so
+        there is one definition of "running low" rather than two that drift.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Balance and state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  balance_cents:
+                    type: integer
+                    format: int64
+                  state:
+                    type: string
+                    enum: [ok, low, negative]
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /accounts/me/entries:
+    get:
+      tags: [Ledger]
+      summary: The caller's own itemised history
+      description: >
+        Newest first. Each row carries the balance it produced, computed over the
+        member's whole history and only then paged, so page two does not restart
+        the arithmetic from zero.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 200 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        "200":
+          description: Ledger entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/LedgerEntryView"
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /admin/transactions/topup:
+    post:
+      tags: [Ledger]
+      summary: Record money a member paid into the club
+      description: Bank up, that member up. The club now holds their money and owes them its value.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CashRequest"
+      responses:
+        "201":
+          $ref: "#/components/responses/TransactionCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/transactions/withdrawal:
+    post:
+      tags: [Ledger]
+      summary: Record the club paying a member back
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CashRequest"
+      responses:
+        "201":
+          $ref: "#/components/responses/TransactionCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/transactions/court-credit:
+    post:
+      tags: [Ledger]
+      summary: Record topping up the venue account
+      description: >
+        Bank down, court credit up. No player balance moves — this is the club
+        swapping one asset for another, which is exactly why a single club
+        balance cannot answer whether the club is square.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssetPurchaseRequest"
+      responses:
+        "201":
+          $ref: "#/components/responses/TransactionCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/transactions/shuttle-purchase:
+    post:
+      tags: [Ledger]
+      summary: Record shuttles bought
+      description: >
+        Both the value and the count go into stock. Buying at a new price blends
+        automatically and never revalues what is already in the bag.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssetPurchaseRequest"
+      responses:
+        "201":
+          $ref: "#/components/responses/TransactionCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/transactions/opening-balances:
+    post:
+      tags: [Ledger]
+      summary: Seed the ledger at go-live
+      description: >
+        Accepted once. Surplus is not supplied by the caller but computed as
+        whatever makes the books balance.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OpeningBalancesRequest"
+      responses:
+        "201":
+          $ref: "#/components/responses/TransactionCreated"
+        "409":
+          $ref: "#/components/responses/LedgerConflict"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/transactions/{id}/reverse:
+    post:
+      tags: [Ledger]
+      summary: Reverse a transaction
+      description: >
+        Posts the exact negation of the original. This is the only way to undo
+        anything — there is deliberately no edit or delete endpoint, and both the
+        original and its reversal stay visible.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                description:
+                  type: string
+      responses:
+        "201":
+          $ref: "#/components/responses/TransactionCreated"
+        "409":
+          $ref: "#/components/responses/LedgerConflict"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/position:
+    get:
+      tags: [Ledger]
+      summary: The club's true position
+      description: >
+        Bank, prepaid court credit and shuttle stock against what members have
+        prepaid. Admin-only: balances are shared with the whole club, but what the
+        club itself holds is a different question.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Position
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClubPosition"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/position/integrity:
+    get:
+      tags: [Ledger]
+      summary: Recompute the club-position identity from the entries
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Integrity report
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  balanced: { type: boolean }
+                  residual_cents: { type: integer, format: int64 }
+                  entries_checked: { type: integer }
+                  accounts: { type: integer }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  # --- Settlement ---------------------------------------------------------
+
+  /sessions/history:
+    get:
+      tags: [Settlement]
+      summary: Sessions that have been played
+      description: >
+        Newest first. A finished session nobody has costed still appears, marked
+        unsettled — it is exactly what the admin needs reminding about.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 200 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        "200":
+          description: Past sessions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PastSession"
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /sessions/{id}/settlement:
+    get:
+      tags: [Settlement]
+      summary: What a session cost and how it was shared
+      description: >
+        Readable by any approved member — the people in a split are best placed to
+        notice if it is wrong. Rates are the snapshot the session was costed at,
+        not current club settings.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Settlement breakdown
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettlementView"
+        "404":
+          description: Not settled yet
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /admin/sessions/{id}/settlement/preview:
+    post:
+      tags: [Settlement]
+      summary: Cost a settlement without writing anything
+      description: >
+        The form calls this on every change, so the figures on screen are always
+        the figures that settling will post. Omitting `lines` returns the default:
+        everyone who said they were coming.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SettlementRequest"
+      responses:
+        "200":
+          description: Costed preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettlementPreview"
+        "422":
+          $ref: "#/components/responses/LedgerUnprocessable"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/sessions/{id}/settle:
+    post:
+      tags: [Settlement]
+      summary: Settle a session
+      description: >
+        Draws the court cost from credit, the shuttles from stock, and charges
+        each participant — in one atomic operation. Never touches the bank: that
+        cash moved when members topped up and when the club bought credit and
+        shuttles. Refused if the session is already settled.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SettlementRequest"
+      responses:
+        "201":
+          description: Settled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettlementPreview"
+        "409":
+          $ref: "#/components/responses/LedgerConflict"
+        "422":
+          $ref: "#/components/responses/LedgerUnprocessable"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/settlements/{id}/reverse:
+    post:
+      tags: [Settlement]
+      summary: Reverse a settlement
+      description: >
+        Unwinds the charges, the court credit and the shuttle count, and frees the
+        session to be settled again. Both the settlement and its reversal remain
+        visible.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                description:
+                  type: string
+      responses:
+        "201":
+          $ref: "#/components/responses/TransactionCreated"
+        "409":
+          $ref: "#/components/responses/LedgerConflict"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -668,6 +1061,30 @@ components:
         format: uuid
 
   responses:
+    TransactionCreated:
+      description: Transaction written
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Transaction"
+    LedgerConflict:
+      description: >
+        The request conflicts with what has already happened — the session is
+        already settled, the transaction was already reversed, or opening
+        balances have already been recorded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/LedgerError"
+    LedgerUnprocessable:
+      description: >
+        The request is well-formed but cannot be carried out — most often
+        `shuttle_stock_short`, whose details carry the numbers the settlement form
+        needs to offer recording the missing purchase.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/LedgerError"
     BadRequest:
       description: Bad request
       content:
@@ -1125,3 +1542,272 @@ components:
           type: string
         body:
           type: string
+
+    # --- Ledger -------------------------------------------------------------
+    #
+    # Every monetary field is integer cents in a `*_cents` suffix. No endpoint
+    # accepts or returns a decimal for money.
+
+    LedgerError:
+      type: object
+      description: >
+        A domain failure with a stable machine-readable code, so the frontend can
+        react to a specific condition rather than matching on message text.
+      properties:
+        code:
+          type: string
+          enum:
+            - shuttle_stock_short
+            - session_already_settled
+            - transaction_already_reversed
+            - opening_balances_already_recorded
+            - not_settleable
+            - invariant_violated
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+
+    PlayerBalance:
+      type: object
+      properties:
+        user_id: { type: string, format: uuid }
+        name: { type: string }
+        profile_picture: { type: string }
+        balance_cents:
+          type: integer
+          format: int64
+          description: Positive means the member is in credit; negative means they owe the club.
+
+    Transaction:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        kind:
+          type: string
+          enum:
+            - player_topup
+            - withdrawal
+            - court_credit_purchase
+            - shuttle_purchase
+            - session_settlement
+            - opening_balance
+            - reversal
+        session_id: { type: string, format: uuid }
+        reverses_transaction_id: { type: string, format: uuid }
+        description: { type: string }
+        occurred_at:
+          type: string
+          format: date-time
+          description: When the money moved in the real world; may predate created_at.
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+
+    LedgerEntryView:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        occurred_at: { type: string, format: date-time }
+        kind: { type: string }
+        description: { type: string }
+        amount_cents: { type: integer, format: int64 }
+        balance_after_cents:
+          type: integer
+          format: int64
+          description: Running balance after this entry, over the member's whole history.
+        session_id: { type: string, format: uuid }
+        reversed:
+          type: boolean
+          description: True when a later transaction reversed this one. It stays in the list either way.
+
+    CashRequest:
+      type: object
+      required: [user_id, amount_cents]
+      properties:
+        user_id: { type: string, format: uuid }
+        amount_cents: { type: integer, format: int64, minimum: 1 }
+        occurred_at: { type: string, format: date-time }
+        description: { type: string }
+
+    AssetPurchaseRequest:
+      type: object
+      required: [amount_cents]
+      properties:
+        amount_cents: { type: integer, format: int64, minimum: 1 }
+        units:
+          type: integer
+          description: Shuttles bought. Required for a shuttle purchase, ignored for court credit.
+        occurred_at: { type: string, format: date-time }
+        description: { type: string }
+
+    OpeningBalancesRequest:
+      type: object
+      properties:
+        occurred_at: { type: string, format: date-time }
+        players:
+          type: array
+          items:
+            type: object
+            properties:
+              user_id: { type: string, format: uuid }
+              balance_cents: { type: integer, format: int64 }
+        bank_cents: { type: integer, format: int64 }
+        court_credit_cents: { type: integer, format: int64 }
+        shuttle_stock:
+          type: object
+          properties:
+            units: { type: integer }
+            amount_cents: { type: integer, format: int64 }
+
+    ClubPosition:
+      type: object
+      properties:
+        assets:
+          type: object
+          properties:
+            bank_cents: { type: integer, format: int64 }
+            court_credit_cents: { type: integer, format: int64 }
+            shuttle_stock_cents: { type: integer, format: int64 }
+            shuttle_stock_units: { type: integer }
+            total_cents: { type: integer, format: int64 }
+        liabilities:
+          type: object
+          properties:
+            player_balances_cents: { type: integer, format: int64 }
+        surplus_cents: { type: integer, format: int64 }
+        balanced:
+          type: boolean
+          description: >
+            Restates the club-position identity. Always true in normal operation,
+            since a posting that would falsify it is rolled back — so false means
+            something wrote entries without going through the ledger service.
+        warnings:
+          type: array
+          items:
+            type: object
+            properties:
+              code: { type: string }
+              message: { type: string }
+              next_session_id: { type: string, format: uuid }
+
+    # --- Settlement ---------------------------------------------------------
+
+    SettlementRequest:
+      type: object
+      description: >
+        Rates left unset fall back to club settings, so the common case is
+        submitting only the participant list. Omitting `lines` entirely returns
+        the default — everyone who said they were coming.
+      properties:
+        base_hours: { type: number }
+        base_rate_cents: { type: integer, format: int64 }
+        extra_hours: { type: number }
+        extra_rate_cents: { type: integer, format: int64 }
+        shuttles_per_hour: { type: number }
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              user_id:
+                type: string
+                format: uuid
+                description: Whose account bears the charge. For a guest line, the host.
+              guest_name:
+                type: string
+                description: Set to make this a guest line, counted as a head and charged to the host.
+              in_base: { type: boolean }
+              in_extra: { type: boolean }
+              comped:
+                type: boolean
+                description: >
+                  Still counts as a head, so no other charge moves; the waived
+                  share is absorbed by club surplus.
+
+    SettlementBand:
+      type: object
+      properties:
+        hours: { type: number }
+        court_cents: { type: integer, format: int64 }
+        shuttle_units: { type: integer }
+        shuttle_cents: { type: integer, format: int64 }
+        total_cents: { type: integer, format: int64 }
+        heads: { type: integer }
+
+    ChargeLine:
+      type: object
+      properties:
+        user_id: { type: string, format: uuid }
+        name: { type: string }
+        guest_name: { type: string }
+        in_base: { type: boolean }
+        in_extra: { type: boolean }
+        comped: { type: boolean }
+        amount_cents: { type: integer, format: int64 }
+
+    SettlementPreview:
+      type: object
+      properties:
+        bands:
+          type: object
+          properties:
+            base: { $ref: "#/components/schemas/SettlementBand" }
+            extra: { $ref: "#/components/schemas/SettlementBand" }
+        totals:
+          type: object
+          properties:
+            court_cents: { type: integer, format: int64 }
+            shuttle_cents: { type: integer, format: int64 }
+            shuttle_units: { type: integer }
+            charged_cents:
+              type: integer
+              format: int64
+              description: Equals what was consumed, less anything comped. The split is exact to the cent.
+            surplus_cents: { type: integer, format: int64 }
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChargeLine"
+        stock_after:
+          type: object
+          properties:
+            units: { type: integer }
+            amount_cents: { type: integer, format: int64 }
+
+    SettlementView:
+      allOf:
+        - $ref: "#/components/schemas/SettlementPreview"
+        - type: object
+          properties:
+            session:
+              type: object
+              properties:
+                id: { type: string, format: uuid }
+                title: { type: string }
+                starts_at: { type: string, format: date-time }
+                ends_at: { type: string, format: date-time }
+            rates:
+              type: object
+              description: The snapshot this session was costed at, not current club settings.
+              properties:
+                base_hours: { type: number }
+                base_rate_cents: { type: integer, format: int64 }
+                extra_hours: { type: number }
+                extra_rate_cents: { type: integer, format: int64 }
+                shuttles_per_hour: { type: number }
+            settled_at: { type: string, format: date-time }
+            reversed_at: { type: string, format: date-time, nullable: true }
+
+    PastSession:
+      type: object
+      properties:
+        session_id: { type: string, format: uuid }
+        title: { type: string }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        settled:
+          type: boolean
+          description: False for a finished session nobody has costed yet. Shown rather than hidden.
+        total_cents: { type: integer, format: int64 }
+        player_count: { type: integer }

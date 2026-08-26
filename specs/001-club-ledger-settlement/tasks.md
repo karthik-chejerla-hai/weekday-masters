@@ -238,11 +238,11 @@ Web app: `backend/internal/...`, `frontend/src/...` per plan.md.
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-- [ ] T102 [P] Document the new endpoints in the OpenAPI spec served by backend/internal/handlers/openapi.go
-- [ ] T103 [P] Update CLAUDE.md with the ledger service pattern, the sign convention, and the money package
-- [ ] T104 Verify coverage floors are met and ratchet `MIN_COVERAGE` up if the new code lifts the baseline, in .github/workflows/ci.yml and frontend/vite.config.ts — Principle VIII
-- [ ] T105 [P] Add a Playwright end-to-end run covering top-up → settle → history → balance, in frontend/e2e/
-- [ ] T106 Run every validation scenario in specs/001-club-ledger-settlement/quickstart.md against a fresh database and confirm each expected outcome
+- [X] T102 [P] Document the new endpoints in the OpenAPI spec served by backend/internal/handlers/openapi.go
+- [X] T103 [P] Update CLAUDE.md with the ledger service pattern, the sign convention, and the money package
+- [X] T104 Verify coverage floors are met and ratchet `MIN_COVERAGE` up if the new code lifts the baseline, in .github/workflows/ci.yml and frontend/vite.config.ts — Principle VIII
+- [X] T105 [P] Add a Playwright end-to-end run covering top-up → settle → history → balance, in frontend/e2e/
+- [X] T106 Run every validation scenario in specs/001-club-ledger-settlement/quickstart.md against a fresh database and confirm each expected outcome
 
 ---
 

@@ -60,10 +60,10 @@ export default defineConfig({
       // cannot slide back without someone deciding to lower it. Raise these as
       // Admin.tsx, AdminSessions.tsx and App.tsx get covered.
       thresholds: {
-        statements: 55,
-        branches: 52,
-        functions: 52,
-        lines: 56,
+        statements: 58,
+        branches: 55,
+        functions: 53,
+        lines: 59,
       },
       exclude: [
         'src/main.tsx',

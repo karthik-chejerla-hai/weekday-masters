@@ -53,15 +53,23 @@ TEST_DATABASE_URL="postgres://badminton:badminton123@localhost:5433/badminton_cl
   go test -race ./...
 ```
 
+If port 5433 is already taken by another project, use any free port and match
+`TEST_DATABASE_URL` to it.
+
 `internal/services/main_test.go` owns the harness: it migrates the scratch database in
-`TestMain`, and `requireDB(t)` truncates every table before each test — so **never point
+`TestMain`, and `requireDB(t)` truncates every table before each test — then reseeds the
+club row and the four club accounts, which are schema-shaped configuration rather than test
+data. Add any new table to `truncateAll` in `internal/testsupport/db.go` — so **never point
 `TEST_DATABASE_URL` at a database you care about**. Tests skip (not fail) when it is
 unset, keeping `go test ./...` green without a database. CI runs them against a
 PostgreSQL service container.
 
-Coverage today is the RSVP capacity and waitlist rules (`internal/services/rsvp_service_test.go`),
-including a concurrency test that asserts the session row lock prevents oversubscription.
-The frontend has no tests.
+Coverage includes the RSVP capacity and waitlist rules
+(`internal/services/rsvp_service_test.go`), the ledger and its invariant
+(`ledger_service_test.go`), settlement costing (`settlement_service_test.go`), and the
+database-free money arithmetic (`internal/services/money`). Two concurrency tests assert
+that row locks hold: one that the session lock prevents oversubscription, one that eight
+simultaneous settle attempts produce exactly one settlement.
 
 ## Architecture
 
@@ -99,14 +107,43 @@ handler chain at registration time, so using the wrong group silently skips the 
 - `UserService`: auto-promotes user matching `ADMIN_EMAIL` env var on first login — only when the email is **verified and sourced from Auth0**, never from the request body
 - `SchedulerService`: hourly cron sends 24h/12h session reminders and 6h deadline alerts
 - `NotificationService`: FCM push + SendGrid email, both optional and independently initialized
+- `LedgerService`: **the only writer of ledger entries.** Posts a transaction and its entries inside one DB transaction, locking the accounts it touches `FOR UPDATE` in `id` order, then asserts the club-position identity and rolls back if it does not come to zero. Balances are derived by aggregating entries — there is no cached balance column, so drift is impossible. Corrections are reversing transactions; nothing updates or deletes an entry.
+- `SettlementService`: costs a played session into two bands (standard hours, optional extension), splits each band equally among only its own participants, and hands the resulting movements to `LedgerService`. Locks the session row like the RSVP capacity check. Refuses to drive shuttle stock negative, and refuses to settle a session twice
 
-**Models use GORM hooks** (`BeforeCreate`) for UUID generation. All PKs are UUIDs.
+**Models use GORM hooks** (`BeforeCreate`) for UUID generation. All PKs are UUIDs. `Session`
+also has a `BeforeSave` hook that derives `starts_at`/`ends_at` from the date plus the
+`HH:MM` strings, so create, update and recurring generation cannot diverge.
+
+### Money
+
+Read `.specify/memory/constitution.md` principles V–VII before touching any of this.
+
+- **Integer cents everywhere.** No floats for currency, in models, services, JSON or the
+  database. The frontend divides by 100 only in `formatCents`.
+- **Sign convention:** amounts are stored the way the account itself reads — a player in
+  credit is positive, an asset held is positive. This is deliberately *not* textbook
+  double-entry (which would store liabilities negative so a naive `SUM` came to zero). The
+  balancing rule is instead the identity `(bank + court credit + shuttle stock) − Σ player
+  balances − surplus = 0`, evaluated with a `CASE` over `accounts.kind`.
+- **`internal/services/money`** holds the arithmetic and touches no database, so the rules
+  most worth testing exhaustively run without infrastructure: largest-remainder splitting
+  (charges sum to the total exactly, at every headcount) and shuttle stock carried as a
+  (value, units) pair so a $50 tube of twelve stays exact at 416.66… cents each. A per-unit
+  price is never stored.
+- **Club settings** (`base_hours`, rates, `shuttles_per_hour`, `low_balance_threshold_cents`)
+  live on `Club` and are defaults only. Every settlement snapshots what it used, so changing
+  a rate never rewrites a settled session.
 
 ### Frontend (`frontend/`)
 
 **Stack:** React 18, TypeScript, Vite, Tailwind CSS (cyan primary / amber secondary palette), PWA-enabled.
 
 **Auth flow:** Auth0 with Google OAuth (PKCE). `AuthContext` wraps the app — on Auth0 authentication, calls `POST /api/auth/callback` to sync user with backend, stores JWT for API calls. That endpoint requires a valid access token; the backend reads the subject from the token and, for first-time registrations, fetches the authoritative email from Auth0's `/userinfo`. Only display fields (`name`, `profile_picture`) are read from the request body.
+
+**Money screens:** `/money` has Balances, My ledger and (admin) Club assets tabs; `/sessions`
+splits Upcoming from History; `/admin/sessions/:id/settle` is the settlement form, which
+re-previews on every change so the figures on screen are the figures that will be posted. A
+balance chip sits in the header on every screen.
 
 **Routing pattern:** `App.tsx` defines routes wrapped in `ProtectedRoute` which checks `isAuthenticated`, `isApproved`, and `isAdmin` from `AuthContext`. Unapproved users are redirected to `/pending`.
 
