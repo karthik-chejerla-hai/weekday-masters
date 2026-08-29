@@ -86,6 +86,13 @@ func (h *AuthHandler) Callback(c *gin.Context) {
 	created, err := h.userService.RegisterUser(profile)
 	if err != nil {
 		log.Printf("auth callback: failed to register %s: %v", profile.Sub, err)
+		if errors.Is(err, services.ErrEmailAlreadyRegistered) {
+			c.JSON(http.StatusConflict, gin.H{
+				"error": "An account already exists for this email address. " +
+					"If it is yours, sign in the way you did before, or ask an admin for help.",
+			})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
 		return
 	}

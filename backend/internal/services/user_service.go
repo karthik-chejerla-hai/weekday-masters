@@ -24,6 +24,15 @@ func NewUserService(adminEmail string) *UserService {
 // body: it decides admin auto-promotion, so a client-supplied value would let anyone
 // mint an admin account.
 func (s *UserService) RegisterUser(profile *Auth0Profile) (*models.User, error) {
+	// A club migrating off Splitwise has rows already carrying balances, created
+	// by cmd/seed and waiting for their owner. Adopt one instead of creating a
+	// second row for the same person, which would strand the balance.
+	if claimed, err := s.claimSeededRow(profile); err != nil {
+		return nil, err
+	} else if claimed != nil {
+		return claimed, nil
+	}
+
 	user := models.User{
 		Auth0ID:          profile.Sub,
 		Email:            profile.Email,
@@ -40,11 +49,93 @@ func (s *UserService) RegisterUser(profile *Auth0Profile) (*models.User, error) 
 		user.MembershipStatus = models.MembershipApproved
 	}
 
+	// Emails are unique, so a row already standing on this address means the
+	// registration cannot proceed — either the caller's email is unverified and
+	// could not claim a seeded row, or that row has already been claimed by
+	// someone signing in through a different Auth0 connection. Say so plainly
+	// rather than letting the constraint surface as a server error.
+	if taken, err := s.emailTaken(profile.Email); err != nil {
+		return nil, err
+	} else if taken {
+		return nil, ErrEmailAlreadyRegistered
+	}
+
 	if err := database.DB.Create(&user).Error; err != nil {
 		return nil, err
 	}
 
 	return &user, nil
+}
+
+// ErrEmailAlreadyRegistered reports that a user row already holds the address a
+// registration is trying to use.
+var ErrEmailAlreadyRegistered = errors.New("a member is already registered with this email address")
+
+func (s *UserService) emailTaken(email string) (bool, error) {
+	if email == "" {
+		return false, nil
+	}
+	var n int64
+	if err := database.DB.Model(&models.User{}).Where("email = ?", email).Count(&n).Error; err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+// SeedAuth0Prefix marks a row created by cmd/seed. It is a placeholder subject
+// that no Auth0 token can ever carry, so a seeded row cannot be logged into
+// until it is claimed.
+const SeedAuth0Prefix = "seed|"
+
+// claimSeededRow hands a seeded row to the person it was created for, returning
+// (nil, nil) when there is nothing to claim.
+//
+// The match is on the email Auth0 vouches for, and only when Auth0 says it is
+// verified — the same bar admin auto-promotion is held to, and for the same
+// reason: an unverified address is a claim by the caller, not a fact. A row is
+// eligible only while its subject still carries the seed prefix, so each row can
+// be claimed exactly once.
+//
+// The UPDATE carries that prefix in its WHERE clause rather than testing it in
+// Go, which makes the claim a compare-and-swap: two logins racing for the same
+// row leave one of them with RowsAffected == 0.
+func (s *UserService) claimSeededRow(profile *Auth0Profile) (*models.User, error) {
+	if !profile.EmailVerified || profile.Email == "" {
+		return nil, nil
+	}
+
+	updates := map[string]any{
+		"auth0_id":   profile.Sub,
+		"updated_at": time.Now(),
+	}
+	if profile.Name != "" {
+		updates["name"] = profile.Name
+	}
+	if profile.Picture != "" {
+		updates["profile_picture"] = profile.Picture
+	}
+	// The seeder approves the members it creates, but the admin is defined by
+	// ADMIN_EMAIL and has to be promoted on the way in like any other first login.
+	if s.adminEmail != "" && profile.Email == s.adminEmail {
+		updates["role"] = models.RoleAdmin
+		updates["membership_status"] = models.MembershipApproved
+	}
+
+	result := database.DB.Model(&models.User{}).
+		Where("email = ? AND auth0_id LIKE ?", profile.Email, SeedAuth0Prefix+"%").
+		Updates(updates)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
+	}
+
+	var claimed models.User
+	if err := database.DB.Where("auth0_id = ?", profile.Sub).First(&claimed).Error; err != nil {
+		return nil, err
+	}
+	return &claimed, nil
 }
 
 // FindByAuth0ID looks up a user by Auth0 subject, returning (nil, nil) when absent.

@@ -134,6 +134,29 @@ Read `.specify/memory/constitution.md` principles V–VII before touching any of
   live on `Club` and are defaults only. Every settlement snapshots what it used, so changing
   a rate never rewrites a settled session.
 
+### Migrating a club onto the ledger
+
+`cmd/seed` loads a Splitwise group export as opening balances, for a club moving
+onto Rally with money already owed. It reads the **TOTAL BALANCE** block rather
+than replaying the transactions above it, and refuses to run unless the players
+sum to the mirror held by the club's own Splitwise member.
+
+Two rules make it safe to point at a real database:
+
+- **The admin must have logged in first.** Opening balances are accepted exactly
+  once, so seeding before their row exists would strand their balance with no
+  second run to fix it. This is fatal, not a warning.
+- **`-emails` decides whether a balance can ever reach its owner.** Rows seeded
+  with a real address are claimed by `UserService.RegisterUser` the first time
+  that person signs in with a matching *verified* Auth0 email; the claim is a
+  compare-and-swap on the `seed|` subject prefix, so it happens once. Without
+  `-emails`, rows get unroutable `@seed.invalid` addresses and can never be
+  claimed — right for a scratch database, wrong for a real club.
+
+Emails are unique, so a registration that cannot claim a row standing on its
+address fails with `ErrEmailAlreadyRegistered` (409) rather than a constraint
+violation.
+
 ### Frontend (`frontend/`)
 
 **Stack:** React 18, TypeScript, Vite, Tailwind CSS (cyan primary / amber secondary palette), PWA-enabled.
