@@ -157,6 +157,21 @@ Emails are unique, so a registration that cannot claim a row standing on its
 address fails with `ErrEmailAlreadyRegistered` (409) rather than a constraint
 violation.
 
+Two options exist for the development phase, both inert without `-confirm`, which
+on its own prints what it would delete and stops:
+
+- **`-reset`** empties `charge_lines`, `settlements`, `ledger_entries` and
+  `transactions` so the seed can run again. Opening balances are accepted once,
+  so without it a second run is refused. Accounts and users are kept — balances
+  are derived from entries, so an account with none reads as zero and the next
+  seed reuses it.
+- **`-drop "Name,Name"`** deletes members entirely. Sessions and announcements
+  they created are reassigned to an admin rather than deleted: those are club
+  history, and losing a session because its organiser left would take everyone
+  else's record of it too. Every name is resolved before anything is deleted.
+
+Neither belongs anywhere near a real club.
+
 ### Frontend (`frontend/`)
 
 **Stack:** React 18, TypeScript, Vite, Tailwind CSS (cyan primary / amber secondary palette), PWA-enabled.

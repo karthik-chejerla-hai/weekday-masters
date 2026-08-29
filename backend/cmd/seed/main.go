@@ -37,6 +37,7 @@ import (
 	"github.com/weekday-masters/backend/internal/models"
 	"github.com/weekday-masters/backend/internal/services"
 	"github.com/weekday-masters/backend/internal/utils"
+	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 )
 
@@ -60,6 +61,9 @@ func main() {
 		stockCents = flag.Int64("shuttle-cents", 0, "value in cents of shuttles on hand")
 		stockUnits = flag.Int("shuttle-units", 0, "how many shuttles are on hand")
 		emailsPath = flag.String("emails", "", "optional file mapping Splitwise names to real email addresses, one \"Name,email\" per line")
+		reset      = flag.Bool("reset", false, "delete every ledger entry, transaction and settlement first, so the seed can be run again")
+		drop       = flag.String("drop", "", "comma-separated member names to delete entirely before seeding")
+		confirm    = flag.Bool("confirm", false, "actually perform -reset and -drop; without it they are only described")
 		dryRun     = flag.Bool("dry-run", false, "parse and report without writing anything")
 	)
 	flag.Parse()
@@ -155,6 +159,16 @@ func main() {
 	database.DB.Logger = gormlogger.Default.LogMode(gormlogger.Silent)
 	fmt.Printf("\nSeeding %s\n", redact(cfg.DatabaseURL))
 
+	if *drop != "" || *reset {
+		if err := prepare(splitNames(*drop), *reset, *confirm); err != nil {
+			log.Fatalf("seed: %v", err)
+		}
+		if !*confirm {
+			fmt.Println("\nNothing written. Re-run with -confirm to carry this out.")
+			return
+		}
+	}
+
 	ledger := services.NewLedgerService()
 
 	// The admin's row must already exist, created by their own Auth0 login.
@@ -241,6 +255,133 @@ func main() {
 	fmt.Printf("  members prepaid %s\n", formatCents(position.Liabilities.PlayerBalancesCents))
 	fmt.Printf("  surplus         %s\n", formatCents(position.SurplusCents))
 	fmt.Printf("  balanced        %v\n", position.Balanced)
+}
+
+// prepare carries out the destructive options, or describes them and stops.
+//
+// Both exist for the development phase, where the point is to run the seed,
+// find something wrong, and run it again. Opening balances are accepted exactly
+// once, so without -reset a second run is refused and the only way back is to
+// wipe the database by hand.
+//
+// Neither is safe on a real club, which is why nothing happens without -confirm:
+// on its own each option prints what it would delete and exits.
+func prepare(drop []string, reset, confirm bool) error {
+	fmt.Printf("\n%s\n", strings.Repeat("-", 60))
+	if confirm {
+		fmt.Println("DESTRUCTIVE — this will delete the rows below.")
+	} else {
+		fmt.Println("DESTRUCTIVE — this is what -confirm would delete.")
+	}
+
+	// Resolve every name before deleting any of them, so a typo in the second
+	// name does not leave the first one already gone.
+	targets := make([]models.User, 0, len(drop))
+	for _, name := range drop {
+		var user models.User
+		if err := database.DB.Where("name = ?", name).First(&user).Error; err != nil {
+			return fmt.Errorf("-drop names %q, which is not a member on this database", name)
+		}
+		targets = append(targets, user)
+	}
+
+	for _, user := range targets {
+		fmt.Printf("  drop member  %-24s %s\n", user.Name, user.Email)
+		if confirm {
+			if err := dropMember(user); err != nil {
+				return fmt.Errorf("dropping %s: %w", user.Name, err)
+			}
+		}
+	}
+
+	if reset {
+		for _, t := range ledgerTables {
+			var n int64
+			if err := database.DB.Table(t).Count(&n).Error; err != nil {
+				return err
+			}
+			fmt.Printf("  reset        %-24s %d rows\n", t, n)
+		}
+		if confirm {
+			if err := resetLedger(); err != nil {
+				return fmt.Errorf("resetting the ledger: %w", err)
+			}
+		}
+	}
+	fmt.Println(strings.Repeat("-", 60))
+	return nil
+}
+
+// ledgerTables is every table holding posted money, child-first so the deletes
+// do not trip a foreign key.
+var ledgerTables = []string{"charge_lines", "settlements", "ledger_entries", "transactions"}
+
+// resetLedger empties the ledger and leaves everything else standing.
+//
+// Accounts are deliberately kept. Balances are derived by summing entries, never
+// stored, so an account with no entries reads as zero — and keeping it means the
+// next seed reuses the same account rather than orphaning the old one.
+func resetLedger() error {
+	return database.DB.Transaction(func(tx *gorm.DB) error {
+		for _, t := range ledgerTables {
+			if err := tx.Exec("DELETE FROM " + t).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// dropMember deletes a member and everything that hangs off them.
+//
+// Sessions and announcements they created are kept and reassigned to whoever is
+// admin: those are club history, and deleting a session because the person who
+// scheduled it left would take everyone else's record of it with them.
+func dropMember(user models.User) error {
+	return database.DB.Transaction(func(tx *gorm.DB) error {
+		var admin models.User
+		if err := tx.Where("role = ? AND id <> ?", models.RoleAdmin, user.ID).First(&admin).Error; err != nil {
+			return fmt.Errorf("no other admin to inherit their sessions: %w", err)
+		}
+
+		for _, reassign := range []struct{ table, column string }{
+			{"sessions", "created_by"},
+			{"announcements", "created_by"},
+		} {
+			if err := tx.Exec(
+				fmt.Sprintf("UPDATE %s SET %s = ? WHERE %s = ?", reassign.table, reassign.column, reassign.column),
+				admin.ID, user.ID,
+			).Error; err != nil {
+				return err
+			}
+		}
+
+		// Their ledger entries go with their accounts; charge lines name them
+		// directly.
+		if err := tx.Exec(`DELETE FROM ledger_entries WHERE account_id IN
+			(SELECT id FROM accounts WHERE user_id = ?)`, user.ID).Error; err != nil {
+			return err
+		}
+		for _, t := range []string{
+			"charge_lines", "accounts", "rsvps", "notifications",
+			"user_notification_preferences", "user_push_tokens",
+		} {
+			if err := tx.Exec("DELETE FROM "+t+" WHERE user_id = ?", user.ID).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Delete(&models.User{}, "id = ?", user.ID).Error
+	})
+}
+
+func splitNames(csv string) []string {
+	var names []string
+	for _, part := range strings.Split(csv, ",") {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			names = append(names, trimmed)
+		}
+	}
+	return names
 }
 
 // ensureSeededUser creates an approved player, or returns the existing one.
