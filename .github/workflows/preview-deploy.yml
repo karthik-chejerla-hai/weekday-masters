@@ -73,6 +73,66 @@ jobs:
           DATABASE_URL: ${{ steps.neon.outputs.db_url }}
         run: go run ./cmd/migrate
 
+      # Seed only when the branch was just created, not on every push. Otherwise
+      # a commit would wipe whatever you had entered by hand on the preview —
+      # a top-up, a settled session — which is usually the thing you were
+      # testing. Label the PR `reseed` to force it on the next push.
+      #
+      # The export carries real names and balances and this repository is
+      # public, so the data arrives base64 in secrets rather than as a committed
+      # fixture. Nothing is written to the checkout, only to the runner's temp
+      # directory, which dies with the job.
+      - name: Seed the preview branch
+        if: steps.neon.outputs.created == 'true' || contains(github.event.pull_request.labels.*.name, 'reseed')
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ steps.neon.outputs.db_url }}
+          SEED_EXPORT: ${{ secrets.SEED_SPLITWISE_EXPORT }}
+          SEED_MEMBERS: ${{ secrets.SEED_MEMBERS_CSV }}
+          ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
+          SEED_DROP: ${{ vars.SEED_DROP_MEMBERS }}
+          SEED_BANK: ${{ vars.SEED_BANK_CENTS || 53661 }}
+          SEED_COURT_CREDIT: ${{ vars.SEED_COURT_CREDIT_CENTS || 11900 }}
+          SEED_SHUTTLE_CENTS: ${{ vars.SEED_SHUTTLE_CENTS || 12500 }}
+          SEED_SHUTTLE_UNITS: ${{ vars.SEED_SHUTTLE_UNITS || 30 }}
+        run: |
+          if [ -z "$SEED_EXPORT" ]; then
+            echo "::notice::SEED_SPLITWISE_EXPORT is not set — leaving the branch as copied from production"
+            exit 0
+          fi
+
+          WORK="$RUNNER_TEMP/seed"
+          mkdir -p "$WORK"
+          printf '%s' "$SEED_EXPORT" | base64 -d > "$WORK/splitwise.html"
+
+          # An array, so an option that is not set contributes no argument at
+          # all rather than an empty one the flag parser would reject.
+          ARGS=(-splitwise "$WORK/splitwise.html")
+
+          if [ -n "$SEED_MEMBERS" ]; then
+            printf '%s' "$SEED_MEMBERS" | base64 -d > "$WORK/members.csv"
+            ARGS+=(-emails "$WORK/members.csv")
+          else
+            echo "::warning::SEED_MEMBERS_CSV is not set — players get unclaimable @seed.invalid rows"
+          fi
+
+          if [ -n "$SEED_DROP" ]; then
+            ARGS+=(-drop "$SEED_DROP")
+          fi
+
+          # -reset is safe here and nowhere else: DATABASE_URL is the branch
+          # created moments ago, never the production database.
+          ARGS+=(
+            -admin-email "$ADMIN_EMAIL"
+            -bank "$SEED_BANK"
+            -court-credit "$SEED_COURT_CREDIT"
+            -shuttle-cents "$SEED_SHUTTLE_CENTS"
+            -shuttle-units "$SEED_SHUTTLE_UNITS"
+            -reset -confirm
+          )
+
+          go run ./cmd/seed "${ARGS[@]}"
+
       - name: Login to Artifact Registry
         uses: docker/login-action@v4
         with:

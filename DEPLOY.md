@@ -33,7 +33,41 @@ Required repository configuration:
 | `NEON_DB_ROLE` | variable | optional; defaults to `neondb_owner` |
 | `NEON_DB_NAME` | variable | optional; defaults to `neondb` |
 
-Set the two variables only if your Neon role and database are not the defaults —
+### Seeding a preview automatically
+
+When a preview branch is **created**, `preview-deploy.yml` seeds it from a
+Splitwise export. It does not re-seed on later pushes — a commit would otherwise
+wipe whatever you had entered by hand, which is usually the thing you were
+testing. To force a re-seed, add the label `reseed` to the PR and push.
+
+This repository is public, so the export is **not committed**: it carries real
+names and balances. It arrives base64 in a secret and is written only to the
+runner's temp directory.
+
+```bash
+base64 < ~/Desktop/Splitwise-current.html | gh secret set SEED_SPLITWISE_EXPORT
+base64 < ~/Desktop/rally-emails.csv       | gh secret set SEED_MEMBERS_CSV
+```
+
+Leave `SEED_SPLITWISE_EXPORT` unset and the step does nothing, so the branch
+stays exactly as copied from production.
+
+The opening position comes from variables, with the values below as defaults:
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `SEED_BANK_CENTS` | `53661` | opening cash, before any top-up |
+| `SEED_COURT_CREDIT_CENTS` | `11900` | prepaid at the venue |
+| `SEED_SHUTTLE_CENTS` | `12500` | value of shuttles on hand |
+| `SEED_SHUTTLE_UNITS` | `30` | how many shuttles |
+| `SEED_DROP_MEMBERS` | unset | comma-separated members to delete first |
+
+The seed runs `-reset -confirm`, which is safe here and nowhere else: its
+`DATABASE_URL` is the branch created moments earlier, never production. Fork pull
+requests receive no secrets, so the step is skipped there rather than running
+against anything.
+
+Set the Neon role and name variables only if your Neon role and database are not the defaults —
 check the production `DATABASE_URL`: it reads
 `postgres://<role>@<host>/<database>`.
 
