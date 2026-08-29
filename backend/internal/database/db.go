@@ -60,6 +60,10 @@ func Migrate() error {
 		return err
 	}
 
+	if err := backfillClubSettings(); err != nil {
+		return err
+	}
+
 	if err := SeedClubAccounts(); err != nil {
 		return err
 	}
@@ -151,6 +155,30 @@ func backfillSessionTimestamps() error {
 		 WHERE starts_at IS NULL
 		   AND start_time <> ''
 		   AND end_time <> ''
+	`).Error
+}
+
+// backfillClubSettings gives an existing club the settlement defaults.
+//
+// SeedDefaultClub only fires when there is no club at all, so a club that
+// predates this feature keeps the zeros AutoMigrate gave its new columns — and
+// a zero base rate is not a free session, it is a settlement that charges
+// nobody anything and a low-balance warning that never fires. The columns are
+// defaults for the settlement form, so filling in a zero costs nothing; an
+// admin who has deliberately set a rate has set a non-zero one.
+func backfillClubSettings() error {
+	return DB.Exec(`
+		UPDATE clubs
+		   SET base_hours = COALESCE(NULLIF(base_hours, 0), 2),
+		       base_rate_cents = COALESCE(NULLIF(base_rate_cents, 0), 3000),
+		       extra_rate_cents = COALESCE(NULLIF(extra_rate_cents, 0), 2300),
+		       shuttles_per_hour = COALESCE(NULLIF(shuttles_per_hour, 0), 5),
+		       low_balance_threshold_cents = COALESCE(NULLIF(low_balance_threshold_cents, 0), 2000)
+		 WHERE base_rate_cents = 0
+		    OR extra_rate_cents = 0
+		    OR shuttles_per_hour = 0
+		    OR base_hours = 0
+		    OR low_balance_threshold_cents = 0
 	`).Error
 }
 
