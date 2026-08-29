@@ -17,6 +17,16 @@ jobs:
       id-token: write
 
     steps:
+      # Delete the branch first: it is the thing that costs money if it is left
+      # behind, and it is independent of anything Google Cloud does below.
+      - name: Delete the PR's Neon branch
+        continue-on-error: true
+        uses: neondatabase/delete-branch-action@v3
+        with:
+          project_id: ${{ secrets.NEON_PROJECT_ID }}
+          api_key: ${{ secrets.NEON_API_KEY }}
+          branch: pr-${{ github.event.pull_request.number }}
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
         with:

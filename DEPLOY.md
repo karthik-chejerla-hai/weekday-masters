@@ -12,6 +12,32 @@ Deploy Rally to Google Cloud (free tier).
 └─────────────────┘     └─────────────────┘     └─────────────────┘
 ```
 
+## Preview environments
+
+Every pull request gets its own Neon branch, created by `preview-deploy.yml` and
+deleted by `preview-cleanup.yml` when the PR closes. The branch is copy-on-write,
+so it is effectively instant and carries production-shaped data, and migrations
+run against it before the preview backend is deployed — a PR that adds tables
+gets them.
+
+Previews previously pointed straight at the production `DATABASE_URL` with no
+migration step, which meant a schema-changing PR deployed a backend querying
+columns that did not exist, and every preview wrote to real data.
+
+Required repository configuration:
+
+| Name | Kind | Notes |
+|------|------|-------|
+| `NEON_API_KEY` | secret | Neon account or org API key |
+| `NEON_PROJECT_ID` | secret | from the Neon console URL |
+| `NEON_DB_ROLE` | variable | optional; defaults to `neondb_owner` |
+| `NEON_DB_NAME` | variable | optional; defaults to `neondb` |
+
+Set the two variables only if your Neon role and database are not the defaults —
+check the production `DATABASE_URL`: it reads
+`postgres://<role>@<host>/<database>`.
+
+
 ## Prerequisites
 
 1. [Google Cloud account](https://console.cloud.google.com/) with billing enabled
