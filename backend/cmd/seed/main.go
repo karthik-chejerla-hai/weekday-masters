@@ -51,6 +51,14 @@ type member struct {
 	BalanceCents int64
 }
 
+// mapped is what the -emails file says about one player from the export: the
+// address their balance should reach, and optionally the name to store instead
+// of the one Splitwise used.
+type mapped struct {
+	Email       string
+	DisplayName string
+}
+
 func main() {
 	var (
 		path       = flag.String("splitwise", "", "path to the Splitwise group HTML export (required)")
@@ -111,8 +119,11 @@ func main() {
 	fmt.Printf("Parsed %d players from %s\n\n", len(players), *path)
 	for _, p := range players {
 		note := "no email — cannot be claimed"
-		if addr, ok := emails[p.Name]; ok {
-			note = addr
+		if m, ok := emails[p.Name]; ok {
+			note = m.Email
+			if m.DisplayName != "" {
+				note = m.DisplayName + "  " + m.Email
+			}
 		}
 		fmt.Printf("  %-22s %10s  %s\n", p.Name, formatCents(p.BalanceCents), note)
 	}
@@ -197,6 +208,12 @@ func main() {
 		if p.Name == *adminName {
 			if !adminSeeded {
 				continue
+			}
+			if display := emails[p.Name].DisplayName; display != "" && admin.Name != display {
+				if err := database.DB.Model(&admin).Update("name", display).Error; err != nil {
+					log.Fatalf("seed: renaming the admin: %v", err)
+				}
+				admin.Name = display
 			}
 			if _, err := ledger.EnsurePlayerAccount(admin.ID, admin.Name); err != nil {
 				log.Fatalf("seed: %v", err)
@@ -398,14 +415,30 @@ func splitNames(csv string) []string {
 // Without one, the address is unroutable by construction (.invalid is reserved
 // by RFC 2606), so the account can neither be emailed nor ever claimed. That is
 // the right default for a scratch database and the wrong one for a real club.
-func ensureSeededUser(displayName, email string) (*models.User, bool, error) {
-	slug := slugify(displayName)
+func ensureSeededUser(exportName string, m mapped) (*models.User, bool, error) {
+	slug := slugify(exportName)
+
+	email := m.Email
 	if email == "" {
 		email = slug + "@seed.invalid"
 	}
 
+	// What the club calls them, which need not be what Splitwise did.
+	displayName := exportName
+	if m.DisplayName != "" {
+		displayName = m.DisplayName
+	}
+
 	var existing models.User
 	if err := database.DB.Where("email = ?", email).First(&existing).Error; err == nil {
+		// Renaming someone who is already here is the point of the third column,
+		// so apply it — but never overwrite a name with nothing.
+		if m.DisplayName != "" && existing.Name != m.DisplayName {
+			if err := database.DB.Model(&existing).Update("name", m.DisplayName).Error; err != nil {
+				return nil, false, fmt.Errorf("renaming %q: %w", existing.Name, err)
+			}
+			existing.Name = m.DisplayName
+		}
 		return &existing, false, nil
 	}
 
@@ -493,10 +526,14 @@ func parseSplitwise(path string) ([]member, error) {
 	return members, nil
 }
 
-// parseEmails reads a "Splitwise Name,email@example.com" mapping, one per line,
-// ignoring blanks and # comments. Names must match the export exactly, because a
-// near miss would silently seed an unclaimable row.
-func parseEmails(path string) (map[string]string, error) {
+// parseEmails reads a "Splitwise Name,email[,Display Name]" mapping, one per
+// line, ignoring blanks and # comments.
+//
+// The name on the left must match the export exactly, because a near miss would
+// silently seed a row its owner can never claim. The optional third column is
+// what to call them in Rally, so the club is not stuck with whatever shorthand
+// Splitwise happened to hold.
+func parseEmails(path string) (map[string]mapped, error) {
 	if path == "" {
 		return nil, nil
 	}
@@ -506,25 +543,35 @@ func parseEmails(path string) (map[string]string, error) {
 		return nil, fmt.Errorf("reading %s: %w", path, err)
 	}
 
-	mapping := map[string]string{}
+	mapping := map[string]mapped{}
 	for i, line := range strings.Split(string(raw), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 
-		name, addr, found := strings.Cut(line, ",")
-		name, addr = strings.TrimSpace(name), strings.TrimSpace(addr)
-		if !found || name == "" || addr == "" {
-			return nil, fmt.Errorf("%s line %d: want \"Name,email\", got %q", path, i+1, line)
+		fields := strings.Split(line, ",")
+		if len(fields) < 2 || len(fields) > 3 {
+			return nil, fmt.Errorf("%s line %d: want \"Name,email\" or \"Name,email,Display Name\", got %q", path, i+1, line)
+		}
+
+		name := strings.TrimSpace(fields[0])
+		addr := strings.TrimSpace(fields[1])
+		display := ""
+		if len(fields) == 3 {
+			display = strings.TrimSpace(fields[2])
+		}
+
+		if name == "" || addr == "" {
+			return nil, fmt.Errorf("%s line %d: a name and an address are both required, got %q", path, i+1, line)
 		}
 		if !strings.Contains(addr, "@") {
 			return nil, fmt.Errorf("%s line %d: %q is not an email address", path, i+1, addr)
 		}
 		if existing, clash := mapping[name]; clash {
-			return nil, fmt.Errorf("%s line %d: %q is listed twice (%s and %s)", path, i+1, name, existing, addr)
+			return nil, fmt.Errorf("%s line %d: %q is listed twice (%s and %s)", path, i+1, name, existing.Email, addr)
 		}
-		mapping[name] = addr
+		mapping[name] = mapped{Email: addr, DisplayName: display}
 	}
 	return mapping, nil
 }

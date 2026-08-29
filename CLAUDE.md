@@ -146,7 +146,11 @@ Two rules make it safe to point at a real database:
 - **The admin must have logged in first.** Opening balances are accepted exactly
   once, so seeding before their row exists would strand their balance with no
   second run to fix it. This is fatal, not a warning.
-- **`-emails` decides whether a balance can ever reach its owner.** Rows seeded
+- **`-emails` maps export names to real people.** Each line is
+  `Splitwise Name,email[,Display Name]` — the optional third column renames the
+  player, so the club is not stuck with whatever shorthand Splitwise held, and it
+  renames someone already present rather than only new rows.
+- **The address decides whether a balance can ever reach its owner.** Rows seeded
   with a real address are claimed by `UserService.RegisterUser` the first time
   that person signs in with a matching *verified* Auth0 email; the claim is a
   compare-and-swap on the `seed|` subject prefix, so it happens once. Without

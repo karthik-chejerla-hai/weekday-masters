@@ -104,7 +104,8 @@ func TestParseCents(t *testing.T) {
 func TestParseEmails(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "emails.csv")
-	body := "# a comment\n\nKarthik C.,karthik@example.com\n  Naresh K. , naresh@example.com  \n"
+	body := "# a comment\n\nKarthik C.,karthik@example.com\n  Naresh K. , naresh@example.com  \n" +
+		"SrinivasAddagatla,srini@example.com,Srini\n"
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -113,11 +114,21 @@ func TestParseEmails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parsing: %v", err)
 	}
-	if len(mapping) != 2 {
-		t.Fatalf("got %d entries, want 2: %+v", len(mapping), mapping)
+	if len(mapping) != 3 {
+		t.Fatalf("got %d entries, want 3: %+v", len(mapping), mapping)
 	}
-	if mapping["Karthik C."] != "karthik@example.com" || mapping["Naresh K."] != "naresh@example.com" {
+	if mapping["Karthik C."].Email != "karthik@example.com" ||
+		mapping["Naresh K."].Email != "naresh@example.com" {
 		t.Errorf("mapping = %+v", mapping)
+	}
+
+	// The optional third column renames the player; without it the export name
+	// stands.
+	if got := mapping["SrinivasAddagatla"].DisplayName; got != "Srini" {
+		t.Errorf("display name = %q, want Srini", got)
+	}
+	if got := mapping["Karthik C."].DisplayName; got != "" {
+		t.Errorf("display name = %q, want empty when no third column is given", got)
 	}
 
 	if mapping, err := parseEmails(""); mapping != nil || err != nil {
@@ -128,11 +139,12 @@ func TestParseEmails(t *testing.T) {
 func TestParseEmailsRejectsMalformedLines(t *testing.T) {
 	dir := t.TempDir()
 	for name, body := range map[string]string{
-		"no comma":     "Karthik C. karthik@example.com\n",
-		"no address":   "Karthik C.,\n",
-		"no name":      ",karthik@example.com\n",
-		"not an email": "Karthik C.,karthik\n",
-		"listed twice": "Karthik C.,a@example.com\nKarthik C.,b@example.com\n",
+		"no comma":         "Karthik C. karthik@example.com\n",
+		"no address":       "Karthik C.,\n",
+		"no name":          ",karthik@example.com\n",
+		"not an email":     "Karthik C.,karthik\n",
+		"listed twice":     "Karthik C.,a@example.com\nKarthik C.,b@example.com\n",
+		"too many columns": "Karthik C.,a@example.com,Karthik,extra\n",
 	} {
 		path := filepath.Join(dir, slugify(name)+".csv")
 		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
