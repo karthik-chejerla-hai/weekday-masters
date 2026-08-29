@@ -87,6 +87,12 @@ func (s *UserService) emailTaken(email string) (bool, error) {
 // until it is claimed.
 const SeedAuth0Prefix = "seed|"
 
+// SeedSubject is the placeholder Auth0 subject cmd/seed gives a row it creates.
+// It is derived from the export name, which does not change between runs, so it
+// is the stable way to find a row an earlier seed wrote — the email is not, and
+// changes the moment a name-to-address mapping is introduced.
+func SeedSubject(slug string) string { return SeedAuth0Prefix + slug }
+
 // claimSeededRow hands a seeded row to the person it was created for, returning
 // (nil, nil) when there is nothing to claim.
 //

@@ -294,12 +294,30 @@ func prepare(drop []string, reset, confirm bool) error {
 	// Resolve every name before deleting any of them, so a typo in the second
 	// name does not leave the first one already gone.
 	targets := make([]models.User, 0, len(drop))
+	var missing []string
 	for _, name := range drop {
 		var user models.User
 		if err := database.DB.Where("name = ?", name).First(&user).Error; err != nil {
-			return fmt.Errorf("-drop names %q, which is not a member on this database", name)
+			missing = append(missing, name)
+			continue
 		}
 		targets = append(targets, user)
+	}
+
+	// Report every miss at once, with the roster: a name that does not match is
+	// nearly always a spelling or a database pointed somewhere unexpected, and
+	// both are answered by seeing who is actually here.
+	if len(missing) > 0 {
+		var members []models.User
+		if err := database.DB.Order("name").Find(&members).Error; err != nil {
+			return err
+		}
+		fmt.Printf("\n  -drop found no member named: %s\n", strings.Join(missing, ", "))
+		fmt.Printf("  This database holds %d members:\n", len(members))
+		for _, m := range members {
+			fmt.Printf("    %-24s %s\n", m.Name, m.Email)
+		}
+		return fmt.Errorf("nothing was deleted")
 	}
 
 	for _, user := range targets {
@@ -429,21 +447,37 @@ func ensureSeededUser(exportName string, m mapped) (*models.User, bool, error) {
 		displayName = m.DisplayName
 	}
 
+	// Find them by address first, then by the subject an earlier seed gave them.
+	//
+	// The subject is the stable identity across runs: it is derived from the
+	// export name, which does not change. The address does — a first run without
+	// -emails writes @seed.invalid, and adding the mapping later changes it. On
+	// the address alone the second run would miss the row it wrote itself and
+	// then collide on the subject, which is exactly what happened.
+	subject := services.SeedSubject(slug)
+
 	var existing models.User
-	if err := database.DB.Where("email = ?", email).First(&existing).Error; err == nil {
-		// Renaming someone who is already here is the point of the third column,
-		// so apply it — but never overwrite a name with nothing.
+	err := database.DB.Where("email = ? OR auth0_id = ?", email, subject).First(&existing).Error
+	if err == nil {
+		updates := map[string]any{}
+		if existing.Email != email {
+			updates["email"] = email
+		}
+		// Renaming someone already here is the point of the third column, but
+		// never overwrite a name with nothing.
 		if m.DisplayName != "" && existing.Name != m.DisplayName {
-			if err := database.DB.Model(&existing).Update("name", m.DisplayName).Error; err != nil {
-				return nil, false, fmt.Errorf("renaming %q: %w", existing.Name, err)
+			updates["name"] = m.DisplayName
+		}
+		if len(updates) > 0 {
+			if err := database.DB.Model(&existing).Updates(updates).Error; err != nil {
+				return nil, false, fmt.Errorf("updating %q: %w", existing.Name, err)
 			}
-			existing.Name = m.DisplayName
 		}
 		return &existing, false, nil
 	}
 
 	user := models.User{
-		Auth0ID:          "seed|" + slug,
+		Auth0ID:          subject,
 		Email:            email,
 		Name:             displayName,
 		Role:             models.RolePlayer,

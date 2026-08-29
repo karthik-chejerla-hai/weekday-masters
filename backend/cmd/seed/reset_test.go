@@ -204,3 +204,63 @@ func TestSplitNames(t *testing.T) {
 		t.Error("an empty string should name nobody")
 	}
 }
+
+// The sequence that broke in practice: seed once with no mapping, then add
+// -emails and seed again. The first run wrote naresh.k@seed.invalid under
+// subject seed|naresh.k; the second looked for naresh@rally.com, missed, and
+// collided on the subject it had written itself.
+func TestReseedingWithNewEmailsFindsTheRowItWrote(t *testing.T) {
+	requireDB(t)
+
+	first, isNew, err := ensureSeededUser("Naresh K.", mapped{})
+	if err != nil {
+		t.Fatalf("first seed: %v", err)
+	}
+	if !isNew {
+		t.Fatal("the first seed should have created the row")
+	}
+	if first.Email != "naresh.k@seed.invalid" {
+		t.Fatalf("email = %q, want the unroutable default", first.Email)
+	}
+
+	second, isNew, err := ensureSeededUser("Naresh K.", mapped{
+		Email: "naresh@rally.com", DisplayName: "Naresh",
+	})
+	if err != nil {
+		t.Fatalf("second seed: %v", err)
+	}
+	if isNew {
+		t.Error("the second seed created a second row for the same person")
+	}
+	if second.ID != first.ID {
+		t.Errorf("row %s, want the one already written %s", second.ID, first.ID)
+	}
+	if second.Email != "naresh@rally.com" {
+		t.Errorf("email = %q, want it updated to the mapped address", second.Email)
+	}
+	if second.Name != "Naresh" {
+		t.Errorf("name = %q, want the display name applied", second.Name)
+	}
+	if count(t, "users") != 1 {
+		t.Errorf("users = %d, want 1", count(t, "users"))
+	}
+}
+
+// Renaming must not blank a name when the mapping carries no third column.
+func TestReseedingWithoutADisplayNameKeepsTheName(t *testing.T) {
+	requireDB(t)
+
+	if _, _, err := ensureSeededUser("Hari P.", mapped{
+		Email: "hari@rally.com", DisplayName: "Hari",
+	}); err != nil {
+		t.Fatalf("first seed: %v", err)
+	}
+
+	again, _, err := ensureSeededUser("Hari P.", mapped{Email: "hari@rally.com"})
+	if err != nil {
+		t.Fatalf("second seed: %v", err)
+	}
+	if again.Name != "Hari" {
+		t.Errorf("name = %q, want the earlier display name kept", again.Name)
+	}
+}
