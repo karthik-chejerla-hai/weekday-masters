@@ -29,7 +29,7 @@ Required repository configuration:
 | Name | Kind | Notes |
 |------|------|-------|
 | `NEON_API_KEY` | secret | Neon account or org API key |
-| `NEON_PROJECT_ID` | secret | from the Neon console URL |
+| `NEON_PROJECT_ID` | variable | from the Neon console URL; an identifier, not a credential |
 | `NEON_DB_ROLE` | variable | optional; defaults to `neondb_owner` |
 | `NEON_DB_NAME` | variable | optional; defaults to `neondb` |
 
