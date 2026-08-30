@@ -83,12 +83,20 @@ func (h *AuthHandler) Callback(c *gin.Context) {
 		return
 	}
 
-	created, err := h.userService.RegisterUser(profile)
+	// Registration also claims an outstanding admin invite when the verified
+	// email matches one, so an invited member signs in already approved.
+	registered, isNew, err := h.userService.RegisterUser(profile)
 	if err != nil {
 		log.Printf("auth callback: failed to register %s: %v", profile.Sub, err)
+		// These two say something the person can act on, so they are passed
+		// through rather than flattened into "registration failed".
+		if errors.Is(err, services.ErrEmailAlreadyLinked) || errors.Is(err, services.ErrInviteEmailNotVerified) {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"user": created, "is_new": true})
+	c.JSON(http.StatusOK, gin.H{"user": registered, "is_new": isNew})
 }

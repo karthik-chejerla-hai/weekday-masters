@@ -20,9 +20,12 @@ func TestUserService_RegisterUser_AdminBootstrap(t *testing.T) {
 		Picture:       "https://example.com/pic.jpg",
 		EmailVerified: true,
 	}
-	regularUser, err := us.RegisterUser(regularProfile)
+	regularUser, isNew, err := us.RegisterUser(regularProfile)
 	if err != nil {
 		t.Fatalf("failed to register regular user: %v", err)
+	}
+	if !isNew {
+		t.Fatal("a first-time registration should report a new user")
 	}
 	if regularUser.Role != models.RolePending || regularUser.MembershipStatus != models.MembershipPending {
 		t.Fatalf("regular user should be pending, got role=%s status=%s", regularUser.Role, regularUser.MembershipStatus)
@@ -36,7 +39,7 @@ func TestUserService_RegisterUser_AdminBootstrap(t *testing.T) {
 		Picture:       "https://example.com/admin.jpg",
 		EmailVerified: true,
 	}
-	adminUser, err := us.RegisterUser(adminProfile)
+	adminUser, _, err := us.RegisterUser(adminProfile)
 	if err != nil {
 		t.Fatalf("failed to register admin user: %v", err)
 	}
@@ -55,7 +58,7 @@ func TestUserService_MembershipLifecycle(t *testing.T) {
 		Name:          "New Member",
 		EmailVerified: true,
 	}
-	user, err := us.RegisterUser(profile)
+	user, _, err := us.RegisterUser(profile)
 	if err != nil {
 		t.Fatalf("failed to register user: %v", err)
 	}
@@ -82,7 +85,8 @@ func TestUserService_MembershipLifecycle(t *testing.T) {
 	}
 
 	// Update phone number
-	updated, err := us.UpdateProfile(user.ID, "+61412345678")
+	phone := "+61412345678"
+	updated, err := us.UpdateProfile(user.ID, UpdateProfileInput{PhoneNumber: &phone})
 	if err != nil || updated.PhoneNumber != "+61412345678" {
 		t.Fatalf("expected updated phone number, got %s (err: %v)", updated.PhoneNumber, err)
 	}
@@ -104,7 +108,7 @@ func TestUserService_RejectJoinRequest(t *testing.T) {
 		Name:          "Reject Candidate",
 		EmailVerified: true,
 	}
-	user, err := us.RegisterUser(profile)
+	user, _, err := us.RegisterUser(profile)
 	if err != nil {
 		t.Fatalf("failed to register user: %v", err)
 	}

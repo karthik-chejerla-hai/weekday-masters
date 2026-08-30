@@ -432,6 +432,154 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /admin/users:
+    get:
+      tags: ["Admin: Members"]
+      summary: List every member, whatever their status
+      description: >
+        The admin's view of the roll. Unlike `GET /users`, which is the club's
+        list of approved members, this includes pending, rejected and removed
+        rows, because those are what an admin acts on.
+      operationId: adminListMembers
+      responses:
+        "200":
+          description: Every user row
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: ["Admin: Members"]
+      summary: Invite a member who has not signed up yet
+      description: >
+        Creates an approved member ahead of their first sign-in. Sign-in is
+        Google OAuth, so there is no account to create on their behalf; what this
+        row does is reserve the identity, carrying the membership, the role and a
+        ledger account. The member is chargeable immediately — they can be RSVP'd
+        into sessions and settled against. When they first sign in with a
+        verified email matching this one, `POST /auth/callback` adopts the row
+        rather than creating a second one, so they arrive already approved.
+
+
+        No email is sent; tell them to sign in however you normally reach them.
+      operationId: inviteMember
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InviteMemberRequest"
+      responses:
+        "201":
+          description: The invited member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/users/{id}:
+    put:
+      tags: ["Admin: Members"]
+      summary: Update a member's details
+      description: >
+        Omitted fields are left alone, so the form can send only what changed.
+
+
+        `email` is editable only while the row is still an unclaimed invite. Once
+        a real Auth0 subject is bound to it, the address belongs to the identity
+        provider: changing it here would not change how they sign in, and would
+        silently move them in or out of the ADMIN_EMAIL auto-promotion rule.
+      operationId: updateMember
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMemberRequest"
+      responses:
+        "200":
+          description: The updated member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: No member with that id
+    delete:
+      tags: ["Admin: Members"]
+      summary: Remove a member from the club
+      description: >
+        Revokes access by setting `membership_status` to `removed`. This is not a
+        delete — the row and its ledger history stay, and `POST
+        /admin/users/{id}/reinstate` undoes it.
+
+
+        Refused with 400 when the member still has a non-zero balance (settle up
+        with a top-up or withdrawal first), when they are the club's only admin,
+        or when they are the caller. Their RSVPs for upcoming sessions are
+        cancelled, promoting anyone waiting behind them.
+      operationId: removeMember
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: The removed member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: No member with that id
+
+  /admin/users/{id}/reinstate:
+    post:
+      tags: ["Admin: Members"]
+      summary: Return a removed member to the club
+      operationId: reinstateMember
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: The reinstated member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: No member with that id
+
   /admin/users/{id}/role:
     put:
       tags: ["Admin: Members"]
@@ -1158,6 +1306,14 @@ components:
           format: email
         name:
           type: string
+        nickname:
+          type: string
+          description: >
+            What the club calls this member, chosen by them or corrected by an
+            admin. Displayed in place of `name` wherever it is set — member
+            lists, RSVPs, balances and settlement breakdowns. When it is empty
+            the display name falls back to the member's first name, so this
+            being blank does not mean they show up under their full legal name.
         profile_picture:
           type: string
         phone_number:
@@ -1169,7 +1325,11 @@ components:
           type: boolean
         membership_status:
           type: string
-          enum: [pending, approved, rejected]
+          enum: [pending, approved, rejected, removed]
+          description: >
+            `removed` is a member an admin has taken out of the club. The row is
+            never deleted: RSVPs, ledger entries and settlements reference it,
+            and the ledger is append-only.
         created_at:
           type: string
           format: date-time
@@ -1394,9 +1554,19 @@ components:
 
     UpdateProfileRequest:
       type: object
+      description: >
+        The fields a member may change about themselves. Every field is
+        optional and an omitted one is left unchanged, so the profile form can
+        send only what was touched.
       properties:
         phone_number:
           type: string
+        nickname:
+          type: string
+          maxLength: 100
+          description: >
+            What the club sees them under. Sending an empty string clears it,
+            which falls the display name back to their first name.
 
     RSVPRequest:
       type: object
@@ -1416,6 +1586,46 @@ components:
         role:
           type: string
           enum: [pending, player, admin]
+    InviteMemberRequest:
+      type: object
+      required: [email, name]
+      properties:
+        email:
+          type: string
+          format: email
+          description: >
+            Matched case-insensitively against the verified email at first
+            sign-in, which is how the invite is claimed.
+        name:
+          type: string
+        nickname:
+          type: string
+        phone_number:
+          type: string
+        role:
+          type: string
+          enum: [player, admin]
+          default: player
+
+    UpdateMemberRequest:
+      type: object
+      description: Every field is optional; omitted fields are left unchanged.
+      properties:
+        name:
+          type: string
+        nickname:
+          type: string
+        phone_number:
+          type: string
+        email:
+          type: string
+          format: email
+          description: Accepted only while the member has never signed in.
+        role:
+          type: string
+          enum: [pending, player, admin]
+        is_player:
+          type: boolean
 
     CreateSessionRequest:
       type: object

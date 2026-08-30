@@ -3,6 +3,7 @@ import { Clock, Shield, AlertTriangle } from 'lucide-react';
 import type { RSVP } from '../../types';
 import Avatar from '../ui/Avatar';
 import Badge from '../ui/Badge';
+import { displayName } from '../../utils/members';
 
 interface PlayerListProps {
   rsvps: RSVP[];
@@ -127,10 +128,10 @@ function PlayerItem({ rsvp, position, isOverCapacity, variant = 'confirmed' }: P
         </span>
       )}
 
-      <Avatar src={user.profile_picture} name={user.name} size="sm" />
+      <Avatar src={user.profile_picture} name={displayName(user)} size="sm" />
 
       <div className="flex-1 min-w-0">
-        <p className="font-medium text-slate-900 truncate">{user.name}</p>
+        <p className="font-medium text-slate-900 truncate">{displayName(user)}</p>
         <p className="text-xs text-slate-500 flex items-center gap-1">
           <Clock className="w-3 h-3" />
           {format(new Date(rsvp.rsvp_timestamp), 'MMM d, h:mm a')}

@@ -38,10 +38,12 @@ func main() {
 	})
 
 	// Initialize services
-	userService := services.NewUserService(cfg.AdminEmail)
 	auth0Service := services.NewAuth0Service(cfg.Auth0Domain)
 	sessionService := services.NewSessionService()
 	rsvpService := services.NewRSVPService(notificationService)
+	// Removing a member gives their upcoming spots back, which is the RSVP
+	// service's job — it owns the session lock and the waitlist promotion.
+	userService := services.NewUserService(cfg.AdminEmail).WithRSVPs(rsvpService)
 
 	// Initialize scheduler for notification cron jobs
 	var scheduler *services.SchedulerService
@@ -158,7 +160,14 @@ func main() {
 				admin.POST("/join-requests/:id/approve", adminHandler.ApproveJoinRequest)
 				admin.POST("/join-requests/:id/reject", adminHandler.RejectJoinRequest)
 
-				// User management
+				// Member management. Removal is a status change, never a
+				// delete: RSVPs, ledger entries and settlements reference the
+				// row, and the ledger is append-only.
+				admin.GET("/users", adminHandler.ListMembers)
+				admin.POST("/users", adminHandler.InviteMember)
+				admin.PUT("/users/:id", adminHandler.UpdateMember)
+				admin.DELETE("/users/:id", adminHandler.RemoveMember)
+				admin.POST("/users/:id/reinstate", adminHandler.ReinstateMember)
 				admin.PUT("/users/:id/role", adminHandler.UpdateUserRole)
 
 				// Session management

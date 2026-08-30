@@ -5,6 +5,7 @@ import { format, parseISO } from 'date-fns';
 import type { Session } from '../../types';
 import Badge from '../ui/Badge';
 import Avatar from '../ui/Avatar';
+import { displayName } from '../../utils/members';
 
 interface SessionCardProps {
   session: Session;
@@ -141,7 +142,7 @@ export default function SessionCard({ session, venueName }: SessionCardProps) {
               </div>
               <div className="flex flex-wrap gap-2">
                 {confirmedRsvps.map((rsvp) => (
-                  <PlayerChip key={rsvp.id} name={rsvp.user?.name || ''} picture={rsvp.user?.profile_picture} variant="confirmed" />
+                  <PlayerChip key={rsvp.id} name={displayName(rsvp.user)} picture={rsvp.user?.profile_picture} variant="confirmed" />
                 ))}
               </div>
             </div>
@@ -156,7 +157,7 @@ export default function SessionCard({ session, venueName }: SessionCardProps) {
               </div>
               <div className="flex flex-wrap gap-2">
                 {maybeRsvps.map((rsvp) => (
-                  <PlayerChip key={rsvp.id} name={rsvp.user?.name || ''} picture={rsvp.user?.profile_picture} variant="maybe" />
+                  <PlayerChip key={rsvp.id} name={displayName(rsvp.user)} picture={rsvp.user?.profile_picture} variant="maybe" />
                 ))}
               </div>
             </div>
@@ -171,7 +172,7 @@ export default function SessionCard({ session, venueName }: SessionCardProps) {
               </div>
               <div className="flex flex-wrap gap-2">
                 {declinedRsvps.map((rsvp) => (
-                  <PlayerChip key={rsvp.id} name={rsvp.user?.name || ''} picture={rsvp.user?.profile_picture} variant="declined" />
+                  <PlayerChip key={rsvp.id} name={displayName(rsvp.user)} picture={rsvp.user?.profile_picture} variant="declined" />
                 ))}
               </div>
             </div>

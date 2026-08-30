@@ -4,6 +4,7 @@ import { Settings, Users, Calendar, Check, X, Loader2, MapPin, Save, Building, M
 import { api } from '../services/api';
 import type { User } from '../types';
 import Avatar from '../components/ui/Avatar';
+import { displayName } from '../utils/members';
 
 export default function Admin() {
   const [joinRequests, setJoinRequests] = useState<User[]>([]);
@@ -123,13 +124,16 @@ export default function Admin() {
           <p className="text-sm text-slate-600 mt-1">Create and edit sessions</p>
         </Link>
 
-        <div className="bg-white rounded-xl border border-slate-200 p-6">
+        <Link
+          to="/admin/members"
+          className="bg-white rounded-xl border border-slate-200 p-6 hover:shadow-md transition-shadow"
+        >
           <Users className="w-10 h-10 text-secondary-500 mb-3" />
-          <h3 className="font-semibold text-slate-900">Pending Requests</h3>
+          <h3 className="font-semibold text-slate-900">Manage Members</h3>
           <p className="text-sm text-slate-600 mt-1">
-            {joinRequests.length} request{joinRequests.length !== 1 ? 's' : ''} pending
+            Add members, edit their details, or remove them
           </p>
-        </div>
+        </Link>
       </div>
 
       {/* Club Settings */}
@@ -268,6 +272,9 @@ export default function Admin() {
         <h2 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
           <Users className="w-5 h-5 text-primary-600" />
           Join Requests
+          <span className="text-sm font-normal text-slate-500">
+            ({joinRequests.length} pending)
+          </span>
         </h2>
 
         {isLoading ? (
@@ -287,9 +294,9 @@ export default function Admin() {
                 className="flex items-center justify-between p-4 bg-slate-50 rounded-lg"
               >
                 <div className="flex items-center gap-3">
-                  <Avatar src={user.profile_picture} name={user.name} />
+                  <Avatar src={user.profile_picture} name={displayName(user)} />
                   <div>
-                    <p className="font-medium text-slate-900">{user.name}</p>
+                    <p className="font-medium text-slate-900">{displayName(user)}</p>
                     <p className="text-sm text-slate-500">{user.email}</p>
                   </div>
                 </div>

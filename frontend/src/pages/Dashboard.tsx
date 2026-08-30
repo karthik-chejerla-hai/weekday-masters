@@ -6,6 +6,7 @@ import { useAuth } from '../context/useAuth';
 import { api } from '../services/api';
 import type { Session } from '../types';
 import SessionCard from '../components/sessions/SessionCard';
+import { displayName } from '../utils/members';
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -43,7 +44,7 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div className="bg-gradient-to-r from-primary-600 to-primary-700 rounded-xl p-6 text-white">
         <h1 className="text-2xl font-bold mb-2">
-          Welcome back, {user?.name?.split(' ')[0]}!
+          Welcome back, {displayName(user).split(' ')[0]}!
         </h1>
         <p className="text-primary-100">
           Ready for some badminton? Check out the upcoming sessions below.

@@ -76,9 +76,12 @@ describe('request contracts', () => {
     expect(client[method]).toHaveBeenCalledWith(...args);
   });
 
-  it('sends the phone number under its snake_case key', async () => {
-    await api.updateMe('+61412345678');
+  it('passes the profile update straight through, so an omitted field stays omitted', async () => {
+    await api.updateMe({ phone_number: '+61412345678' });
     expect(client.put).toHaveBeenCalledWith('/users/me', { phone_number: '+61412345678' });
+
+    await api.updateMe({ nickname: 'Smash' });
+    expect(client.put).toHaveBeenCalledWith('/users/me', { nickname: 'Smash' });
   });
 
   it('posts and updates RSVPs against the session path', async () => {

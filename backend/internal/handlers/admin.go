@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"time"
@@ -101,6 +102,158 @@ func (h *AdminHandler) UpdateUserRole(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, user)
+}
+
+// --- member management ----------------------------------------------------
+
+// ListMembers returns every user row, whatever their membership status.
+// GET /api/users is the approved-members list the club sees; this one is the
+// admin's, and includes the pending, rejected and removed rows they act on.
+func (h *AdminHandler) ListMembers(c *gin.Context) {
+	users, err := h.userService.ListAllMembers()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list members"})
+		return
+	}
+
+	c.JSON(http.StatusOK, users)
+}
+
+type InviteMemberRequest struct {
+	Email       string `json:"email" binding:"required"`
+	Name        string `json:"name" binding:"required"`
+	Nickname    string `json:"nickname"`
+	PhoneNumber string `json:"phone_number"`
+	Role        string `json:"role" binding:"omitempty,oneof=player admin"`
+}
+
+// InviteMember adds a member who has not signed up yet.
+func (h *AdminHandler) InviteMember(c *gin.Context) {
+	var req InviteMemberRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	user, err := h.userService.InviteMember(services.InviteMemberInput{
+		Email:       req.Email,
+		Name:        req.Name,
+		Nickname:    req.Nickname,
+		PhoneNumber: req.PhoneNumber,
+		Role:        models.UserRole(req.Role),
+	})
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, user)
+}
+
+// UpdateMemberRequest uses pointers so an omitted field is left alone rather
+// than blanked — the edit form sends only what changed.
+type UpdateMemberRequest struct {
+	Name        *string `json:"name"`
+	Nickname    *string `json:"nickname"`
+	PhoneNumber *string `json:"phone_number"`
+	Email       *string `json:"email"`
+	Role        *string `json:"role" binding:"omitempty,oneof=pending player admin"`
+	IsPlayer    *bool   `json:"is_player"`
+}
+
+// UpdateMember edits a member's details on an admin's behalf.
+func (h *AdminHandler) UpdateMember(c *gin.Context) {
+	id, ok := parseUserIDParam(c)
+	if !ok {
+		return
+	}
+
+	var req UpdateMemberRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	input := services.UpdateMemberInput{
+		Name:        req.Name,
+		Nickname:    req.Nickname,
+		PhoneNumber: req.PhoneNumber,
+		Email:       req.Email,
+		IsPlayer:    req.IsPlayer,
+	}
+	if req.Role != nil {
+		role := models.UserRole(*req.Role)
+		input.Role = &role
+	}
+
+	user, err := h.userService.UpdateMemberDetails(id, input)
+	if err != nil {
+		respondMemberError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, user)
+}
+
+// RemoveMember revokes a member's access to the club. It is not a delete: the
+// row and its ledger history stay, and ReinstateMember can undo it.
+func (h *AdminHandler) RemoveMember(c *gin.Context) {
+	actor, err := middleware.GetUserFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	id, ok := parseUserIDParam(c)
+	if !ok {
+		return
+	}
+
+	user, err := h.userService.RemoveMember(id, actor.ID)
+	if err != nil {
+		respondMemberError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, user)
+}
+
+// ReinstateMember returns a removed member to the club.
+func (h *AdminHandler) ReinstateMember(c *gin.Context) {
+	id, ok := parseUserIDParam(c)
+	if !ok {
+		return
+	}
+
+	user, err := h.userService.ReinstateMember(id)
+	if err != nil {
+		respondMemberError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, user)
+}
+
+// parseUserIDParam reads :id, answering the request itself when it is not a
+// UUID. The bool says whether the caller should carry on.
+func parseUserIDParam(c *gin.Context) (uuid.UUID, bool) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		return uuid.Nil, false
+	}
+	return id, true
+}
+
+// respondMemberError separates "no such member" from "you may not do that".
+// Everything else the member service rejects is a rule the admin broke, and the
+// message is written to be read by them.
+func respondMemberError(c *gin.Context, err error) {
+	if errors.Is(err, services.ErrMemberNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 }
 
 type CreateSessionRequest struct {

@@ -40,9 +40,9 @@ func newHarness(t *testing.T) *harness {
 
 	h := &harness{t: t}
 
-	userService := services.NewUserService("")
 	sessionService := services.NewSessionService()
 	rsvpService := services.NewRSVPService(nil)
+	userService := services.NewUserService("").WithRSVPs(rsvpService)
 	notificationService := services.NewNotificationService(services.NotificationConfig{})
 	ledgerService := services.NewLedgerService()
 	settlementService := services.NewSettlementService(ledgerService)
@@ -116,6 +116,11 @@ func newHarness(t *testing.T) *harness {
 		admin.GET("/join-requests", adminHandler.ListJoinRequests)
 		admin.POST("/join-requests/:id/approve", adminHandler.ApproveJoinRequest)
 		admin.POST("/join-requests/:id/reject", adminHandler.RejectJoinRequest)
+		admin.GET("/users", adminHandler.ListMembers)
+		admin.POST("/users", adminHandler.InviteMember)
+		admin.PUT("/users/:id", adminHandler.UpdateMember)
+		admin.DELETE("/users/:id", adminHandler.RemoveMember)
+		admin.POST("/users/:id/reinstate", adminHandler.ReinstateMember)
 		admin.PUT("/users/:id/role", adminHandler.UpdateUserRole)
 		admin.POST("/sessions", adminHandler.CreateSession)
 		admin.PUT("/sessions/:id", adminHandler.UpdateSession)

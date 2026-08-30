@@ -20,6 +20,7 @@ describe('PlayerList Component', () => {
         auth0_id: 'auth0|1',
         email: 'alice@example.com',
         name: 'Alice Cooper',
+        nickname: '',
         profile_picture: '',
         phone_number: '',
         role: 'player',
@@ -45,6 +46,7 @@ describe('PlayerList Component', () => {
         auth0_id: 'auth0|2',
         email: 'bob@example.com',
         name: 'Bob Marley',
+        nickname: '',
         profile_picture: '',
         phone_number: '',
         role: 'player',
@@ -69,6 +71,7 @@ describe('PlayerList Component', () => {
         auth0_id: 'auth0|3',
         email: 'charlie@example.com',
         name: 'Charlie Brown',
+        nickname: '',
         profile_picture: '',
         phone_number: '',
         role: 'player',
@@ -83,9 +86,9 @@ describe('PlayerList Component', () => {
   it('renders confirmed, waitlisted, and maybe sections with counts', () => {
     render(<PlayerList rsvps={mockRsvps} maxPlayers={6} />);
 
-    expect(screen.getByText('Alice Cooper')).toBeInTheDocument();
-    expect(screen.getByText('Bob Marley')).toBeInTheDocument();
-    expect(screen.getByText('Charlie Brown')).toBeInTheDocument();
+    expect(screen.getByText('Alice')).toBeInTheDocument();
+    expect(screen.getByText('Bob')).toBeInTheDocument();
+    expect(screen.getByText('Charlie')).toBeInTheDocument();
 
     expect(screen.getByText('Waitlist')).toBeInTheDocument();
     expect(screen.getByText('Maybe')).toBeInTheDocument();
