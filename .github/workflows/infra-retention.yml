@@ -72,6 +72,7 @@ jobs:
       # that editing the JSON in this repo is all it takes to change it.
       - name: Apply the Artifact Registry cleanup policy
         run: |
+          echo "not-run" > "$RUNNER_TEMP/policy.outcome"
           echo "Policy to apply:"
           cat .github/artifact-registry-cleanup-policy.json
 
@@ -84,11 +85,20 @@ jobs:
             DRY_RUN_FLAG="--no-dry-run"
           fi
 
-          gcloud artifacts repositories set-cleanup-policies ${{ env.ARTIFACT_REGISTRY_REPO }} \
-            --project ${{ env.GCP_PROJECT_ID }} \
-            --location ${{ env.GCP_REGION }} \
-            --policy=.github/artifact-registry-cleanup-policy.json \
-            $DRY_RUN_FLAG
+          # Recorded rather than fatal so that one run reports every missing
+          # permission instead of stopping at the first. The gate at the end of
+          # the job turns any failure recorded here into a red run.
+          if gcloud artifacts repositories set-cleanup-policies ${{ env.ARTIFACT_REGISTRY_REPO }} \
+               --project ${{ env.GCP_PROJECT_ID }} \
+               --location ${{ env.GCP_REGION }} \
+               --policy=.github/artifact-registry-cleanup-policy.json \
+               $DRY_RUN_FLAG; then
+            echo "ok" > "$RUNNER_TEMP/policy.outcome"
+          else
+            echo "failed" > "$RUNNER_TEMP/policy.outcome"
+            echo "::error::could not set the cleanup policy - needs artifactregistry.repositories.update"
+            exit 0
+          fi
 
           gcloud artifacts repositories describe ${{ env.ARTIFACT_REGISTRY_REPO }} \
             --project ${{ env.GCP_PROJECT_ID }} \
@@ -100,28 +110,39 @@ jobs:
       # backlog now rather than waiting for it, and is the step whose output
       # says how much was actually there.
       - name: Delete preview images
+        if: always()
         run: |
+          echo "not-run" > "$RUNNER_TEMP/images.outcome"
           source .github/scripts/registry-retention.sh
 
           REPO_PATH="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO }}"
           cutoff=$(cutoff_rfc3339 "$OLDER_THAN_DAYS")
           echo "Deleting preview images created before ${cutoff}"
 
+          # stdout only: gcloud writes progress chatter to stderr, and folding
+          # that into the variable leaves a document jq cannot parse.
           if ! images=$(gcloud artifacts docker images list "$REPO_PATH" \
                           --project ${{ env.GCP_PROJECT_ID }} \
-                          --include-tags --format=json 2>&1); then
-            echo "::error::could not list images in ${REPO_PATH}"
-            echo "$images"
-            exit 1
+                          --include-tags --format=json 2>"$RUNNER_TEMP/images.err"); then
+            echo "failed" > "$RUNNER_TEMP/images.outcome"
+            echo "::error::could not list images in ${REPO_PATH} - needs artifactregistry.versions.list"
+            cat "$RUNNER_TEMP/images.err"
+            exit 0
           fi
 
-          total=$(printf '%s' "$images" | jq 'length')
+          if ! total=$(printf '%s' "$images" | jq 'length' 2>&1); then
+            echo "failed" > "$RUNNER_TEMP/images.outcome"
+            echo "::error::image list was not valid JSON"
+            printf '%s' "$images" | head -c 2000
+            exit 0
+          fi
           echo "Repository holds ${total} image version(s)."
 
           digests=$(printf '%s' "$images" | stale_pr_digests "$cutoff")
           if [ -z "$digests" ]; then
             echo "No preview images older than ${OLDER_THAN_DAYS} days."
             echo "Preview images deleted: 0 (of ${total} versions)" >> "$GITHUB_STEP_SUMMARY"
+            echo "ok" > "$RUNNER_TEMP/images.outcome"
             exit 0
           fi
 
@@ -133,38 +154,52 @@ jobs:
               echo "[dry run] would delete ${digest}"
             else
               echo "Deleting ${digest}"
-              gcloud artifacts docker images delete "$digest" \
-                --project ${{ env.GCP_PROJECT_ID }} \
-                --delete-tags --quiet
+              if ! gcloud artifacts docker images delete "$digest" \
+                     --project ${{ env.GCP_PROJECT_ID }} \
+                     --delete-tags --quiet; then
+                echo "failed" > "$RUNNER_TEMP/images.outcome"
+                echo "::error::could not delete ${digest} - needs artifactregistry.versions.delete"
+                break
+              fi
             fi
           done
 
+          [ "$(cat "$RUNNER_TEMP/images.outcome")" = "failed" ] || echo "ok" > "$RUNNER_TEMP/images.outcome"
           echo "Preview images matched: ${count} (of ${total} versions), dry run: ${DRY_RUN}" >> "$GITHUB_STEP_SUMMARY"
 
       # Only revisions that serve no traffic and carry no tag are ever
       # candidates, and the newest KEEP_REVISIONS are held back on top of that,
       # so there is always somewhere to roll back to.
       - name: Prune stale Cloud Run revisions
+        if: always()
         run: |
+          echo "not-run" > "$RUNNER_TEMP/revisions.outcome"
           source .github/scripts/registry-retention.sh
 
           if ! revisions=$(gcloud run revisions list \
                              --service ${{ env.BACKEND_SERVICE_NAME }} \
                              --project ${{ env.GCP_PROJECT_ID }} \
                              --region ${{ env.GCP_REGION }} \
-                             --format=json 2>&1); then
-            echo "::error::could not list revisions of ${{ env.BACKEND_SERVICE_NAME }}"
-            echo "$revisions"
-            exit 1
+                             --format=json 2>"$RUNNER_TEMP/revisions.err"); then
+            echo "failed" > "$RUNNER_TEMP/revisions.outcome"
+            echo "::error::could not list revisions - needs run.revisions.list"
+            cat "$RUNNER_TEMP/revisions.err"
+            exit 0
           fi
 
-          total=$(printf '%s' "$revisions" | jq 'length')
+          if ! total=$(printf '%s' "$revisions" | jq 'length' 2>&1); then
+            echo "failed" > "$RUNNER_TEMP/revisions.outcome"
+            echo "::error::revision list was not valid JSON"
+            printf '%s' "$revisions" | head -c 2000
+            exit 0
+          fi
           echo "Service has ${total} revision(s); keeping the newest ${KEEP_REVISIONS}."
 
           stale=$(printf '%s' "$revisions" | prunable_revisions "$KEEP_REVISIONS")
           if [ -z "$stale" ]; then
             echo "Nothing to prune."
             echo "Revisions pruned: 0 (of ${total})" >> "$GITHUB_STEP_SUMMARY"
+            echo "ok" > "$RUNNER_TEMP/revisions.outcome"
             exit 0
           fi
 
@@ -174,18 +209,49 @@ jobs:
               echo "[dry run] would delete revision ${revision}"
             else
               echo "Deleting revision ${revision}"
-              gcloud run revisions delete "$revision" \
-                --project ${{ env.GCP_PROJECT_ID }} \
-                --region ${{ env.GCP_REGION }} \
-                --quiet
+              if ! gcloud run revisions delete "$revision" \
+                     --project ${{ env.GCP_PROJECT_ID }} \
+                     --region ${{ env.GCP_REGION }} \
+                     --quiet; then
+                echo "failed" > "$RUNNER_TEMP/revisions.outcome"
+                echo "::error::could not delete ${revision} - needs run.revisions.delete"
+                break
+              fi
             fi
           done
 
+          [ "$(cat "$RUNNER_TEMP/revisions.outcome")" = "failed" ] || echo "ok" > "$RUNNER_TEMP/revisions.outcome"
           echo "Revisions matched: ${count} (of ${total}), dry run: ${DRY_RUN}" >> "$GITHUB_STEP_SUMMARY"
+
+      # The steps above record rather than abort, so that a single run names
+      # every missing permission. This is what stops that becoming a green run
+      # that did nothing: it reports each outcome and fails on any that is not
+      # "ok".
+      - name: Report outcomes
+        if: always()
+        run: |
+          failed=0
+          {
+            echo "| Operation | Outcome |"
+            echo "|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for part in policy images revisions; do
+            outcome=$(cat "$RUNNER_TEMP/${part}.outcome" 2>/dev/null || echo "not-run")
+            echo "${part}: ${outcome}"
+            echo "| ${part} | ${outcome} |" >> "$GITHUB_STEP_SUMMARY"
+            [ "$outcome" = "ok" ] || failed=1
+          done
+
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::retention run did not complete cleanly - see the annotations above for the permission each step needs"
+          fi
+          exit $failed
 
       # The service must still be serving after all that. Cheap, and the one
       # thing that would matter if a guard above were ever wrong.
       - name: Verify production is still serving
+        if: always()
         run: |
           url=$(gcloud run services describe ${{ env.BACKEND_SERVICE_NAME }} \
                   --project ${{ env.GCP_PROJECT_ID }} \
