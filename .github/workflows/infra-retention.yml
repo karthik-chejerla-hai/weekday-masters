@@ -1,0 +1,199 @@
+name: Infra Retention
+
+# Preview cleanup takes a merged PR's preview out of service: the Neon branch is
+# deleted, the Cloud Run tag removed, the Hosting channel deleted. Two things it
+# does not touch accumulate quietly behind it, and this is where they are dealt
+# with.
+#
+#   Artifact Registry images. Every push to a PR builds and pushes a
+#   pr-<number>-<sha> image. Nothing removed them, so the registry held one for
+#   every commit ever pushed to a PR. This costs storage, monthly, forever.
+#
+#   Cloud Run revisions. `--remove-tags` takes the pr-N URL out of service but
+#   leaves the revision behind, untagged and serving nothing. They are free, but
+#   a service is capped at 1000 of them and previews were the only thing
+#   creating them at any rate.
+#
+# The registry half is a server-side cleanup policy, so it keeps working whether
+# or not this workflow ever runs again; the sweep steps only exist to clear what
+# had already piled up and to catch anything the policy misses.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'List what would be deleted without deleting it'
+        type: boolean
+        default: true
+      older_than_days:
+        description: 'Delete preview images older than this many days'
+        type: string
+        default: '7'
+      keep_revisions:
+        description: 'Number of most recent Cloud Run revisions to keep'
+        type: string
+        default: '20'
+  schedule:
+    # 02:00 Monday in Sydney, comfortably away from a deploy.
+    - cron: '0 15 * * 0'
+
+env:
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GCP_REGION: australia-southeast1
+  ARTIFACT_REGISTRY_REPO: rally-club-api-registry
+  BACKEND_SERVICE_NAME: rally-club-api
+  # A scheduled run has no inputs, and is the recurring hygiene pass, so it acts.
+  DRY_RUN: ${{ inputs.dry_run || 'false' }}
+  OLDER_THAN_DAYS: ${{ inputs.older_than_days || '7' }}
+  KEEP_REVISIONS: ${{ inputs.keep_revisions || '20' }}
+
+jobs:
+  retention:
+    name: Prune Preview Build Artefacts
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.BACKEND_SA_EMAIL }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      # The policy is what stops this recurring. It is applied on every run so
+      # that editing the JSON in this repo is all it takes to change it.
+      - name: Apply the Artifact Registry cleanup policy
+        run: |
+          echo "Policy to apply:"
+          cat .github/artifact-registry-cleanup-policy.json
+
+          # Artifact Registry has its own dry-run mode: the policy is stored and
+          # evaluated on schedule, but logs what it would delete instead of
+          # deleting. That is the honest mapping of this workflow's dry run.
+          if [ "$DRY_RUN" = "true" ]; then
+            DRY_RUN_FLAG="--dry-run"
+          else
+            DRY_RUN_FLAG="--no-dry-run"
+          fi
+
+          gcloud artifacts repositories set-cleanup-policies ${{ env.ARTIFACT_REGISTRY_REPO }} \
+            --project ${{ env.GCP_PROJECT_ID }} \
+            --location ${{ env.GCP_REGION }} \
+            --policy=.github/artifact-registry-cleanup-policy.json \
+            $DRY_RUN_FLAG
+
+          gcloud artifacts repositories describe ${{ env.ARTIFACT_REGISTRY_REPO }} \
+            --project ${{ env.GCP_PROJECT_ID }} \
+            --location ${{ env.GCP_REGION }} \
+            --format='value(cleanupPolicyDryRun)' |
+            xargs -I{} echo "Repository cleanup dry-run mode is now: {}"
+
+      # The policy runs on Google's schedule, roughly daily. This clears the
+      # backlog now rather than waiting for it, and is the step whose output
+      # says how much was actually there.
+      - name: Delete preview images
+        run: |
+          source .github/scripts/registry-retention.sh
+
+          REPO_PATH="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO }}"
+          cutoff=$(cutoff_rfc3339 "$OLDER_THAN_DAYS")
+          echo "Deleting preview images created before ${cutoff}"
+
+          if ! images=$(gcloud artifacts docker images list "$REPO_PATH" \
+                          --project ${{ env.GCP_PROJECT_ID }} \
+                          --include-tags --format=json 2>&1); then
+            echo "::error::could not list images in ${REPO_PATH}"
+            echo "$images"
+            exit 1
+          fi
+
+          total=$(printf '%s' "$images" | jq 'length')
+          echo "Repository holds ${total} image version(s)."
+
+          digests=$(printf '%s' "$images" | stale_pr_digests "$cutoff")
+          if [ -z "$digests" ]; then
+            echo "No preview images older than ${OLDER_THAN_DAYS} days."
+            echo "Preview images deleted: 0 (of ${total} versions)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          count=$(printf '%s\n' "$digests" | wc -l | tr -d ' ')
+          echo "${count} preview image(s) match."
+
+          for digest in $digests; do
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "[dry run] would delete ${digest}"
+            else
+              echo "Deleting ${digest}"
+              gcloud artifacts docker images delete "$digest" \
+                --project ${{ env.GCP_PROJECT_ID }} \
+                --delete-tags --quiet
+            fi
+          done
+
+          echo "Preview images matched: ${count} (of ${total} versions), dry run: ${DRY_RUN}" >> "$GITHUB_STEP_SUMMARY"
+
+      # Only revisions that serve no traffic and carry no tag are ever
+      # candidates, and the newest KEEP_REVISIONS are held back on top of that,
+      # so there is always somewhere to roll back to.
+      - name: Prune stale Cloud Run revisions
+        run: |
+          source .github/scripts/registry-retention.sh
+
+          if ! revisions=$(gcloud run revisions list \
+                             --service ${{ env.BACKEND_SERVICE_NAME }} \
+                             --project ${{ env.GCP_PROJECT_ID }} \
+                             --region ${{ env.GCP_REGION }} \
+                             --format=json 2>&1); then
+            echo "::error::could not list revisions of ${{ env.BACKEND_SERVICE_NAME }}"
+            echo "$revisions"
+            exit 1
+          fi
+
+          total=$(printf '%s' "$revisions" | jq 'length')
+          echo "Service has ${total} revision(s); keeping the newest ${KEEP_REVISIONS}."
+
+          stale=$(printf '%s' "$revisions" | prunable_revisions "$KEEP_REVISIONS")
+          if [ -z "$stale" ]; then
+            echo "Nothing to prune."
+            echo "Revisions pruned: 0 (of ${total})" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          count=$(printf '%s\n' "$stale" | wc -l | tr -d ' ')
+          for revision in $stale; do
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "[dry run] would delete revision ${revision}"
+            else
+              echo "Deleting revision ${revision}"
+              gcloud run revisions delete "$revision" \
+                --project ${{ env.GCP_PROJECT_ID }} \
+                --region ${{ env.GCP_REGION }} \
+                --quiet
+            fi
+          done
+
+          echo "Revisions matched: ${count} (of ${total}), dry run: ${DRY_RUN}" >> "$GITHUB_STEP_SUMMARY"
+
+      # The service must still be serving after all that. Cheap, and the one
+      # thing that would matter if a guard above were ever wrong.
+      - name: Verify production is still serving
+        run: |
+          url=$(gcloud run services describe ${{ env.BACKEND_SERVICE_NAME }} \
+                  --project ${{ env.GCP_PROJECT_ID }} \
+                  --region ${{ env.GCP_REGION }} \
+                  --format='value(status.url)')
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "${url}/health")
+          echo "${url}/health -> ${code}"
+          if [ "$code" != "200" ]; then
+            echo "::error::production backend is not healthy after retention run"
+            exit 1
+          fi

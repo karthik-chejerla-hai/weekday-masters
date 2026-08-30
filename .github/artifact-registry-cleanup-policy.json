@@ -1,0 +1,16 @@
+[
+  {
+    "name": "delete-preview-images",
+    "action": { "type": "Delete" },
+    "condition": {
+      "tagState": "TAGGED",
+      "tagPrefixes": ["pr-"],
+      "olderThan": "7d"
+    }
+  },
+  {
+    "name": "keep-recent-versions",
+    "action": { "type": "Keep" },
+    "mostRecentVersions": { "keepCount": 20 }
+  }
+]
