@@ -24,6 +24,29 @@ Previews previously pointed straight at the production `DATABASE_URL` with no
 migration step, which meant a schema-changing PR deployed a backend querying
 columns that did not exist, and every preview wrote to real data.
 
+### What closing a PR tears down
+
+`preview-cleanup.yml` deletes the Neon branch, removes the Cloud Run revision
+tag, and deletes the Firebase Hosting preview channel. Its last step then
+re-checks the tag and the channel and fails if either survives: every step
+before it tolerates "already gone", so without that check the job would report
+success whether or not anything was actually removed. That is how the missing
+Hosting step went unnoticed — merged PRs kept serving a public preview until the
+7-day `expires` on the deploy caught up with them.
+
+Two things are deliberately **not** cleaned up, and both accumulate:
+
+- **Cloud Run revisions.** `--remove-tags` takes the `pr-N` URL out of service
+  but leaves the revision behind, untagged and serving no traffic. They are free
+  but count against the per-service revision quota.
+- **Artifact Registry images.** Every push to a PR builds and pushes a
+  `pr-N-<sha>` image and nothing deletes it. This one costs storage. A registry
+  cleanup policy is the fix, not a workflow step.
+
+Run the workflow manually (`workflow_dispatch`) to sweep up preview channels for
+PRs that are already closed. It defaults to a dry run; set `dry_run` to false to
+actually delete.
+
 Required repository configuration:
 
 | Name | Kind | Notes |

@@ -1,15 +1,36 @@
 name: Preview Cleanup
 
+# A merged PR used to leave its Hosting preview channel serving. The backend
+# half was torn down correctly — Neon branch deleted, Cloud Run tag removed —
+# but nothing deleted the channel, so the preview site stayed public until the
+# 7-day `expires` on the deploy caught up with it. Both halves are handled here
+# now, and the job verifies its own work rather than reporting success either
+# way (see "Verify" below).
+
 on:
   pull_request:
     types: [closed]
+  # Sweeps up anything left behind while the frontend half was missing, and is
+  # the way to clear strays if a close event is ever missed.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'List what would be deleted without deleting it'
+        type: boolean
+        default: true
+
+env:
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GCP_REGION: australia-southeast1
+  BACKEND_SERVICE_NAME: rally-club-api
 
 jobs:
   # ============================================
-  # CLEAN UP CLOUD RUN PREVIEW REVISION TAG
+  # TEAR DOWN ONE PR'S PREVIEW
   # ============================================
   cleanup:
-    name: Clean Up Preview Backend
+    name: Clean Up Preview
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
 
     permissions:
@@ -17,6 +38,10 @@ jobs:
       id-token: write
 
     steps:
+      # The teardown sources .github/scripts/hosting-channels.sh, so the
+      # repository has to be on disk before anything else runs.
+      - uses: actions/checkout@v5
+
       # Delete the branch first: it is the thing that costs money if it is left
       # behind, and it is independent of anything Google Cloud does below.
       - name: Delete the PR's Neon branch
@@ -27,7 +52,7 @@ jobs:
           api_key: ${{ secrets.NEON_API_KEY }}
           branch: pr-${{ github.event.pull_request.number }}
 
-      - name: Authenticate to Google Cloud
+      - name: Authenticate to Google Cloud (backend)
         uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
@@ -36,11 +61,147 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v3
 
+      # Removing the tag is what takes the pr-N URL out of service. It does not
+      # delete the revision, which stays as an untagged, no-traffic revision.
       - name: Remove Cloud Run revision tag
         continue-on-error: true
         run: |
-          PR_NUMBER=${{ github.event.pull_request.number }}
-          gcloud run services update-traffic rally-club-api \
-            --project ${{ secrets.GCP_PROJECT_ID }} \
-            --region australia-southeast1 \
-            --remove-tags pr-${PR_NUMBER}
+          gcloud run services update-traffic ${{ env.BACKEND_SERVICE_NAME }} \
+            --project ${{ env.GCP_PROJECT_ID }} \
+            --region ${{ env.GCP_REGION }} \
+            --remove-tags pr-${{ github.event.pull_request.number }}
+
+      # A second identity: Hosting is deployed by the frontend service account,
+      # so it is the one that may delete what it created.
+      - name: Authenticate to Google Cloud (frontend)
+        id: frontend-auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.FRONTEND_SA_EMAIL }}
+          create_credentials_file: true
+
+      - name: Delete the PR's Hosting preview channel
+        continue-on-error: true
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.frontend-auth.outputs.credentials_file_path }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          npm install -g firebase-tools@13
+          source .github/scripts/hosting-channels.sh
+
+          channels=$(list_channels) || {
+            echo "::error::could not list Hosting channels"
+            exit 1
+          }
+
+          # The channel id is derived from the branch name and truncated to fit,
+          # so it is matched by its pr-number prefix rather than rebuilt here.
+          for channel in $channels; do
+            if channel_belongs_to_pr "$channel" "$PR_NUMBER"; then
+              echo "Deleting Hosting preview channel: $channel"
+              delete_channel "$channel"
+            fi
+          done
+
+      # Without this the job is green whether or not anything was torn down —
+      # which is exactly how the missing Hosting step went unnoticed. Every step
+      # above tolerates "already gone"; this one insists the end state is right.
+      - name: Verify the preview is gone
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.frontend-auth.outputs.credentials_file_path }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          source .github/scripts/hosting-channels.sh
+          failed=0
+
+          if gcloud run services describe ${{ env.BACKEND_SERVICE_NAME }} \
+               --project ${{ env.GCP_PROJECT_ID }} \
+               --region ${{ env.GCP_REGION }} --format=json \
+             | jq -e --arg tag "pr-${PR_NUMBER}" \
+                 '.spec.traffic[]? | select(.tag == $tag)' > /dev/null; then
+            echo "::error::Cloud Run tag pr-${PR_NUMBER} is still attached"
+            failed=1
+          fi
+
+          channels=$(list_channels) || {
+            echo "::error::could not list Hosting channels to verify against"
+            exit 1
+          }
+          for channel in $channels; do
+            if channel_belongs_to_pr "$channel" "$PR_NUMBER"; then
+              echo "::error::Hosting preview channel ${channel} is still serving"
+              failed=1
+            fi
+          done
+
+          if [ "$failed" -eq 0 ]; then
+            echo "Preview for PR #${PR_NUMBER} is fully torn down."
+          fi
+          exit $failed
+
+  # ============================================
+  # SWEEP UP PREVIEWS FOR PRS THAT ARE ALREADY CLOSED
+  # ============================================
+  sweep:
+    name: Sweep Closed-PR Previews
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Authenticate to Google Cloud
+        id: frontend-auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.FRONTEND_SA_EMAIL }}
+          create_credentials_file: true
+
+      - name: Delete Hosting preview channels for closed PRs
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.frontend-auth.outputs.credentials_file_path }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          npm install -g firebase-tools@13
+          source .github/scripts/hosting-channels.sh
+
+          channels=$(list_channels) || {
+            echo "::error::could not list Hosting channels"
+            exit 1
+          }
+
+          swept=0
+          for channel in $channels; do
+            pr=$(pr_number_for_channel "$channel") || continue
+            if [ -z "$pr" ]; then
+              echo "Skipping ${channel}: not a PR preview channel"
+              continue
+            fi
+
+            state=$(gh pr view "$pr" --json state -q .state 2>/dev/null || echo "UNKNOWN")
+            if [ "$state" = "OPEN" ]; then
+              echo "Keeping ${channel}: PR #${pr} is still open"
+              continue
+            fi
+
+            swept=$((swept + 1))
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "[dry run] would delete ${channel} (PR #${pr} is ${state})"
+            else
+              echo "Deleting ${channel} (PR #${pr} is ${state})"
+              delete_channel "$channel"
+            fi
+          done
+
+          echo "${swept} channel(s) matched." >> "$GITHUB_STEP_SUMMARY"
