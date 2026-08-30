@@ -12,6 +12,7 @@ import SessionDetail from './pages/SessionDetail';
 import Profile from './pages/Profile';
 import Admin from './pages/Admin';
 import AdminSessions from './pages/AdminSessions';
+import AdminMembers from './pages/AdminMembers';
 import PendingApproval from './pages/PendingApproval';
 import Loading from './components/ui/Loading';
 
@@ -110,6 +111,12 @@ function AppRoutes() {
         <Route path="/admin/sessions" element={
           <ProtectedRoute requireAdmin>
             <AdminSessions />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/admin/members" element={
+          <ProtectedRoute requireAdmin>
+            <AdminMembers />
           </ProtectedRoute>
         } />
       </Route>

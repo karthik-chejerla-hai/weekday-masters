@@ -5,6 +5,7 @@ import { api } from '../services/api';
 import Avatar from '../components/ui/Avatar';
 import Badge from '../components/ui/Badge';
 import NotificationSettings from '../components/notifications/NotificationSettings';
+import { displayName } from '../utils/members';
 
 export default function Profile() {
   const { user, refreshUser } = useAuth();
@@ -42,9 +43,9 @@ export default function Profile() {
 
       <div className="bg-white rounded-xl border border-slate-200 p-6">
         <div className="flex items-center gap-4 mb-6 pb-6 border-b border-slate-200">
-          <Avatar src={user.profile_picture} name={user.name} size="lg" />
+          <Avatar src={user.profile_picture} name={displayName(user)} size="lg" />
           <div>
-            <h2 className="text-xl font-semibold text-slate-900">{user.name}</h2>
+            <h2 className="text-xl font-semibold text-slate-900">{displayName(user)}</h2>
             <div className="flex items-center gap-2 mt-1">
               <Badge variant={user.role === 'admin' ? 'info' : 'default'}>
                 {user.role === 'admin' && <Shield className="w-3 h-3 mr-1" />}

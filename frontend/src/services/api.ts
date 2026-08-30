@@ -2,6 +2,8 @@ import axios, { AxiosInstance } from 'axios';
 import type {
   User,
   Club,
+  InviteMemberInput,
+  UpdateMemberInput,
   Session,
   RSVP,
   SessionWithSummary,
@@ -135,7 +137,37 @@ class ApiService {
     return response.data;
   }
 
-  // Admin - User Management
+  // Admin - Member Management
+  //
+  // Note the two member lists: `listMembers` is the club's roll of approved
+  // members, `adminListMembers` also carries the pending, rejected and removed
+  // rows an admin acts on.
+  async adminListMembers(): Promise<User[]> {
+    const response = await this.client.get<User[]>('/admin/users');
+    return response.data;
+  }
+
+  async inviteMember(input: InviteMemberInput): Promise<User> {
+    const response = await this.client.post<User>('/admin/users', input);
+    return response.data;
+  }
+
+  async updateMember(userId: string, input: UpdateMemberInput): Promise<User> {
+    const response = await this.client.put<User>(`/admin/users/${userId}`, input);
+    return response.data;
+  }
+
+  /** Revokes access. Not a delete — `reinstateMember` undoes it. */
+  async removeMember(userId: string): Promise<User> {
+    const response = await this.client.delete<User>(`/admin/users/${userId}`);
+    return response.data;
+  }
+
+  async reinstateMember(userId: string): Promise<User> {
+    const response = await this.client.post<User>(`/admin/users/${userId}/reinstate`);
+    return response.data;
+  }
+
   async updateUserRole(userId: string, role: string): Promise<User> {
     const response = await this.client.put<User>(`/admin/users/${userId}/role`, { role });
     return response.data;

@@ -93,7 +93,8 @@ simultaneous settle attempts produce exactly one settlement.
 /api [+RequireValidToken]   → registration (auth/callback) — valid JWT, user row may not exist yet
 /api [+AuthMiddleware]      → authenticated (user profile, notifications, push tokens)
 /api [+RequireApproved]     → approved members (sessions, RSVPs, member list)
-/api/admin [+RequireAdmin]  → admin (join requests, session CRUD, announcements, club settings)
+/api/admin [+RequireAdmin]  → admin (join requests, member CRUD, session CRUD, announcements,
+                              club settings)
 ```
 
 Register approved-only routes on the `approved` group, not `protected` — Gin binds the
@@ -104,11 +105,24 @@ handler chain at registration time, so using the wrong group silently skips the 
 **Key business rules in services:**
 - `RSVPService`: enforces 3-day deadline, prevents IN→OUT after deadline (unless admin), tracks `is_late_rsvp` and `added_by_admin` flags. Enforces session capacity inside a transaction that locks the session row (`SELECT ... FOR UPDATE`): an "in" request for a full session is stored as `waitlisted` instead, and freeing a confirmed spot auto-promotes the longest-waiting player and notifies them. Admins bypass the cap.
 - `SessionService`: calculates `max_players` from courts (1→6, 2→10, 3→16), generates recurring sessions, sets RSVP deadline at sessionDate - 3 days 23:59:59 Sydney time
-- `UserService`: auto-promotes user matching `ADMIN_EMAIL` env var on first login — only when the email is **verified and sourced from Auth0**, never from the request body
+- `UserService`: auto-promotes user matching `ADMIN_EMAIL` env var on first login — only when
+  the email is **verified and sourced from Auth0**, never from the request body. Also owns admin
+  member management: an invited member is a real, chargeable row created before their first
+  sign-in, carrying `auth0_id = "invite:<uuid>"` in place of a subject; `RegisterUser` adopts that
+  row when a verified email matches, so the invite is claimed rather than duplicated. Removal is a
+  status change to `removed`, never a delete — the ledger is append-only and RSVPs and settlements
+  reference the row — and is refused while the member has a non-zero balance, is the only admin, or
+  is the caller. It cancels their upcoming RSVPs first, promoting from the waitlist
 - `SchedulerService`: hourly cron sends 24h/12h session reminders and 6h deadline alerts
 - `NotificationService`: FCM push + SendGrid email, both optional and independently initialized
 - `LedgerService`: **the only writer of ledger entries.** Posts a transaction and its entries inside one DB transaction, locking the accounts it touches `FOR UPDATE` in `id` order, then asserts the club-position identity and rolls back if it does not come to zero. Balances are derived by aggregating entries — there is no cached balance column, so drift is impossible. Corrections are reversing transactions; nothing updates or deletes an entry.
 - `SettlementService`: costs a played session into two bands (standard hours, optional extension), splits each band equally among only its own participants, and hands the resulting movements to `LedgerService`. Locks the session row like the RSVP capacity check. Refuses to drive shuttle stock negative, and refuses to settle a session twice
+
+**Display names**: `User.Nickname` is what the club calls a member, and `User.DisplayName()`
+(nickname, else name) is what should reach a screen. The ledger names player accounts by it and
+settlement lines resolve through it, so `formatCents`-style display and the frontend's
+`utils/members.displayName` agree with the database rather than each showing a different name for
+one person.
 
 **Models use GORM hooks** (`BeforeCreate`) for UUID generation. All PKs are UUIDs. `Session`
 also has a `BeforeSave` hook that derives `starts_at`/`ends_at` from the date plus the
@@ -139,6 +153,11 @@ Read `.specify/memory/constitution.md` principles V–VII before touching any of
 **Stack:** React 18, TypeScript, Vite, Tailwind CSS (cyan primary / amber secondary palette), PWA-enabled.
 
 **Auth flow:** Auth0 with Google OAuth (PKCE). `AuthContext` wraps the app — on Auth0 authentication, calls `POST /api/auth/callback` to sync user with backend, stores JWT for API calls. That endpoint requires a valid access token; the backend reads the subject from the token and, for first-time registrations, fetches the authoritative email from Auth0's `/userinfo`. Only display fields (`name`, `profile_picture`) are read from the request body.
+
+**Admin screens:** `/admin` is the dashboard (join requests, club settings, announcements) and
+`/admin/members` manages the roll — add, edit, remove and reinstate. The two are deliberately
+separate: the dashboard handles people asking to join, the members page handles people who are (or
+were) in the club.
 
 **Money screens:** `/money` has Balances, My ledger and (admin) Club assets tabs; `/sessions`
 splits Upcoming from History; `/admin/sessions/:id/settle` is the settlement form, which

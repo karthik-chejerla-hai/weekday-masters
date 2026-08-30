@@ -73,6 +73,7 @@ describe('AuthContext', () => {
         auth0_id: 'auth0|1',
         email: 'jane@admin.com',
         name: 'Jane Admin',
+        nickname: '',
         profile_picture: 'https://pic.jpg',
         phone_number: '',
         role: 'admin',

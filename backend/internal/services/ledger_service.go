@@ -225,7 +225,7 @@ func (s *LedgerService) PlayerAccountID(userID uuid.UUID) (uuid.UUID, error) {
 	if err := database.DB.First(&user, "id = ?", userID).Error; err != nil {
 		return uuid.Nil, err
 	}
-	return s.EnsurePlayerAccount(userID, user.Name)
+	return s.EnsurePlayerAccount(userID, user.DisplayName())
 }
 
 // --- balances -------------------------------------------------------------
@@ -259,15 +259,15 @@ func (s *LedgerService) AllPlayerBalances() ([]PlayerBalance, error) {
 	var balances []PlayerBalance
 	err := database.DB.Raw(`
 		SELECT u.id AS user_id,
-		       u.name,
+		       COALESCE(NULLIF(u.nickname, ''), u.name) AS name,
 		       u.profile_picture,
 		       COALESCE(SUM(e.amount_cents), 0) AS balance_cents
 		FROM users u
 		LEFT JOIN accounts a ON a.user_id = u.id
 		LEFT JOIN ledger_entries e ON e.account_id = a.id
 		WHERE u.membership_status = ?
-		GROUP BY u.id, u.name, u.profile_picture
-		ORDER BY u.name
+		GROUP BY u.id, u.nickname, u.name, u.profile_picture
+		ORDER BY COALESCE(NULLIF(u.nickname, ''), u.name)
 	`, models.MembershipApproved).Scan(&balances).Error
 	return balances, err
 }

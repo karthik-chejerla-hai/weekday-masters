@@ -402,7 +402,7 @@ func (s *SettlementService) lineViews(lines []LineInput, amounts []int64) ([]Cha
 			return nil, err
 		}
 		for _, u := range users {
-			names[u.ID] = u.Name
+			names[u.ID] = u.DisplayName()
 		}
 	}
 
@@ -787,7 +787,7 @@ func (s *SettlementService) SettlementForSession(sessionID uuid.UUID) (*Settleme
 			return nil, err
 		}
 		for _, u := range users {
-			names[u.ID] = u.Name
+			names[u.ID] = u.DisplayName()
 		}
 	}
 

@@ -6,6 +6,7 @@ import { api } from '../../services/api';
 import Avatar from '../ui/Avatar';
 import BalanceChip from '../money/BalanceChip';
 import type { MyBalance } from '../../types';
+import { displayName } from '../../utils/members';
 
 export default function Header() {
   const { user, logout, isAdmin, isApproved } = useAuth();
@@ -59,9 +60,9 @@ export default function Header() {
           )}
 
           <Link to="/profile" className="flex items-center gap-2">
-            <Avatar src={user?.profile_picture} name={user?.name || ''} size="sm" />
+            <Avatar src={user?.profile_picture} name={displayName(user)} size="sm" />
             <span className="text-sm font-medium text-slate-700 hidden sm:block">
-              {user?.name}
+              {displayName(user)}
             </span>
           </Link>
 

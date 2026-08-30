@@ -1,5 +1,10 @@
 export type UserRole = 'pending' | 'player' | 'admin';
-export type MembershipStatus = 'pending' | 'approved' | 'rejected';
+/**
+ * `removed` is a member an admin has taken out of the club. The row is never
+ * deleted — RSVPs, ledger entries and settlements point at it — so removal is
+ * reversible and their history stays intact.
+ */
+export type MembershipStatus = 'pending' | 'approved' | 'rejected' | 'removed';
 export type RSVPStatus = 'in' | 'out' | 'maybe' | 'waitlisted';
 /** Statuses a player may choose. "waitlisted" is assigned by the server. */
 export type SelectableRSVPStatus = Exclude<RSVPStatus, 'waitlisted'>;
@@ -10,6 +15,8 @@ export interface User {
   auth0_id: string;
   email: string;
   name: string;
+  /** What the club calls them. Prefer `displayName(user)` over reading this. */
+  nickname: string;
   profile_picture: string;
   phone_number: string;
   role: UserRole;
@@ -17,6 +24,24 @@ export interface User {
   membership_status: MembershipStatus;
   created_at: string;
   updated_at: string;
+}
+
+export interface InviteMemberInput {
+  email: string;
+  name: string;
+  nickname?: string;
+  phone_number?: string;
+  role?: Extract<UserRole, 'player' | 'admin'>;
+}
+
+/** Every field optional: an omitted one is left unchanged by the backend. */
+export interface UpdateMemberInput {
+  name?: string;
+  nickname?: string;
+  phone_number?: string;
+  email?: string;
+  role?: UserRole;
+  is_player?: boolean;
 }
 
 export interface Club {

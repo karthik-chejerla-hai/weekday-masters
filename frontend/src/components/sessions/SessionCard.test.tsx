@@ -38,6 +38,7 @@ describe('SessionCard Component', () => {
           auth0_id: 'auth0|1',
           email: 'p1@test.com',
           name: 'Player One',
+          nickname: '',
           profile_picture: '',
           phone_number: '',
           role: 'player',
