@@ -34,14 +34,28 @@ success whether or not anything was actually removed. That is how the missing
 Hosting step went unnoticed — merged PRs kept serving a public preview until the
 7-day `expires` on the deploy caught up with them.
 
-Two things are deliberately **not** cleaned up, and both accumulate:
+Two things outlive it, and are handled by `infra-retention.yml` rather than at
+PR-close time:
 
-- **Cloud Run revisions.** `--remove-tags` takes the `pr-N` URL out of service
-  but leaves the revision behind, untagged and serving no traffic. They are free
-  but count against the per-service revision quota.
 - **Artifact Registry images.** Every push to a PR builds and pushes a
-  `pr-N-<sha>` image and nothing deletes it. This one costs storage. A registry
-  cleanup policy is the fix, not a workflow step.
+  `pr-N-<sha>` image. An Artifact Registry cleanup policy, defined in
+  `.github/artifact-registry-cleanup-policy.json` and applied by that workflow,
+  deletes `pr-`-tagged images after 7 days while keeping the 20 most recent
+  versions whatever their age. Keep rules win over delete rules, so that count is
+  a floor the policy cannot cut through.
+- **Cloud Run revisions.** `--remove-tags` takes the `pr-N` URL out of service
+  but leaves the revision behind, untagged and serving no traffic. The same
+  workflow prunes them, keeping the 20 newest and only ever considering a
+  revision that serves no traffic **and** carries no tag — the live revision, the
+  rollback target and any open PR's preview each fail at least one of those.
+
+`infra-retention.yml` runs weekly and can be dispatched manually; a manual run
+defaults to a dry run, a scheduled one acts. It ends by checking the production
+backend still answers on `/health`, which is the thing that would matter if one
+of those guards were ever wrong.
+
+Production images are tagged with the full commit sha, never `pr-`, so nothing
+here touches them: they are the rollback history and are kept indefinitely.
 
 Run the workflow manually (`workflow_dispatch`) to sweep up preview channels for
 PRs that are already closed. It defaults to a dry run; set `dry_run` to false to
