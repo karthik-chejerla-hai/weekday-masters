@@ -86,9 +86,9 @@ describe('PlayerList Component', () => {
   it('renders confirmed, waitlisted, and maybe sections with counts', () => {
     render(<PlayerList rsvps={mockRsvps} maxPlayers={6} />);
 
-    expect(screen.getByText('Alice Cooper')).toBeInTheDocument();
-    expect(screen.getByText('Bob Marley')).toBeInTheDocument();
-    expect(screen.getByText('Charlie Brown')).toBeInTheDocument();
+    expect(screen.getByText('Alice')).toBeInTheDocument();
+    expect(screen.getByText('Bob')).toBeInTheDocument();
+    expect(screen.getByText('Charlie')).toBeInTheDocument();
 
     expect(screen.getByText('Waitlist')).toBeInTheDocument();
     expect(screen.getByText('Maybe')).toBeInTheDocument();

@@ -69,11 +69,11 @@ describe('the roll', () => {
     const user = userEvent.setup();
     renderPage();
 
-    expect(await screen.findByText('Signed In')).toBeInTheDocument();
-    expect(screen.queryByText('Not Yet Here')).not.toBeInTheDocument();
+    expect(await screen.findByText('Signed')).toBeInTheDocument();
+    expect(screen.queryByText('Not')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: /invited \(1\)/i }));
-    expect(screen.getByText('Not Yet Here')).toBeInTheDocument();
+    expect(screen.getByText('Not')).toBeInTheDocument();
     expect(screen.getByText(/not signed in/i)).toBeInTheDocument();
   });
 
@@ -84,18 +84,26 @@ describe('the roll', () => {
     ]);
     renderPage();
 
-    expect(await screen.findByText('Signed In')).toBeInTheDocument();
-    expect(screen.queryByText('Still Queueing')).not.toBeInTheDocument();
+    expect(await screen.findByText('Signed')).toBeInTheDocument();
+    expect(screen.queryByText('Still')).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /members \(1\)/i })).toBeInTheDocument();
   });
 
-  it('shows the nickname the club uses, with the real name alongside it', async () => {
+  it('shows the nickname the club uses, with the full name alongside it', async () => {
     vi.mocked(api.adminListMembers).mockResolvedValue([
       makeMember({ name: 'Priya Raman', nickname: 'Pri' }),
     ]);
     renderPage();
 
     expect(await screen.findByText('Pri')).toBeInTheDocument();
+    expect(screen.getByText('Priya Raman')).toBeInTheDocument();
+  });
+
+  it('shows the first name by default, still with the full name to identify them by', async () => {
+    vi.mocked(api.adminListMembers).mockResolvedValue([makeMember({ name: 'Priya Raman' })]);
+    renderPage();
+
+    expect(await screen.findByText('Priya')).toBeInTheDocument();
     expect(screen.getByText('Priya Raman')).toBeInTheDocument();
   });
 
@@ -110,7 +118,7 @@ describe('the roll', () => {
     await screen.findByText('Pri');
     await user.type(screen.getByRole('searchbox'), 'wei@');
 
-    expect(screen.getByText('Wei Zhang')).toBeInTheDocument();
+    expect(screen.getByText('Wei')).toBeInTheDocument();
     expect(screen.queryByText('Pri')).not.toBeInTheDocument();
   });
 });
@@ -172,7 +180,7 @@ describe('editing a member', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.click(await screen.findByRole('button', { name: /edit signed in/i }));
+    await user.click(await screen.findByRole('button', { name: /edit signed/i }));
 
     const email = screen.getByLabelText(/email/i);
     expect(email).toBeDisabled();
@@ -199,7 +207,7 @@ describe('editing a member', () => {
     renderPage();
 
     await user.click(screen.getByRole('tab', { name: /invited/i }));
-    await user.click(await screen.findByRole('button', { name: /edit not yet here/i }));
+    await user.click(await screen.findByRole('button', { name: /edit not/i }));
 
     const email = screen.getByLabelText(/email/i);
     expect(email).toBeEnabled();
@@ -217,7 +225,7 @@ describe('editing a member', () => {
 
   it('keeps the form open with the reason when the save is refused', async () => {
     vi.mocked(api.adminListMembers).mockResolvedValue([
-      makeMember({ role: 'admin', name: 'Only Admin' }),
+      makeMember({ role: 'admin', name: 'Onlyadmin Person' }),
     ]);
     vi.mocked(api.updateMember).mockRejectedValue(
       apiError("this is the club's only admin — promote someone else first")
@@ -225,13 +233,13 @@ describe('editing a member', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.click(await screen.findByRole('button', { name: /edit only admin/i }));
-    const form = screen.getByRole('form', { name: /edit only admin/i });
+    await user.click(await screen.findByRole('button', { name: /edit onlyadmin/i }));
+    const form = screen.getByRole('form', { name: /edit onlyadmin/i });
     await user.selectOptions(within(form).getByLabelText(/role/i), 'player');
     await user.click(within(form).getByRole('button', { name: /save/i }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/only admin/i);
-    expect(screen.getByRole('form', { name: /edit only admin/i })).toBeInTheDocument();
+    expect(screen.getByRole('form', { name: /edit onlyadmin/i })).toBeInTheDocument();
   });
 });
 
@@ -242,7 +250,7 @@ describe('removing and reinstating', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.click(await screen.findByRole('button', { name: /remove signed in/i }));
+    await user.click(await screen.findByRole('button', { name: /remove signed/i }));
 
     await waitFor(() => expect(api.removeMember).toHaveBeenCalledWith('user-1'));
     expect(await screen.findByRole('status')).toHaveTextContent(/history is kept/i);
@@ -250,7 +258,7 @@ describe('removing and reinstating', () => {
     // They move to the Removed tab rather than disappearing.
     expect(screen.getByRole('tab', { name: /members \(0\)/i })).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: /removed \(1\)/i }));
-    expect(screen.getByText('Signed In')).toBeInTheDocument();
+    expect(screen.getByText('Signed')).toBeInTheDocument();
   });
 
   it('surfaces the refusal when the member still has money with the club', async () => {
@@ -261,7 +269,7 @@ describe('removing and reinstating', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.click(await screen.findByRole('button', { name: /remove signed in/i }));
+    await user.click(await screen.findByRole('button', { name: /remove signed/i }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/\$25\.00/);
     // Nothing moved, so they are still a member.
@@ -277,7 +285,7 @@ describe('removing and reinstating', () => {
     renderPage();
 
     await user.click(await screen.findByRole('tab', { name: /removed \(1\)/i }));
-    await user.click(screen.getByRole('button', { name: /reinstate signed in/i }));
+    await user.click(screen.getByRole('button', { name: /reinstate signed/i }));
 
     await waitFor(() => expect(api.reinstateMember).toHaveBeenCalledWith('user-1'));
     expect(await screen.findByRole('status')).toHaveTextContent(/back in the club/i);

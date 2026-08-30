@@ -26,6 +26,7 @@ function mockUser(overrides: Record<string, unknown> = {}) {
       name: 'Jane Player',
       email: 'jane@example.com',
       phone_number: '+61400000000',
+      nickname: '',
       profile_picture: '',
       role: 'player',
       membership_status: 'approved',
@@ -45,7 +46,7 @@ describe('Profile page', () => {
   it('shows the member details', () => {
     render(<Profile />);
 
-    expect(screen.getByText('Jane Player')).toBeInTheDocument();
+    expect(screen.getByText('Jane')).toBeInTheDocument();
     expect(screen.getByDisplayValue('+61400000000')).toBeInTheDocument();
 
     // Email comes from Google, so the field shows it but must not be editable.
@@ -61,7 +62,10 @@ describe('Profile page', () => {
     await userEvent.type(input, '+61411111111');
     await userEvent.click(screen.getByRole('button', { name: /save/i }));
 
-    expect(api.updateMe).toHaveBeenCalledWith('+61411111111');
+    expect(api.updateMe).toHaveBeenCalledWith({
+      phone_number: '+61411111111',
+      nickname: '',
+    });
     // Without the refresh the header keeps showing stale details.
     expect(refreshUser).toHaveBeenCalledOnce();
     expect(await screen.findByText(/updated successfully/i)).toBeInTheDocument();

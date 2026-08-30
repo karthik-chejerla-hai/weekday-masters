@@ -118,11 +118,13 @@ handler chain at registration time, so using the wrong group silently skips the 
 - `LedgerService`: **the only writer of ledger entries.** Posts a transaction and its entries inside one DB transaction, locking the accounts it touches `FOR UPDATE` in `id` order, then asserts the club-position identity and rolls back if it does not come to zero. Balances are derived by aggregating entries — there is no cached balance column, so drift is impossible. Corrections are reversing transactions; nothing updates or deletes an entry.
 - `SettlementService`: costs a played session into two bands (standard hours, optional extension), splits each band equally among only its own participants, and hands the resulting movements to `LedgerService`. Locks the session row like the RSVP capacity check. Refuses to drive shuttle stock negative, and refuses to settle a session twice
 
-**Display names**: `User.Nickname` is what the club calls a member, and `User.DisplayName()`
-(nickname, else name) is what should reach a screen. The ledger names player accounts by it and
-settlement lines resolve through it, so `formatCents`-style display and the frontend's
-`utils/members.displayName` agree with the database rather than each showing a different name for
-one person.
+**Display names**: `User.DisplayName()` — the nickname a member chose, else their **first name**
+— is what should reach a screen; the full `Name` is for identifying them. Members set their own
+nickname on `/profile` and admins can correct it. Three places implement the same rule and must
+stay in step: `models.User.DisplayName`, the SQL
+`COALESCE(NULLIF(nickname, ''), split_part(name, ' ', 1))` used for balances and ordering, and the
+frontend's `utils/members.displayName`. The ledger names player accounts by it (kept in sync by
+`syncAccountName` on every edit), so one person cannot appear under two names at once.
 
 **Models use GORM hooks** (`BeforeCreate`) for UUID generation. All PKs are UUIDs. `Session`
 also has a `BeforeSave` hook that derives `starts_at`/`ends_at` from the date plus the

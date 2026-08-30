@@ -202,28 +202,61 @@ func (s *UserService) GetUserByID(id uuid.UUID) (*models.User, error) {
 	return &user, nil
 }
 
-// UpdateProfile updates user profile (phone number)
-func (s *UserService) UpdateProfile(userID uuid.UUID, phoneNumber string) (*models.User, error) {
-	var user models.User
-	if err := database.DB.First(&user, "id = ?", userID).Error; err != nil {
+// UpdateProfileInput is what a member may change about themselves. Pointers so
+// that saving one field does not blank the other.
+type UpdateProfileInput struct {
+	PhoneNumber *string
+	Nickname    *string
+}
+
+// MaxNicknameLength matches the column, so an over-long value fails with a
+// sentence rather than a driver error.
+const MaxNicknameLength = 100
+
+// UpdateProfile edits the fields a member owns: their phone number and the
+// nickname the club sees them under.
+//
+// Nickname is deliberately self-service. It is what appears on the balances
+// list and in settlement breakdowns, so the person it names is the right one to
+// choose it; an admin can still correct it. Clearing it is allowed and falls
+// back to their first name — see models.User.DisplayName.
+func (s *UserService) UpdateProfile(userID uuid.UUID, input UpdateProfileInput) (*models.User, error) {
+	user, err := s.getMember(userID)
+	if err != nil {
 		return nil, err
 	}
 
-	user.PhoneNumber = phoneNumber
+	if input.PhoneNumber != nil {
+		user.PhoneNumber = strings.TrimSpace(*input.PhoneNumber)
+	}
+	if input.Nickname != nil {
+		nickname := strings.TrimSpace(*input.Nickname)
+		if len([]rune(nickname)) > MaxNicknameLength {
+			return nil, fmt.Errorf("a nickname can be at most %d characters", MaxNicknameLength)
+		}
+		user.Nickname = nickname
+	}
+
 	user.UpdatedAt = time.Now()
-
-	if err := database.DB.Save(&user).Error; err != nil {
+	if err := database.DB.Save(user).Error; err != nil {
 		return nil, err
 	}
 
-	return &user, nil
+	// Same reason the admin edit does it: the ledger names accounts, and a
+	// nickname that stopped at the user row would leave two names for one
+	// person on the balances screen.
+	if err := syncAccountName(user); err != nil {
+		return nil, err
+	}
+
+	return user, nil
 }
 
 // ListApprovedMembers returns all approved club members
 func (s *UserService) ListApprovedMembers() ([]models.User, error) {
 	var users []models.User
 	if err := database.DB.Where("membership_status = ?", models.MembershipApproved).
-		Order("COALESCE(NULLIF(nickname, ''), name) ASC").
+		Order("COALESCE(NULLIF(nickname, ''), split_part(name, ' ', 1)) ASC").
 		Find(&users).Error; err != nil {
 		return nil, err
 	}
@@ -545,7 +578,7 @@ func (s *UserService) ReinstateMember(userID uuid.UUID) (*models.User, error) {
 // removed rows: the admin screen is where those are acted on.
 func (s *UserService) ListAllMembers() ([]models.User, error) {
 	var users []models.User
-	if err := database.DB.Order("COALESCE(NULLIF(nickname, ''), name) ASC").Find(&users).Error; err != nil {
+	if err := database.DB.Order("COALESCE(NULLIF(nickname, ''), split_part(name, ' ', 1)) ASC").Find(&users).Error; err != nil {
 		return nil, err
 	}
 	return users, nil

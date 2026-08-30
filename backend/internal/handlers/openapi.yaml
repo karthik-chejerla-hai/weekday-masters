@@ -1309,9 +1309,11 @@ components:
         nickname:
           type: string
           description: >
-            What the club calls this member. Displayed in place of `name`
-            wherever it is set — member lists, RSVPs, balances and settlement
-            breakdowns.
+            What the club calls this member, chosen by them or corrected by an
+            admin. Displayed in place of `name` wherever it is set — member
+            lists, RSVPs, balances and settlement breakdowns. When it is empty
+            the display name falls back to the member's first name, so this
+            being blank does not mean they show up under their full legal name.
         profile_picture:
           type: string
         phone_number:
@@ -1552,9 +1554,19 @@ components:
 
     UpdateProfileRequest:
       type: object
+      description: >
+        The fields a member may change about themselves. Every field is
+        optional and an omitted one is left unchanged, so the profile form can
+        send only what was touched.
       properties:
         phone_number:
           type: string
+        nickname:
+          type: string
+          maxLength: 100
+          description: >
+            What the club sees them under. Sending an empty string clears it,
+            which falls the display name back to their first name.
 
     RSVPRequest:
       type: object

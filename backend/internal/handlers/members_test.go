@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/weekday-masters/backend/internal/database"
 	"github.com/weekday-masters/backend/internal/models"
 )
 
@@ -180,4 +181,57 @@ func TestReinstateMember_RefusesAMemberWhoWasNeverRemoved(t *testing.T) {
 
 	h.as(admin).post("/api/admin/users/"+player.ID.String()+"/reinstate", nil).
 		expect(http.StatusBadRequest)
+}
+
+// --- self-service nickname -------------------------------------------------
+
+func TestUpdateMe_SetsAndClearsTheMembersOwnNickname(t *testing.T) {
+	h := newHarness(t)
+	player := makePlayer(t)
+	player.Name = "Priya Raman"
+	if err := database.DB.Save(player).Error; err != nil {
+		t.Fatalf("failed to name the player: %v", err)
+	}
+
+	var updated models.User
+	h.as(player).put("/api/users/me", map[string]any{"nickname": "Smash"}).
+		expect(http.StatusOK).decode(&updated)
+	if updated.Nickname != "Smash" {
+		t.Fatalf("expected the nickname to be set, got %q", updated.Nickname)
+	}
+
+	// Clearing it is allowed; the first name takes over.
+	h.as(player).put("/api/users/me", map[string]any{"nickname": ""}).
+		expect(http.StatusOK).decode(&updated)
+	if updated.Nickname != "" || updated.DisplayName() != "Priya" {
+		t.Fatalf("expected a fall back to the first name, got %q/%q",
+			updated.Nickname, updated.DisplayName())
+	}
+}
+
+func TestUpdateMe_DoesNotBlankTheFieldItWasNotSent(t *testing.T) {
+	h := newHarness(t)
+	player := makePlayer(t)
+
+	var updated models.User
+	h.as(player).put("/api/users/me", map[string]any{"nickname": "Ace"}).
+		expect(http.StatusOK).decode(&updated)
+	h.as(player).put("/api/users/me", map[string]any{"phone_number": "+61400000000"}).
+		expect(http.StatusOK).decode(&updated)
+
+	if updated.Nickname != "Ace" {
+		t.Fatalf("a phone-only save should leave the nickname alone, got %q", updated.Nickname)
+	}
+	if updated.PhoneNumber != "+61400000000" {
+		t.Fatalf("expected the phone number to be saved, got %q", updated.PhoneNumber)
+	}
+}
+
+func TestUpdateMe_RejectsAnOverlongNickname(t *testing.T) {
+	h := newHarness(t)
+	player := makePlayer(t)
+
+	h.as(player).put("/api/users/me", map[string]any{
+		"nickname": strings.Repeat("x", 101),
+	}).expect(http.StatusBadRequest)
 }

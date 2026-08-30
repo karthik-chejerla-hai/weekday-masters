@@ -37,7 +37,7 @@ beforeEach(() => {
 describe('Header', () => {
   it('shows the signed-in member', () => {
     renderAt(<Header />);
-    expect(screen.getByText('Jane Player')).toBeInTheDocument();
+    expect(screen.getByText('Jane')).toBeInTheDocument();
   });
 
   it('hides the admin link from ordinary members', () => {

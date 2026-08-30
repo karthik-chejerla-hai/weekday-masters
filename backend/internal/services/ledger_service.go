@@ -259,7 +259,7 @@ func (s *LedgerService) AllPlayerBalances() ([]PlayerBalance, error) {
 	var balances []PlayerBalance
 	err := database.DB.Raw(`
 		SELECT u.id AS user_id,
-		       COALESCE(NULLIF(u.nickname, ''), u.name) AS name,
+		       COALESCE(NULLIF(u.nickname, ''), split_part(u.name, ' ', 1)) AS name,
 		       u.profile_picture,
 		       COALESCE(SUM(e.amount_cents), 0) AS balance_cents
 		FROM users u
@@ -267,7 +267,7 @@ func (s *LedgerService) AllPlayerBalances() ([]PlayerBalance, error) {
 		LEFT JOIN ledger_entries e ON e.account_id = a.id
 		WHERE u.membership_status = ?
 		GROUP BY u.id, u.nickname, u.name, u.profile_picture
-		ORDER BY COALESCE(NULLIF(u.nickname, ''), u.name)
+		ORDER BY COALESCE(NULLIF(u.nickname, ''), split_part(u.name, ' ', 1))
 	`, models.MembershipApproved).Scan(&balances).Error
 	return balances, err
 }

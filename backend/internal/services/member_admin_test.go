@@ -473,8 +473,8 @@ func TestNicknameNullFromBeforeTheColumnExisted(t *testing.T) {
 	if err := database.DB.First(&loaded, "id = ?", user.ID).Error; err != nil {
 		t.Fatalf("reading a NULL nickname failed: %v", err)
 	}
-	if loaded.Nickname != "" || loaded.DisplayName() != "Legacy Row" {
-		t.Fatalf("expected an empty nickname falling back to the name, got %q/%q", loaded.Nickname, loaded.DisplayName())
+	if loaded.Nickname != "" || loaded.DisplayName() != "Legacy" {
+		t.Fatalf("expected an empty nickname falling back to the first name, got %q/%q", loaded.Nickname, loaded.DisplayName())
 	}
 
 	members, err := us.ListApprovedMembers()
@@ -489,8 +489,8 @@ func TestNicknameNullFromBeforeTheColumnExisted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listing balances with a NULL nickname failed: %v", err)
 	}
-	if len(balances) != 1 || balances[0].Name != "Legacy Row" {
-		t.Fatalf("expected the balances list to fall back to the name, got %+v", balances)
+	if len(balances) != 1 || balances[0].Name != "Legacy" {
+		t.Fatalf("expected the balances list to fall back to the first name, got %+v", balances)
 	}
 }
 
@@ -503,4 +503,118 @@ func mustRSVP(t *testing.T, s *RSVPService, sessionID, userID uuid.UUID, status 
 		t.Fatalf("failed to RSVP: %v", err)
 	}
 	return rsvp
+}
+
+// --- self-service nickname -------------------------------------------------
+
+func TestDisplayName_DefaultsToTheFirstName(t *testing.T) {
+	cases := []struct {
+		name     string
+		nickname string
+		full     string
+		want     string
+	}{
+		{"first name is the default", "", "Priya Raman", "Priya"},
+		{"a chosen nickname wins", "Smash", "Priya Raman", "Smash"},
+		{"a mononym is its own first name", "", "Ronaldinho", "Ronaldinho"},
+		{"middle names do not leak in", "", "Anna Maria de Souza", "Anna"},
+		{"stray whitespace does not become the name", "", "  Wei Zhang ", "Wei"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			user := models.User{Name: tc.full, Nickname: tc.nickname}
+			if got := user.DisplayName(); got != tc.want {
+				t.Fatalf("expected %q, got %q", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestUpdateProfile_MemberChoosesTheirOwnNickname(t *testing.T) {
+	requireDB(t)
+	us := NewUserService("")
+	user := invite(t, us, "self@example.com", "Priya Raman")
+
+	// Until they choose one, the club sees their first name.
+	if user.DisplayName() != "Priya" {
+		t.Fatalf("expected the first name by default, got %q", user.DisplayName())
+	}
+
+	nickname := "  Smash  "
+	updated, err := us.UpdateProfile(user.ID, UpdateProfileInput{Nickname: &nickname})
+	if err != nil {
+		t.Fatalf("failed to set a nickname: %v", err)
+	}
+	if updated.Nickname != "Smash" || updated.DisplayName() != "Smash" {
+		t.Fatalf("unexpected nickname result: %+v", updated)
+	}
+
+	// It has to reach the ledger, which is where money is read under a name.
+	balances, err := NewLedgerService().AllPlayerBalances()
+	if err != nil {
+		t.Fatalf("failed to list balances: %v", err)
+	}
+	if len(balances) != 1 || balances[0].Name != "Smash" {
+		t.Fatalf("expected the balances list to follow the nickname, got %+v", balances)
+	}
+
+	// Clearing it falls back to the first name rather than leaving them blank.
+	cleared := ""
+	back, err := us.UpdateProfile(user.ID, UpdateProfileInput{Nickname: &cleared})
+	if err != nil {
+		t.Fatalf("failed to clear the nickname: %v", err)
+	}
+	if back.DisplayName() != "Priya" {
+		t.Fatalf("expected the first name back, got %q", back.DisplayName())
+	}
+
+	balances, err = NewLedgerService().AllPlayerBalances()
+	if err != nil {
+		t.Fatalf("failed to list balances: %v", err)
+	}
+	if balances[0].Name != "Priya" {
+		t.Fatalf("expected the balances list to fall back too, got %q", balances[0].Name)
+	}
+}
+
+// Saving one field must not blank the other — the profile form sends whichever
+// the member touched.
+func TestUpdateProfile_LeavesOmittedFieldsAlone(t *testing.T) {
+	requireDB(t)
+	us := NewUserService("")
+	user, err := us.InviteMember(InviteMemberInput{
+		Email:       "partial@example.com",
+		Name:        "Wei Zhang",
+		Nickname:    "Wei",
+		PhoneNumber: "+61400000000",
+	})
+	if err != nil {
+		t.Fatalf("failed to invite: %v", err)
+	}
+
+	phone := "+61411111111"
+	updated, err := us.UpdateProfile(user.ID, UpdateProfileInput{PhoneNumber: &phone})
+	if err != nil {
+		t.Fatalf("failed to update the phone number: %v", err)
+	}
+	if updated.PhoneNumber != phone || updated.Nickname != "Wei" {
+		t.Fatalf("expected the nickname to survive a phone-only save, got %+v", updated)
+	}
+}
+
+func TestUpdateProfile_RefusesAnOverlongNickname(t *testing.T) {
+	requireDB(t)
+	us := NewUserService("")
+	user := invite(t, us, "verbose@example.com", "Verbose Person")
+
+	long := strings.Repeat("x", MaxNicknameLength+1)
+	if _, err := us.UpdateProfile(user.ID, UpdateProfileInput{Nickname: &long}); err == nil {
+		t.Fatal("expected an over-long nickname to be refused")
+	}
+
+	atLimit := strings.Repeat("x", MaxNicknameLength)
+	if _, err := us.UpdateProfile(user.ID, UpdateProfileInput{Nickname: &atLimit}); err != nil {
+		t.Fatalf("a nickname at the limit should be accepted, got %v", err)
+	}
 }

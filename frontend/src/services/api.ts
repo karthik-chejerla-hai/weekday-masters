@@ -4,6 +4,7 @@ import type {
   Club,
   InviteMemberInput,
   UpdateMemberInput,
+  UpdateProfileInput,
   Session,
   RSVP,
   SessionWithSummary,
@@ -65,8 +66,12 @@ class ApiService {
     return response.data;
   }
 
-  async updateMe(phoneNumber: string): Promise<User> {
-    const response = await this.client.put<User>('/users/me', { phone_number: phoneNumber });
+  /**
+   * Updates the current member's own profile. Omitted fields are left
+   * unchanged, so a save of one field cannot blank the other.
+   */
+  async updateMe(updates: UpdateProfileInput): Promise<User> {
+    const response = await this.client.put<User>('/users/me', updates);
     return response.data;
   }
 

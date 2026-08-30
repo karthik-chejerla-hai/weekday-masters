@@ -21,7 +21,7 @@ describe('PendingApproval page', () => {
     render(<PendingApproval />);
 
     expect(screen.getByText('Membership Pending')).toBeInTheDocument();
-    expect(screen.getByText('Jane Player')).toBeInTheDocument();
+    expect(screen.getByText('Jane')).toBeInTheDocument();
     expect(screen.getByText('jane@example.com')).toBeInTheDocument();
   });
 

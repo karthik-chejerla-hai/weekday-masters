@@ -1,16 +1,25 @@
 import type { User } from '../types';
 
 /**
- * What the club calls a member: their nickname when they have one, otherwise
- * the name their sign-in provider gave us.
+ * What the club calls a member: the nickname they chose, otherwise their first
+ * name.
  *
- * The backend applies the same rule when it names ledger accounts and
- * settlement lines, so a nickname set on the admin screen shows up everywhere
- * rather than leaving two names for one person on screen at once.
+ * Must stay in step with `models.User.DisplayName` on the backend, which names
+ * ledger accounts and settlement lines by the same rule — otherwise one person
+ * appears under two names on the same screen.
  */
 export function displayName(user?: Pick<User, 'name' | 'nickname'> | null): string {
   if (!user) return '';
-  return user.nickname?.trim() || user.name;
+  return user.nickname?.trim() || firstName(user.name);
+}
+
+/**
+ * The leading word of a full name, falling back to the whole string when there
+ * is nothing to split — a mononym is a first name.
+ */
+export function firstName(name: string): string {
+  const trimmed = name.trim();
+  return trimmed.split(' ')[0] || trimmed;
 }
 
 /**

@@ -427,7 +427,10 @@ function MemberRow({
         <div className="min-w-0">
           <p className="font-medium text-slate-900 flex items-center gap-2 flex-wrap">
             {displayName(member)}
-            {member.nickname && (
+            {/* Their full name whenever it is not simply what is already shown —
+                so a nickname, or a surname the first-name default drops, is
+                still visible to whoever is looking them up. */}
+            {displayName(member) !== member.name && (
               <span className="text-sm font-normal text-slate-500">{member.name}</span>
             )}
             {member.role === 'admin' && (

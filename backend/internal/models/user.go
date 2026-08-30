@@ -82,10 +82,25 @@ func (u *User) HasSignedIn() bool {
 }
 
 // DisplayName is what the club calls this member: their nickname when they have
-// one, otherwise the name Google gave us.
+// chosen one, otherwise their first name.
+//
+// The first name is the default rather than the full name because that is what
+// people are called courtside, and because a member list of full legal names
+// reads like a database export. Deriving it here instead of storing it at
+// registration means it follows a name change and there is no backfill.
 func (u *User) DisplayName() string {
 	if u.Nickname != "" {
 		return u.Nickname
 	}
-	return u.Name
+	return FirstName(u.Name)
+}
+
+// FirstName takes the leading word of a full name, falling back to the whole
+// string when there is nothing to split — a mononym is a first name.
+func FirstName(name string) string {
+	first, _, found := strings.Cut(strings.TrimSpace(name), " ")
+	if !found || first == "" {
+		return strings.TrimSpace(name)
+	}
+	return first
 }

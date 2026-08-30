@@ -44,6 +44,13 @@ export interface UpdateMemberInput {
   is_player?: boolean;
 }
 
+/** The fields a member may change about themselves. */
+export interface UpdateProfileInput {
+  phone_number?: string;
+  /** Empty clears it, falling the display name back to their first name. */
+  nickname?: string;
+}
+
 export interface Club {
   id: string;
   name: string;

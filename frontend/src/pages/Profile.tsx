@@ -1,27 +1,34 @@
 import { useState } from 'react';
-import { User, Mail, Phone, Shield, Save, Loader2, Bell } from 'lucide-react';
+import { User, Mail, Phone, Shield, Save, Loader2, Bell, Smile } from 'lucide-react';
 import { useAuth } from '../context/useAuth';
 import { api } from '../services/api';
 import Avatar from '../components/ui/Avatar';
 import Badge from '../components/ui/Badge';
 import NotificationSettings from '../components/notifications/NotificationSettings';
-import { displayName } from '../utils/members';
+import { displayName, firstName } from '../utils/members';
 
 export default function Profile() {
   const { user, refreshUser } = useAuth();
   const [phoneNumber, setPhoneNumber] = useState(user?.phone_number || '');
+  const [nickname, setNickname] = useState(user?.nickname || '');
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Left blank, the club sees their first name — so the placeholder shows what
+  // they would be called rather than an empty box that says nothing.
+  const defaultNickname = firstName(user?.name || '');
 
   const handleSave = async () => {
     setIsSaving(true);
     setMessage(null);
     try {
-      await api.updateMe(phoneNumber);
+      await api.updateMe({ phone_number: phoneNumber, nickname });
       await refreshUser();
       setMessage({ type: 'success', text: 'Profile updated successfully!' });
-    } catch {
-      setMessage({ type: 'error', text: 'Failed to update profile' });
+    } catch (err) {
+      const serverError = (err as { response?: { data?: { error?: string } } })?.response?.data
+        ?.error;
+      setMessage({ type: 'error', text: serverError || 'Failed to update profile' });
     } finally {
       setIsSaving(false);
     }
@@ -71,6 +78,26 @@ export default function Profile() {
               className="w-full px-4 py-2 rounded-lg border border-slate-300 bg-slate-50 text-slate-500"
             />
             <p className="text-xs text-slate-500 mt-1">Email is managed by Google and cannot be changed</p>
+          </div>
+
+          <div>
+            <label htmlFor="nickname" className="block text-sm font-medium text-slate-700 mb-1">
+              <Smile className="w-4 h-4 inline mr-2" />
+              Nickname
+            </label>
+            <input
+              id="nickname"
+              type="text"
+              value={nickname}
+              maxLength={100}
+              onChange={(e) => setNickname(e.target.value)}
+              placeholder={defaultNickname}
+              className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              What the club sees you as — on session lists, balances and settlements. Leave it
+              blank to go by {defaultNickname || 'your first name'}.
+            </p>
           </div>
 
           <div>

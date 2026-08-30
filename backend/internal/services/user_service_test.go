@@ -85,7 +85,8 @@ func TestUserService_MembershipLifecycle(t *testing.T) {
 	}
 
 	// Update phone number
-	updated, err := us.UpdateProfile(user.ID, "+61412345678")
+	phone := "+61412345678"
+	updated, err := us.UpdateProfile(user.ID, UpdateProfileInput{PhoneNumber: &phone})
 	if err != nil || updated.PhoneNumber != "+61412345678" {
 		t.Fatalf("expected updated phone number, got %s (err: %v)", updated.PhoneNumber, err)
 	}
