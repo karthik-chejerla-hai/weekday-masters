@@ -44,12 +44,16 @@ func newHarness(t *testing.T) *harness {
 	sessionService := services.NewSessionService()
 	rsvpService := services.NewRSVPService(nil)
 	notificationService := services.NewNotificationService(services.NotificationConfig{})
+	ledgerService := services.NewLedgerService()
+	settlementService := services.NewSettlementService(ledgerService)
 
 	userHandler := NewUserHandler(userService)
 	sessionHandler := NewSessionHandler(sessionService, rsvpService)
 	rsvpHandler := NewRSVPHandler(rsvpService)
 	adminHandler := NewAdminHandler(userService, sessionService, rsvpService)
 	notificationHandler := NewNotificationHandler(notificationService)
+	ledgerHandler := NewLedgerHandler(ledgerService)
+	settlementHandler := NewSettlementHandler(settlementService)
 	// An empty Auth0 domain: first-login registration needs a live tenant, so the
 	// tests here cover the returning-user path and the fetch-failure branch.
 	authHandler := NewAuthHandler(userService, services.NewAuth0Service(""))
@@ -99,6 +103,12 @@ func newHarness(t *testing.T) *harness {
 		api.PUT("/sessions/:id/rsvp", rsvpHandler.UpdateRSVP)
 		api.DELETE("/sessions/:id/rsvp", rsvpHandler.DeleteRSVP)
 		api.GET("/sessions/:id/rsvp/me", rsvpHandler.GetMyRSVP)
+
+		api.GET("/accounts", ledgerHandler.ListBalances)
+		api.GET("/accounts/me", ledgerHandler.GetMyBalance)
+		api.GET("/accounts/me/entries", ledgerHandler.GetMyEntries)
+		api.GET("/sessions/history", settlementHandler.ListSessionHistory)
+		api.GET("/sessions/:id/settlement", settlementHandler.GetSessionSettlement)
 	}
 
 	admin := r.Group("/api/admin")
@@ -114,6 +124,18 @@ func newHarness(t *testing.T) *harness {
 		admin.POST("/sessions/:id/rsvp/:userId", adminHandler.AddPlayerRSVP)
 		admin.PUT("/club", adminHandler.UpdateClub)
 		admin.POST("/announcements", notificationHandler.SendAnnouncement)
+
+		admin.POST("/transactions/topup", ledgerHandler.RecordTopup)
+		admin.POST("/transactions/withdrawal", ledgerHandler.RecordWithdrawal)
+		admin.POST("/transactions/court-credit", ledgerHandler.RecordCourtCredit)
+		admin.POST("/transactions/shuttle-purchase", ledgerHandler.RecordShuttlePurchase)
+		admin.POST("/transactions/opening-balances", ledgerHandler.RecordOpeningBalances)
+		admin.POST("/transactions/:id/reverse", ledgerHandler.ReverseTransaction)
+		admin.POST("/sessions/:id/settlement/preview", settlementHandler.PreviewSettlement)
+		admin.POST("/sessions/:id/settle", settlementHandler.SettleSession)
+		admin.POST("/settlements/:id/reverse", settlementHandler.ReverseSettlement)
+		admin.GET("/position", ledgerHandler.GetPosition)
+		admin.GET("/position/integrity", ledgerHandler.GetIntegrity)
 		// NOTE: AdminHandler.GetClub is deliberately absent — main.go registers
 		// only PUT /admin/club, so the GET handler is unreachable in the running
 		// server. Mounting it here would manufacture coverage for dead code.

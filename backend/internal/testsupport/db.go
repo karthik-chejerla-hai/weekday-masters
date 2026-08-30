@@ -28,8 +28,10 @@ import (
 
 // truncateAll empties every table between tests. Kept in one place so a new
 // table cannot be added to the schema and forgotten in one suite's reset.
-const truncateAll = `TRUNCATE TABLE rsvps, notifications, user_push_tokens,
-	user_notification_preferences, announcements, sessions, users
+const truncateAll = `TRUNCATE TABLE charge_lines, settlements,
+	ledger_entries, transactions, accounts,
+	rsvps, notifications, user_push_tokens,
+	user_notification_preferences, announcements, sessions, users, clubs
 	RESTART IDENTITY CASCADE`
 
 var dbAvailable bool
@@ -109,5 +111,16 @@ func RequireDB(t *testing.T) {
 
 	if err := database.DB.Exec(truncateAll).Error; err != nil {
 		t.Fatalf("failed to reset test database: %v", err)
+	}
+
+	// The club row and its accounts are schema-shaped configuration, not test
+	// data, so put them back. Truncating clubs matters as much as reseeding it:
+	// settlement rates live there, and a test that changes one must not leak
+	// that change into the next.
+	if err := database.SeedDefaultClub(); err != nil {
+		t.Fatalf("failed to reseed the club: %v", err)
+	}
+	if err := database.SeedClubAccounts(); err != nil {
+		t.Fatalf("failed to reseed club accounts: %v", err)
 	}
 }

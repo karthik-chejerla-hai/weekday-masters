@@ -67,6 +67,10 @@ func main() {
 	rsvpHandler := handlers.NewRSVPHandler(rsvpService)
 	adminHandler := handlers.NewAdminHandler(userService, sessionService, rsvpService)
 	notificationHandler := handlers.NewNotificationHandler(notificationService)
+	ledgerService := services.NewLedgerService()
+	ledgerHandler := handlers.NewLedgerHandler(ledgerService)
+	settlementService := services.NewSettlementService(ledgerService).WithNotifier(notificationService)
+	settlementHandler := handlers.NewSettlementHandler(settlementService)
 
 	// Auth0 config for middleware
 	auth0Config := middleware.Auth0Config{
@@ -132,6 +136,17 @@ func main() {
 				approved.PUT("/sessions/:id/rsvp", rsvpHandler.UpdateRSVP)
 				approved.DELETE("/sessions/:id/rsvp", rsvpHandler.DeleteRSVP)
 				approved.GET("/sessions/:id/rsvp/me", rsvpHandler.GetMyRSVP)
+
+				// Ledger reads. Every approved member can see every balance:
+				// the club already worked this way in Splitwise.
+				approved.GET("/accounts", ledgerHandler.ListBalances)
+				approved.GET("/accounts/me", ledgerHandler.GetMyBalance)
+				approved.GET("/accounts/me/entries", ledgerHandler.GetMyEntries)
+
+				// Session history and settlement breakdowns are readable by any
+				// approved member, so the split can be checked by the people in it.
+				approved.GET("/sessions/history", settlementHandler.ListSessionHistory)
+				approved.GET("/sessions/:id/settlement", settlementHandler.GetSessionSettlement)
 			}
 
 			// Admin routes
@@ -157,6 +172,25 @@ func main() {
 
 				// Club management
 				admin.PUT("/club", adminHandler.UpdateClub)
+
+				// Ledger writes. Only admins move money; there is deliberately
+				// no edit or delete route, only reversal.
+				admin.POST("/transactions/topup", ledgerHandler.RecordTopup)
+				admin.POST("/transactions/withdrawal", ledgerHandler.RecordWithdrawal)
+				admin.POST("/transactions/court-credit", ledgerHandler.RecordCourtCredit)
+				admin.POST("/transactions/shuttle-purchase", ledgerHandler.RecordShuttlePurchase)
+				admin.POST("/transactions/opening-balances", ledgerHandler.RecordOpeningBalances)
+				admin.POST("/transactions/:id/reverse", ledgerHandler.ReverseTransaction)
+
+				// Settlement. Preview writes nothing; settle moves money.
+				admin.POST("/sessions/:id/settlement/preview", settlementHandler.PreviewSettlement)
+				admin.POST("/sessions/:id/settle", settlementHandler.SettleSession)
+				admin.POST("/settlements/:id/reverse", settlementHandler.ReverseSettlement)
+
+				// The club's asset position is admin-only: balances are shared
+				// with everyone, but what the club holds is not the same thing.
+				admin.GET("/position", ledgerHandler.GetPosition)
+				admin.GET("/position/integrity", ledgerHandler.GetIntegrity)
 
 				// Announcements
 				admin.POST("/announcements", notificationHandler.SendAnnouncement)

@@ -378,3 +378,94 @@ func TestUpdateSession_DeadlineRules(t *testing.T) {
 		t.Fatalf("expected recalculated default deadline, got %v", updated.RSVPDeadline)
 	}
 }
+
+// "Upcoming" has to mean "has not finished", not "is dated today or later".
+// Tonight's session should drop off the upcoming list once it ends, otherwise
+// the History tab never receives it and the dashboard keeps advertising a game
+// that already happened.
+func TestListSessionsExcludesSessionsThatHaveFinished(t *testing.T) {
+	_, ss, _ := newTestServices(t)
+	admin := newUser(t, "admin")
+
+	today := utils.NowInSydney()
+
+	finished, err := ss.CreateSession(CreateSessionInput{
+		Title:       "Finished earlier today",
+		SessionDate: today,
+		StartTime:   "06:00",
+		EndTime:     "08:00",
+		Courts:      1,
+		CreatedBy:   admin.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stillToCome, err := ss.CreateSession(CreateSessionInput{
+		Title:       "Next week",
+		SessionDate: today.AddDate(0, 0, 7),
+		StartTime:   "20:00",
+		EndTime:     "22:00",
+		Courts:      1,
+		CreatedBy:   admin.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Guard the premise: if this test ever runs before 8am the fixture is not
+	// actually in the past and the assertion below would be vacuous.
+	if today.Hour() < 9 {
+		t.Skip("runs before 09:00 Sydney, so the 06:00-08:00 fixture is not yet in the past")
+	}
+
+	sessions, err := ss.ListUpcomingSessions()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, s := range sessions {
+		if s.ID == finished.ID {
+			t.Errorf("a session that ended at 08:00 is still listed as upcoming")
+		}
+	}
+
+	var foundFuture bool
+	for _, s := range sessions {
+		if s.ID == stillToCome.ID {
+			foundFuture = true
+		}
+	}
+	if !foundFuture {
+		t.Error("next week's session is missing from the upcoming list")
+	}
+}
+
+// The resolved timestamps must be populated by the model hook, not left for
+// callers to remember.
+func TestCreateSessionResolvesTimestamps(t *testing.T) {
+	_, ss, _ := newTestServices(t)
+	admin := newUser(t, "admin")
+
+	session, err := ss.CreateSession(CreateSessionInput{
+		Title:       "Tuesday Social",
+		SessionDate: utils.NowInSydney().AddDate(0, 0, 7),
+		StartTime:   "20:00",
+		EndTime:     "22:00",
+		Courts:      1,
+		CreatedBy:   admin.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if session.StartsAt == nil || session.EndsAt == nil {
+		t.Fatal("session was written without resolved start and end instants")
+	}
+	if got := session.EndsAt.Sub(*session.StartsAt); got != 2*time.Hour {
+		t.Errorf("resolved duration = %s, want 2h", got)
+	}
+	if got := session.StartsAt.In(utils.SydneyLocation).Format("15:04"); got != "20:00" {
+		t.Errorf("resolved start reads %s in Sydney, want 20:00", got)
+	}
+}

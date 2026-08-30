@@ -179,7 +179,10 @@ func (s *SessionService) ListUpcomingSessions() ([]models.Session, error) {
 	now := utils.NowInSydney()
 	today := utils.StartOfDay(now)
 
-	if err := database.DB.Where("session_date >= ? AND status != ?", today, models.SessionStatusCancelled).
+	// Upcoming means "has not finished", not "is dated today or later" — a
+	// session that ended three hours ago is in the past, and the History tab
+	// depends on that boundary being right.
+	if err := database.DB.Where("(ends_at IS NULL OR ends_at >= ?) AND session_date >= ? AND status != ?", time.Now(), today, models.SessionStatusCancelled).
 		Preload("RSVPs", func(db *gorm.DB) *gorm.DB {
 			return db.Order("rsvp_timestamp ASC")
 		}).
@@ -198,7 +201,7 @@ func (s *SessionService) ListCancelledUpcomingSessions() ([]models.Session, erro
 	now := utils.NowInSydney()
 	today := utils.StartOfDay(now)
 
-	if err := database.DB.Where("session_date >= ? AND status = ?", today, models.SessionStatusCancelled).
+	if err := database.DB.Where("(ends_at IS NULL OR ends_at >= ?) AND session_date >= ? AND status = ?", time.Now(), today, models.SessionStatusCancelled).
 		Order("session_date ASC, start_time ASC").
 		Find(&sessions).Error; err != nil {
 		return nil, err

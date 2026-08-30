@@ -37,22 +37,176 @@ func Migrate() error {
 		&models.UserPushToken{},
 		&models.Notification{},
 		&models.Announcement{},
+		// Ledger models
+		&models.Account{},
+		&models.Transaction{},
+		&models.LedgerEntry{},
+		&models.Settlement{},
+		&models.ChargeLine{},
 	)
 	if err != nil {
 		return err
 	}
 
-	// Seed default club if not exists
-	var count int64
-	DB.Model(&models.Club{}).Count(&count)
-	if count == 0 {
-		club := models.Club{
-			Name: "Rally Badminton Club",
-		}
-		DB.Create(&club)
-		log.Println("Created default club")
+	if err := applyLedgerConstraints(); err != nil {
+		return err
+	}
+
+	if err := backfillSessionTimestamps(); err != nil {
+		return err
+	}
+
+	if err := SeedDefaultClub(); err != nil {
+		return err
+	}
+
+	if err := backfillClubSettings(); err != nil {
+		return err
+	}
+
+	if err := SeedClubAccounts(); err != nil {
+		return err
 	}
 
 	log.Println("Database migrations completed")
+	return nil
+}
+
+// applyLedgerConstraints adds the guarantees AutoMigrate cannot express.
+//
+// These are backstops rather than the primary defence — the services enforce the
+// same rules under a row lock — but a constraint survives a future caller who
+// forgets the lock, and that is worth the raw SQL.
+func applyLedgerConstraints() error {
+	statements := []string{
+		// A transaction may be reversed at most once. Two reversals of the same
+		// original would double-unwind the balances.
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_one_reversal
+		   ON transactions (reverses_transaction_id)
+		 WHERE reverses_transaction_id IS NOT NULL`,
+
+		// Ledger entries are read by account constantly and written once.
+		`CREATE INDEX IF NOT EXISTS idx_ledger_entries_account_created
+		   ON ledger_entries (account_id, created_at)`,
+
+		// At most one live settlement per session. The service enforces this
+		// under the session row lock; this survives a caller who forgets to.
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_settlements_one_live_per_session
+		   ON settlements (session_id)
+		 WHERE reversed_at IS NULL`,
+	}
+
+	for _, stmt := range statements {
+		if err := DB.Exec(stmt).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SeedClubAccounts creates the four singleton club accounts.
+//
+// They exist from the first migration, before any UI manages them, because the
+// alternative — a single lumped club account, split apart later — would mean
+// rewriting ledger history once real money was in it.
+func SeedClubAccounts() error {
+	names := map[models.AccountKind]string{
+		models.AccountKindBank:         "Club bank",
+		models.AccountKindCourtCredit:  "Court credit (venue account)",
+		models.AccountKindShuttleStock: "Shuttle stock",
+		models.AccountKindSurplus:      "Club surplus",
+	}
+
+	for _, kind := range models.ClubAccountKinds {
+		var count int64
+		if err := DB.Model(&models.Account{}).Where("kind = ?", kind).Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			continue
+		}
+
+		account := models.Account{Kind: kind, Name: names[kind]}
+		if err := DB.Create(&account).Error; err != nil {
+			return err
+		}
+		log.Printf("Created club account: %s", names[kind])
+	}
+	return nil
+}
+
+// backfillSessionTimestamps fills in resolved start and end instants for
+// sessions created before those columns existed.
+//
+// PostgreSQL resolves the Sydney wall-clock time itself, which gets DST right
+// without the application looping over rows. Guarded by IS NULL so it is
+// idempotent and safe to re-run on every migrate.
+//
+// An end time at or before the start means the session ran past midnight.
+func backfillSessionTimestamps() error {
+	return DB.Exec(`
+		UPDATE sessions
+		   SET starts_at = (session_date + start_time::time) AT TIME ZONE 'Australia/Sydney',
+		       ends_at = CASE
+		           WHEN end_time::time > start_time::time
+		           THEN (session_date + end_time::time) AT TIME ZONE 'Australia/Sydney'
+		           ELSE (session_date + INTERVAL '1 day' + end_time::time) AT TIME ZONE 'Australia/Sydney'
+		       END
+		 WHERE starts_at IS NULL
+		   AND start_time <> ''
+		   AND end_time <> ''
+	`).Error
+}
+
+// backfillClubSettings gives an existing club the settlement defaults.
+//
+// SeedDefaultClub only fires when there is no club at all, so a club that
+// predates this feature keeps the zeros AutoMigrate gave its new columns — and
+// a zero base rate is not a free session, it is a settlement that charges
+// nobody anything and a low-balance warning that never fires. The columns are
+// defaults for the settlement form, so filling in a zero costs nothing; an
+// admin who has deliberately set a rate has set a non-zero one.
+func backfillClubSettings() error {
+	return DB.Exec(`
+		UPDATE clubs
+		   SET base_hours = COALESCE(NULLIF(base_hours, 0), 2),
+		       base_rate_cents = COALESCE(NULLIF(base_rate_cents, 0), 3000),
+		       extra_rate_cents = COALESCE(NULLIF(extra_rate_cents, 0), 2300),
+		       shuttles_per_hour = COALESCE(NULLIF(shuttles_per_hour, 0), 5),
+		       low_balance_threshold_cents = COALESCE(NULLIF(low_balance_threshold_cents, 0), 2000)
+		 WHERE base_rate_cents = 0
+		    OR extra_rate_cents = 0
+		    OR shuttles_per_hour = 0
+		    OR base_hours = 0
+		    OR low_balance_threshold_cents = 0
+	`).Error
+}
+
+// SeedDefaultClub creates the single club row with its settlement defaults.
+//
+// Exported so the test harness can restore it after truncation: club settings
+// are schema-shaped configuration rather than test data, and a suite where one
+// test's rate change leaks into the next is worse than useless.
+func SeedDefaultClub() error {
+	var count int64
+	if err := DB.Model(&models.Club{}).Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+
+	club := models.Club{
+		Name:                     "Rally Badminton Club",
+		BaseHours:                2,
+		BaseRateCents:            3000,
+		ExtraRateCents:           2300,
+		ShuttlesPerHour:          5,
+		LowBalanceThresholdCents: 2000,
+	}
+	if err := DB.Create(&club).Error; err != nil {
+		return err
+	}
+	log.Println("Created default club")
 	return nil
 }

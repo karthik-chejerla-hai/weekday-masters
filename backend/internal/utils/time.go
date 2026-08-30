@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -77,4 +78,49 @@ func EndOfDay(t time.Time) time.Time {
 		23, 59, 59, 999999999,
 		SydneyLocation,
 	)
+}
+
+// ResolveSessionTimes turns a session's date and its "HH:MM" start and end into
+// real instants in Sydney.
+//
+// Constitution Principle IV asks for times that participate in business rules to
+// be stored resolved rather than rebuilt on every read. The reason is DST: a
+// Sydney day is not always 24 hours, and reconstructing an instant from a bare
+// date plus a wall-clock string is correct right up until the first Sunday in
+// October, then quietly is not.
+//
+// An end time earlier than the start is read as running past midnight, which is
+// what a session extended into a third hour actually does.
+func ResolveSessionTimes(sessionDate time.Time, startTime, endTime string) (startsAt, endsAt time.Time, err error) {
+	day := sessionDate.In(SydneyLocation)
+
+	startsAt, err = resolveClockTime(day, startTime)
+	if err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+
+	endsAt, err = resolveClockTime(day, endTime)
+	if err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+
+	if !endsAt.After(startsAt) {
+		endsAt = endsAt.AddDate(0, 0, 1)
+	}
+
+	return startsAt, endsAt, nil
+}
+
+// resolveClockTime places an "HH:MM" wall-clock time on a given Sydney day.
+func resolveClockTime(day time.Time, clock string) (time.Time, error) {
+	parsed, err := time.Parse("15:04", clock)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid time %q, expected HH:MM: %w", clock, err)
+	}
+
+	return time.Date(
+		day.Year(), day.Month(), day.Day(),
+		parsed.Hour(), parsed.Minute(), 0, 0,
+		SydneyLocation,
+	), nil
 }

@@ -9,6 +9,15 @@ import type {
   CreateSessionInput,
   UpdateSessionInput,
   SelectableRSVPStatus,
+  PlayerBalance,
+  MyBalance,
+  LedgerEntryView,
+  Transaction,
+  SettlementInput,
+  SettlementPreview,
+  SettlementView,
+  PastSession,
+  ClubPosition,
 } from '../types';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
@@ -201,6 +210,141 @@ class ApiService {
     const response = await this.client.post<Announcement>('/admin/announcements', { title, body });
     return response.data;
   }
+
+  // --- Ledger -------------------------------------------------------------
+  //
+  // Every amount here is integer cents. Nothing in the frontend does arithmetic
+  // on dollars; formatCents divides by 100 at the point of display and nowhere
+  // else.
+
+  async listBalances(): Promise<PlayerBalance[]> {
+    const response = await this.client.get<{ items: PlayerBalance[] }>('/accounts');
+    return response.data.items ?? [];
+  }
+
+  async getMyBalance(): Promise<MyBalance> {
+    const response = await this.client.get<MyBalance>('/accounts/me');
+    return response.data;
+  }
+
+  async getMyEntries(limit = 50, offset = 0): Promise<{ items: LedgerEntryView[]; total: number }> {
+    const response = await this.client.get<{ items: LedgerEntryView[]; total: number }>(
+      '/accounts/me/entries',
+      { params: { limit, offset } }
+    );
+    return { items: response.data.items ?? [], total: response.data.total ?? 0 };
+  }
+
+  async recordTopup(userId: string, amountCents: number, description?: string, occurredAt?: string): Promise<Transaction> {
+    const response = await this.client.post<Transaction>('/admin/transactions/topup', {
+      user_id: userId,
+      amount_cents: amountCents,
+      description,
+      occurred_at: occurredAt,
+    });
+    return response.data;
+  }
+
+  async recordWithdrawal(userId: string, amountCents: number, description?: string, occurredAt?: string): Promise<Transaction> {
+    const response = await this.client.post<Transaction>('/admin/transactions/withdrawal', {
+      user_id: userId,
+      amount_cents: amountCents,
+      description,
+      occurred_at: occurredAt,
+    });
+    return response.data;
+  }
+
+  async recordCourtCredit(amountCents: number, description?: string, occurredAt?: string): Promise<Transaction> {
+    const response = await this.client.post<Transaction>('/admin/transactions/court-credit', {
+      amount_cents: amountCents,
+      description,
+      occurred_at: occurredAt,
+    });
+    return response.data;
+  }
+
+  async recordShuttlePurchase(units: number, amountCents: number, description?: string, occurredAt?: string): Promise<Transaction> {
+    const response = await this.client.post<Transaction>('/admin/transactions/shuttle-purchase', {
+      units,
+      amount_cents: amountCents,
+      description,
+      occurred_at: occurredAt,
+    });
+    return response.data;
+  }
+
+  async recordOpeningBalances(input: {
+    players: Array<{ user_id: string; balance_cents: number }>;
+    bank_cents: number;
+    court_credit_cents: number;
+    shuttle_stock: { units: number; amount_cents: number };
+    occurred_at?: string;
+  }): Promise<Transaction> {
+    const response = await this.client.post<Transaction>('/admin/transactions/opening-balances', input);
+    return response.data;
+  }
+
+  // The only way to undo anything. There is no edit or delete endpoint.
+  async reverseTransaction(transactionId: string, description?: string): Promise<Transaction> {
+    const response = await this.client.post<Transaction>(
+      `/admin/transactions/${transactionId}/reverse`,
+      { description }
+    );
+    return response.data;
+  }
+
+  // --- Settlement ---------------------------------------------------------
+
+  /**
+   * Cost a settlement without writing anything.
+   *
+   * Called on every change to the form, so the numbers on screen are always the
+   * numbers that pressing settle will post.
+   */
+  async previewSettlement(sessionId: string, input: SettlementInput = {}): Promise<SettlementPreview> {
+    const response = await this.client.post<SettlementPreview>(
+      `/admin/sessions/${sessionId}/settlement/preview`,
+      input
+    );
+    return response.data;
+  }
+
+  async settleSession(sessionId: string, input: SettlementInput = {}): Promise<SettlementPreview> {
+    const response = await this.client.post<SettlementPreview>(
+      `/admin/sessions/${sessionId}/settle`,
+      input
+    );
+    return response.data;
+  }
+
+  async reverseSettlement(settlementId: string, description?: string): Promise<Transaction> {
+    const response = await this.client.post<Transaction>(
+      `/admin/settlements/${settlementId}/reverse`,
+      { description }
+    );
+    return response.data;
+  }
+
+  async listSessionHistory(limit = 50, offset = 0): Promise<{ items: PastSession[]; total: number }> {
+    const response = await this.client.get<{ items: PastSession[]; total: number }>(
+      '/sessions/history',
+      { params: { limit, offset } }
+    );
+    return { items: response.data.items ?? [], total: response.data.total ?? 0 };
+  }
+
+  async getSessionSettlement(sessionId: string): Promise<SettlementView> {
+    const response = await this.client.get<SettlementView>(`/sessions/${sessionId}/settlement`);
+    return response.data;
+  }
+
+  // --- Club position (admin) ----------------------------------------------
+
+  async getClubPosition(): Promise<ClubPosition> {
+    const response = await this.client.get<ClubPosition>('/admin/position');
+    return response.data;
+  }
 }
 
 // Notification types
@@ -212,11 +356,13 @@ export interface NotificationPreferences {
   push_rsvp_deadlines: boolean;
   push_waitlist_updates: boolean;
   push_admin_announcements: boolean;
+  push_balance_alerts: boolean;
   email_enabled: boolean;
   email_session_reminders: boolean;
   email_rsvp_deadlines: boolean;
   email_waitlist_updates: boolean;
   email_admin_announcements: boolean;
+  email_balance_alerts: boolean;
   created_at: string;
   updated_at: string;
 }

@@ -14,6 +14,8 @@ const (
 	NotificationRSVPDeadline      NotificationType = "rsvp_deadline"
 	NotificationWaitlistUpdate    NotificationType = "waitlist_update"
 	NotificationAdminAnnouncement NotificationType = "admin_announcement"
+	NotificationBalanceLow        NotificationType = "balance_low"
+	NotificationBalanceNegative   NotificationType = "balance_negative"
 )
 
 // UserNotificationPreferences stores per-user notification settings
@@ -27,6 +29,7 @@ type UserNotificationPreferences struct {
 	PushRSVPDeadlines      bool `gorm:"default:true" json:"push_rsvp_deadlines"`
 	PushWaitlistUpdates    bool `gorm:"default:true" json:"push_waitlist_updates"`
 	PushAdminAnnouncements bool `gorm:"default:true" json:"push_admin_announcements"`
+	PushBalanceAlerts      bool `gorm:"default:true" json:"push_balance_alerts"`
 
 	// Email notification preferences
 	EmailEnabled            bool `gorm:"default:true" json:"email_enabled"`
@@ -34,6 +37,7 @@ type UserNotificationPreferences struct {
 	EmailRSVPDeadlines      bool `gorm:"default:true" json:"email_rsvp_deadlines"`
 	EmailWaitlistUpdates    bool `gorm:"default:true" json:"email_waitlist_updates"`
 	EmailAdminAnnouncements bool `gorm:"default:true" json:"email_admin_announcements"`
+	EmailBalanceAlerts      bool `gorm:"default:true" json:"email_balance_alerts"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -137,6 +141,8 @@ func (p *UserNotificationPreferences) IsPushEnabledForType(t NotificationType) b
 		return p.PushWaitlistUpdates
 	case NotificationAdminAnnouncement:
 		return p.PushAdminAnnouncements
+	case NotificationBalanceLow, NotificationBalanceNegative:
+		return p.PushBalanceAlerts
 	default:
 		return false
 	}
@@ -156,6 +162,8 @@ func (p *UserNotificationPreferences) IsEmailEnabledForType(t NotificationType) 
 		return p.EmailWaitlistUpdates
 	case NotificationAdminAnnouncement:
 		return p.EmailAdminAnnouncements
+	case NotificationBalanceLow, NotificationBalanceNegative:
+		return p.EmailBalanceAlerts
 	default:
 		return false
 	}

@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Home, Calendar, User, Settings } from 'lucide-react';
+import { Home, Calendar, User, Settings, Wallet } from 'lucide-react';
 import { useAuth } from '../../context/useAuth';
 
 export default function Navigation() {
@@ -8,6 +8,7 @@ export default function Navigation() {
   const navItems = [
     { to: '/dashboard', icon: Home, label: 'Home' },
     { to: '/sessions', icon: Calendar, label: 'Sessions' },
+    { to: '/money', icon: Wallet, label: 'Money' },
     { to: '/profile', icon: User, label: 'Profile' },
     ...(isAdmin ? [{ to: '/admin', icon: Settings, label: 'Admin' }] : []),
   ];

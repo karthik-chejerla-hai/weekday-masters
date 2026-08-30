@@ -222,29 +222,21 @@ func (s *SchedulerService) sendDeadlineReminders(ctx context.Context, session mo
 	}
 }
 
-// parseSessionDateTime parses a session's date and start time into a time.Time
+// parseSessionDateTime returns when a session actually starts.
+//
+// This used to rebuild the instant from the date plus an "HH:MM" string on every
+// read, which Principle IV forbids: a Sydney day is not always 24 hours, so a
+// reminder computed that way drifts by an hour across a DST boundary. Sessions
+// now carry the resolved instant, and this falls back to the old arithmetic only
+// for rows written before that column existed and not yet backfilled.
 func (s *SchedulerService) parseSessionDateTime(session models.Session) (time.Time, error) {
-	// session.SessionDate is already a time.Time (date only)
-	// session.StartTime is a string like "18:30"
-
-	dateInSydney := session.SessionDate.In(utils.SydneyLocation)
-
-	// Parse start time
-	startTime, err := time.Parse("15:04", session.StartTime)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("failed to parse start time %s: %w", session.StartTime, err)
+	if session.StartsAt != nil {
+		return session.StartsAt.In(utils.SydneyLocation), nil
 	}
 
-	// Combine date and time
-	result := time.Date(
-		dateInSydney.Year(),
-		dateInSydney.Month(),
-		dateInSydney.Day(),
-		startTime.Hour(),
-		startTime.Minute(),
-		0, 0,
-		utils.SydneyLocation,
-	)
-
-	return result, nil
+	startsAt, _, err := utils.ResolveSessionTimes(session.SessionDate, session.StartTime, session.EndTime)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("session %s has unusable times: %w", session.ID, err)
+	}
+	return startsAt, nil
 }
