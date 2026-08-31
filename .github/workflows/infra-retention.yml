@@ -96,7 +96,7 @@ jobs:
             echo "ok" > "$RUNNER_TEMP/policy.outcome"
           else
             echo "failed" > "$RUNNER_TEMP/policy.outcome"
-            echo "::error::could not set the cleanup policy - needs artifactregistry.repositories.update"
+            echo "::error::could not set the cleanup policy - needs artifactregistry.repositories.update (roles/artifactregistry.repoAdmin)"
             exit 0
           fi
 
@@ -158,7 +158,7 @@ jobs:
                      --project ${{ env.GCP_PROJECT_ID }} \
                      --delete-tags --quiet; then
                 echo "failed" > "$RUNNER_TEMP/images.outcome"
-                echo "::error::could not delete ${digest} - needs artifactregistry.versions.delete"
+                echo "::error::could not delete ${digest} - needs artifactregistry.versions.delete and artifactregistry.tags.delete (roles/artifactregistry.repoAdmin)"
                 break
               fi
             fi
@@ -245,6 +245,18 @@ jobs:
 
           if [ "$failed" -ne 0 ]; then
             echo "::error::retention run did not complete cleanly - see the annotations above for the permission each step needs"
+            {
+              echo ""
+              echo "Every Artifact Registry permission this workflow needs is in one role."
+              echo "If the policy or image steps failed for want of one, grant it and run again:"
+              echo ""
+              echo '```'
+              echo "gcloud artifacts repositories add-iam-policy-binding rally-club-api-registry \\"
+              echo "  --location=australia-southeast1 --project=<GCP_PROJECT_ID> \\"
+              echo "  --member=serviceAccount:<BACKEND_SA_EMAIL> \\"
+              echo "  --role=roles/artifactregistry.repoAdmin"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
           exit $failed
 
