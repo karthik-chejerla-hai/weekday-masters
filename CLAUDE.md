@@ -19,8 +19,27 @@ cd backend
 cp .env.example .env        # configure environment
 go mod download
 go run ./cmd/migrate        # apply schema — NOT run by the server
+go run ./cmd/seed -env=local # optional: test members and sessions
 go run cmd/server/main.go   # starts on :8080
 ```
+
+### Seeding test data
+
+`cmd/seed` fills a **non-production** database with six members covering the states that are
+tedious to reach by hand — in credit, under the low-balance threshold, in debt, a pending join
+request, an unclaimed invite — plus a settled session, a session still awaiting settlement, and
+an upcoming one with RSVPs. It assumes the schema exists, so run `./cmd/migrate` first.
+
+`-env` is required and has no production option. `-env=local` refuses any database that is not
+on loopback; `-env=preview` additionally requires `SEED_ALLOW_PREVIEW=true`, which only
+`preview-deploy.yml` sets. Preview environments are Neon branches of production, so they already
+contain every real member — the guard that matters is not "is this database empty" but "is this
+production", and the seed only ever writes rows it owns (`@seed.invalid` emails, `[seed]` titles)
+and never modifies one it does not.
+
+It is idempotent, so the preview workflow re-runs it on every push. There is deliberately no
+reset flag: undoing the money would mean deleting ledger entries, and the ledger is append-only.
+To start over, recreate the database or delete the PR's Neon branch.
 
 ### Frontend (React + Vite)
 ```bash
