@@ -58,6 +58,18 @@ func TestPreviewRequiresTheEnvironmentVariable(t *testing.T) {
 	}
 }
 
+func TestPreviewRefusesARealRosterImport(t *testing.T) {
+	if err := checkImportMode("preview", "/tmp/export.csv"); err == nil {
+		t.Fatal("preview accepted a real roster import")
+	}
+	if err := checkImportMode("preview", ""); err != nil {
+		t.Fatalf("preview synthetic seed was refused: %v", err)
+	}
+	if err := checkImportMode("local", "/tmp/export.csv"); err != nil {
+		t.Fatalf("local roster import was refused: %v", err)
+	}
+}
+
 func TestRedactHidesCredentials(t *testing.T) {
 	got := redact("postgres://badminton:hunter2@db.example.com:5432/club")
 	if strings.Contains(got, "hunter2") {

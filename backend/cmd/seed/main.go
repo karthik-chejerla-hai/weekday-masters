@@ -43,6 +43,14 @@ const allowPreviewVar = "SEED_ALLOW_PREVIEW"
 
 func main() {
 	env := flag.String("env", "", "target environment: local or preview (required)")
+	from := flag.String("from", "",
+		"path to a Splitwise CSV export; seeds the club's real roll instead of the invented six")
+	bank := flag.Int64("bank", -1, "opening bank balance in cents (-from only)")
+	courtCredit := flag.Int64("court-credit", 0, "opening prepaid court credit in cents (-from only)")
+	shuttleValue := flag.Int64("shuttle-value", 0, "opening shuttle stock value in cents (-from only)")
+	shuttleUnits := flag.Int("shuttle-units", 0, "opening shuttle count (-from only)")
+	admin := flag.String("admin", "",
+		"name in the export to make admin (-from only; defaults to "+seed.DefaultAdminName+")")
 	flag.Parse()
 
 	cfg := config.Load()
@@ -50,17 +58,39 @@ func main() {
 	if err := checkTarget(*env, cfg.DatabaseURL, os.Getenv(allowPreviewVar)); err != nil {
 		log.Fatalf("refusing to seed: %v", err)
 	}
+	if err := checkImportMode(*env, *from); err != nil {
+		log.Fatalf("refusing to seed: %v", err)
+	}
 
 	if err := database.Connect(cfg.DatabaseURL); err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
-	report, err := seed.Run(seed.Options{})
+	opts := seed.Options{FromCSV: *from, AdminName: *admin}
+	if *from != "" && *bank >= 0 {
+		opts.Assets = &seed.AssetSplit{
+			BankCents:        *bank,
+			CourtCreditCents: *courtCredit,
+			ShuttleCents:     *shuttleValue,
+			ShuttleUnits:     *shuttleUnits,
+		}
+	}
+
+	report, err := seed.Run(opts)
 	if err != nil {
 		log.Fatalf("Seeding failed: %v", err)
 	}
 
 	printReport(*env, report)
+}
+
+// checkImportMode keeps personally identifying roster and balance data on the
+// developer's machine. Preview seeding always uses the invented roster.
+func checkImportMode(env, from string) error {
+	if from != "" && env != "local" {
+		return fmt.Errorf("-from is local-only; preview databases must use the synthetic roster")
+	}
+	return nil
 }
 
 // checkTarget is the whole safety story, kept as a pure function so the tests
@@ -146,6 +176,10 @@ func redact(databaseURL string) string {
 
 func printReport(env string, report *seed.Report) {
 	log.Printf("Seeded the %s database.", env)
+	if report.Source != "" {
+		log.Printf("  source:      %s (%d transactions reconciled)",
+			report.Source, report.TransactionsRead)
+	}
 	log.Printf("  members:     %d created, %d already present",
 		report.UsersCreated, report.UsersReused)
 	log.Printf("  sessions:    %d created", report.SessionsMade)
@@ -155,7 +189,7 @@ func printReport(env string, report *seed.Report) {
 
 	log.Println("  closing balances:")
 	for _, line := range report.Balances {
-		log.Printf("    %-14s %-10s %s",
+		log.Printf("    %-22s %-10s %10s",
 			line.Name, line.Status, dollars(line.BalanceCred))
 	}
 
