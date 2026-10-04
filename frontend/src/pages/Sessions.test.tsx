@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import Sessions from './Sessions';
 import { api } from '../services/api';
+import { useAuth } from '../context/useAuth';
 import type { Session } from '../types';
 
 vi.mock('../services/api', () => ({
@@ -44,6 +45,7 @@ function renderPage() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(useAuth).mockReturnValue({ isAdmin: false } as ReturnType<typeof useAuth>);
   vi.mocked(api.getClub).mockResolvedValue({ venue_name: 'Olympic Park' } as never);
   vi.mocked(api.listSessionHistory).mockResolvedValue({ items: [], total: 0 });
 });
@@ -83,6 +85,29 @@ describe('Sessions page', () => {
 });
 
 describe('Sessions history tab', () => {
+  it('shows imported games as settled in Splitwise with a read-only split for admins', async () => {
+    const user = userEvent.setup();
+    vi.mocked(useAuth).mockReturnValue({ isAdmin: true } as ReturnType<typeof useAuth>);
+    vi.mocked(api.listSessionHistory).mockResolvedValue({
+      items: [{
+        session_id: 'imported-game', title: 'Game - 2 Apr',
+        imported_date: '2024-04-02', date_basis: 'title',
+        settled: true, total_cents: 1900, player_count: 3,
+      }],
+      total: 1,
+    });
+
+    renderPage();
+    await user.click(await screen.findByRole('tab', { name: 'History' }));
+
+    expect(await screen.findByText('3 players · Settled in Splitwise')).toBeInTheDocument();
+    expect(screen.getByText('Tue 2 Apr 2024')).toBeInTheDocument();
+    expect(screen.getByText('$19.00')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'See the split' })).toHaveAttribute('href', '/sessions/imported-game/settlement');
+    expect(screen.queryByText('Not settled')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Settle it' })).not.toBeInTheDocument();
+  });
+
   it('lists sessions that have been played, with what they cost', async () => {
     const user = userEvent.setup();
     vi.mocked(api.listSessionHistory).mockResolvedValue({

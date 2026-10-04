@@ -8,7 +8,7 @@
 
 ### User Story 1 - See club assets (P1)
 
-An approved member sees court credit, shuttle count and value, and bank funds in three large cards in one row. Each card gives the date of its data. Only an admin sees or can use purchase forms.
+An approved member sees court credit, shuttle count and value, and bank funds in three cards. Desktop shows one row. Mobile shows three compact rows without horizontal scrolling. Each card gives the date of its data. Only an admin sees or can use purchase forms.
 
 Acceptance: Compare both roles against the same confirmed asset snapshot. Both see identical figures and dates. A member cannot record a purchase. A pending or removed member cannot read club finances.
 
@@ -34,7 +34,7 @@ Acceptance: Load a history with more than 100 entries to its end. All entries re
 
 - FR-001: Share read-only asset information with every approved member.
 - FR-002: Keep all money writes restricted to admins.
-- FR-003: Show court credit, shuttle value/count, and bank funds in that order, in one row. All three cards highlight the dollar value. The shuttle count appears in the secondary line. Small screens can scroll this row.
+- FR-003: Show court credit, shuttle value/count, and bank funds in that order. Desktop shows one row; mobile shows three compact rows without horizontal scrolling. All three cards highlight the dollar value. The shuttle count appears in the secondary line.
 - FR-004: Show bank and court dates from their last recorded movement. Show the shuttle audit date from the confirmed opening/cutover snapshot, and its last movement date separately.
 - FR-005: Default to the current member's ledger. Allow all member entries, including inactive participants, and a top-up-only filter.
 - FR-006: Preserve complete running balances before filters and pagination.
@@ -71,3 +71,11 @@ Imported regular and extra-hour records on the same play date in the same import
 Name the tab "Ledger". Mine filters the list to games the caller took part in, but expansion retains the complete split. All shows all games. Top-up-only excludes game rows. Group before applying pagination so page boundaries cannot split or repeat a game. No ledger entries or money values are modified.
 
 Acceptance: One game row expands/collapses by mouse and keyboard. Its shares reconcile with source charges, including a member-funded game and inactive participants. Extra-hour rows combine once. A game with a comped member or a guest preserves those charges correctly. Existing filters and paging still work.
+
+## Correction: Imported session history and mobile assets
+
+An old scheduled session without any native settlement is already accounted for when Splitwise has a game on its stored play date. History shows the imported game once, labelled "Settled in Splitwise". Suppress the redundant schedule row before counting and paging. Keep the original schedule and all financial records intact. A native settlement, including a reversed one, remains distinct.
+
+Links to the old scheduled ID resolve to the imported breakdown. Preview and settlement requests for that old ID must refuse a second charge. Combine regular and extra-hour source rows as before. Match the play date, not the date when Splitwise recorded the expense.
+
+Acceptance: Test duplicate schedule rows, a cancelled schedule, source/play-date differences, pagination, native active/reversed settlements, and unchanged ledger balances after a rejected duplicate charge. Inspect all three asset cards at 320px and 390px widths and desktop. Values, counts and dates must remain visible without horizontal scrolling.

@@ -41,11 +41,11 @@ export default function PastSessionCard({ session, isAdmin }: PastSessionCardPro
         )}
       </div>
 
-      <div className="mt-3 flex items-center justify-between">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
         {session.settled ? (
           <>
             <span className="text-sm text-slate-500">
-              {session.player_count} {session.player_count === 1 ? 'player' : 'players'}{session.imported_date && ' · Splitwise'}
+              {session.player_count} {session.player_count === 1 ? 'player' : 'players'}{session.imported_date && ' · Settled in Splitwise'}
             </span>
             <Link
               to={`/sessions/${session.session_id}/settlement`}
