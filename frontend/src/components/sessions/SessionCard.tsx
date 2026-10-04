@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, Clock, Check, HelpCircle, X, ChevronDown, ChevronUp, MapPin, Timer } from 'lucide-react';
+import { Calendar, Clock, Check, HelpCircle, X, ChevronDown, ChevronUp, MapPin, Timer, Hourglass } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import type { Session } from '../../types';
 import Badge from '../ui/Badge';
@@ -111,7 +111,7 @@ export default function SessionCard({ session, venueName, featured = false }: Se
             className="flex min-h-11 shrink-0 items-center gap-1 rounded-xl px-2 text-sm font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-800"
             title={isExpanded ? 'Collapse' : 'Expand'}
           >
-            {isExpanded ? 'Hide players' : `${maybeCount + declinedCount + confirmedCount} responses`}
+            {isExpanded ? 'Hide players' : `${maybeCount + declinedCount + confirmedCount + waitlistedRsvps.length} responses`}
             {isExpanded ? (
               <ChevronUp className="h-4 w-4" />
             ) : (
@@ -169,8 +169,23 @@ export default function SessionCard({ session, venueName, featured = false }: Se
             </div>
           )}
 
+          {/* Waitlisted players have responded and should be visible with the response total. */}
+          {waitlistedRsvps.length > 0 && (
+            <div>
+              <div className="flex items-center gap-1.5 mb-2">
+                <Hourglass className="w-3.5 h-3.5 text-amber-600" />
+                <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">Waitlisted</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {waitlistedRsvps.map((rsvp) => (
+                  <PlayerChip key={rsvp.id} name={displayName(rsvp.user)} picture={rsvp.user?.profile_picture} variant="waitlisted" />
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* No RSVPs */}
-          {confirmedRsvps.length === 0 && maybeRsvps.length === 0 && declinedRsvps.length === 0 && (
+          {confirmedRsvps.length === 0 && maybeRsvps.length === 0 && declinedRsvps.length === 0 && waitlistedRsvps.length === 0 && (
             <p className="text-sm text-slate-500 text-center py-2">No RSVPs yet</p>
           )}
         </div>
@@ -179,10 +194,10 @@ export default function SessionCard({ session, venueName, featured = false }: Se
   );
 }
 
-function PlayerChip({ name, picture, variant }: { name: string; picture?: string; variant: 'confirmed' | 'maybe' | 'declined' }) {
+function PlayerChip({ name, picture, variant }: { name: string; picture?: string; variant: 'confirmed' | 'maybe' | 'declined' | 'waitlisted' }) {
   const borderColor = variant === 'confirmed'
     ? 'border-green-200 bg-green-50'
-    : variant === 'maybe'
+    : variant === 'maybe' || variant === 'waitlisted'
       ? 'border-amber-200 bg-amber-50'
       : 'border-red-200 bg-red-50';
 

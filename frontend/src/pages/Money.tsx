@@ -66,6 +66,16 @@ export default function Money() {
     load();
   }, [load]);
 
+  // If an admin-only view is hidden (for example when entering member
+  // preview), immediately show a tab that is still available to members.
+  useEffect(() => {
+    if (!isAdmin) {
+      setTab((current) => current === 'club' ? 'balances' : current);
+    }
+  }, [isAdmin]);
+
+  const activeTab = !isAdmin && tab === 'club' ? 'balances' : tab;
+
   if (isLoading) {
     return (
       <div className="card p-8 flex items-center justify-center">
@@ -101,10 +111,10 @@ export default function Money() {
           <button
             key={id}
             role="tab"
-            aria-selected={tab === id}
+            aria-selected={activeTab === id}
             onClick={() => setTab(id)}
             className={`min-h-11 rounded-lg px-2 py-2 text-sm font-semibold transition-colors ${
-              tab === id
+              activeTab === id
                 ? 'bg-white text-slate-950 shadow-sm'
                 : 'text-slate-500 hover:text-slate-800'
             }`}
@@ -114,7 +124,7 @@ export default function Money() {
         ))}
       </div>
 
-      {tab === 'balances' && (
+      {activeTab === 'balances' && (
         <div className="space-y-6">
           <BalancesList
             balances={balances}
@@ -125,9 +135,9 @@ export default function Money() {
         </div>
       )}
 
-      {tab === 'ledger' && <LedgerList entries={entries} />}
+      {activeTab === 'ledger' && <LedgerList entries={entries} />}
 
-      {tab === 'club' && isAdmin && (
+      {activeTab === 'club' && isAdmin && (
         <div className="space-y-6">
           {position && <PositionPanel position={position} />}
           <AssetPurchaseForms onRecorded={load} />
