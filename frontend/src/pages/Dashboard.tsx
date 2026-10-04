@@ -39,15 +39,12 @@ export default function Dashboard() {
   const upcomingSessions = sessions.slice(0, 3);
   const nextSession = upcomingSessions[0];
   const laterSessions = upcomingSessions.slice(1);
-  const getConfirmedCount = (session: Session) =>
-    session.rsvps?.filter(r => r.status === 'in').length || 0;
 
   return (
     <div className="space-y-7">
       <div className="page-heading">
         <p className="page-kicker">Welcome back, {displayName(user).split(' ')[0]}</p>
         <h1 className="page-title">Ready for your next game?</h1>
-        <p className="page-description">Your next session, RSVP status, and club essentials—all in one place.</p>
       </div>
 
       {isLoading ? (
@@ -67,7 +64,7 @@ export default function Dashboard() {
           <div className="mb-3 flex items-center justify-between">
             <h2 id="next-session-heading" className="text-base font-semibold text-slate-950">Your next game</h2>
             <Link to={`/sessions/${nextSession.id}`} className="flex min-h-11 items-center gap-1 px-1 text-sm font-semibold text-primary-700 hover:text-primary-800">
-              Full details <ArrowRight className="h-4 w-4" />
+              Details <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
           <SessionCard session={nextSession} venueName={venueName} featured />
@@ -135,19 +132,6 @@ export default function Dashboard() {
         </section>
       )}
 
-      <section aria-labelledby="club-summary-heading">
-        <h2 id="club-summary-heading" className="mb-3 text-base font-semibold text-slate-950">Club at a glance</h2>
-        <div className="card grid grid-cols-2 divide-x divide-slate-200 py-4 text-center">
-          <div className="px-3">
-            <p className="text-xl font-semibold tabular-nums text-slate-950">{sessions.length}</p>
-            <p className="mt-1 text-xs text-slate-500">Upcoming sessions</p>
-          </div>
-          <div className="px-3">
-            <p className="text-xl font-semibold tabular-nums text-slate-950">{sessions.reduce((acc, s) => acc + getConfirmedCount(s), 0)}</p>
-            <p className="mt-1 text-xs text-slate-500">Confirmed RSVPs</p>
-          </div>
-        </div>
-      </section>
     </div>
   );
 }

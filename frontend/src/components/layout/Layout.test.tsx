@@ -10,6 +10,7 @@ import { useAuth } from '../../context/useAuth';
 vi.mock('../../context/useAuth', () => ({ useAuth: vi.fn() }));
 
 const logout = vi.fn();
+const stopMemberPreview = vi.fn();
 
 function mockAuth(overrides: Record<string, unknown> = {}) {
   vi.mocked(useAuth).mockReturnValue({
@@ -20,6 +21,9 @@ function mockAuth(overrides: Record<string, unknown> = {}) {
     isAuthenticated: true,
     isApproved: true,
     isLoading: false,
+    isViewingAsMember: false,
+    startMemberPreview: vi.fn(),
+    stopMemberPreview,
     refreshUser: vi.fn(),
     ...overrides,
   } as unknown as ReturnType<typeof useAuth>);
@@ -95,5 +99,22 @@ describe('Layout', () => {
     expect(screen.getByText('Routed content')).toBeInTheDocument();
     expect(screen.getByRole('banner')).toBeInTheDocument();
     expect(screen.getAllByRole('navigation')).toHaveLength(2);
+  });
+
+  it('keeps an obvious exit available while previewing the member UI', async () => {
+    mockAuth({ isAdmin: false, isViewingAsMember: true });
+    render(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route path="/dashboard" element={<p>Member page</p>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText(/Previewing member view/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Exit preview' }));
+    expect(stopMemberPreview).toHaveBeenCalledOnce();
   });
 });

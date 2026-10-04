@@ -6,7 +6,11 @@ export interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   isApproved: boolean;
+  /** Effective role for the current view. False while an admin previews the member UI. */
   isAdmin: boolean;
+  isViewingAsMember: boolean;
+  startMemberPreview: () => void;
+  stopMemberPreview: () => void;
   login: () => void;
   logout: () => void;
   refreshUser: () => Promise<void>;

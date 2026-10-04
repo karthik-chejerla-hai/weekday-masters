@@ -16,6 +16,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isViewingAsMember, setIsViewingAsMember] = useState(false);
 
   const syncUser = async () => {
     if (!auth0IsAuthenticated || !auth0User) {
@@ -72,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     api.setAccessToken(null);
     setUser(null);
+    setIsViewingAsMember(false);
     auth0Logout({
       logoutParams: {
         returnTo: window.location.origin,
@@ -79,12 +81,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  // This changes presentation only. The server still authorizes every request
+  // from the real JWT, so preview mode cannot grant or revoke permissions.
+  const startMemberPreview = () => {
+    if (user?.role === 'admin') setIsViewingAsMember(true);
+  };
+
+  const stopMemberPreview = () => setIsViewingAsMember(false);
+
+  const isAdminAccount = user?.role === 'admin';
+
   const value: AuthContextType = {
     user,
     isLoading: auth0IsLoading || isLoading,
     isAuthenticated: auth0IsAuthenticated && !!user,
     isApproved: user?.membership_status === 'approved',
-    isAdmin: user?.role === 'admin',
+    isAdmin: isAdminAccount && !isViewingAsMember,
+    isViewingAsMember: isAdminAccount && isViewingAsMember,
+    startMemberPreview,
+    stopMemberPreview,
     login,
     logout,
     refreshUser,

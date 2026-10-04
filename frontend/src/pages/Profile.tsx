@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Mail, Phone, Shield, Save, Loader2, Bell, Smile, Settings, CalendarDays, UsersRound, ChevronRight } from 'lucide-react';
+import { Mail, Phone, Shield, Save, Loader2, Bell, Smile, Settings, CalendarDays, UsersRound, ChevronRight, Eye } from 'lucide-react';
 import { useAuth } from '../context/useAuth';
 import { api } from '../services/api';
 import Avatar from '../components/ui/Avatar';
@@ -9,7 +9,7 @@ import NotificationSettings from '../components/notifications/NotificationSettin
 import { displayName, firstName } from '../utils/members';
 
 export default function Profile() {
-  const { user, refreshUser, isAdmin } = useAuth();
+  const { user, refreshUser, isAdmin, startMemberPreview } = useAuth();
   const [phoneNumber, setPhoneNumber] = useState(user?.phone_number || '');
   const [nickname, setNickname] = useState(user?.nickname || '');
   const [isSaving, setIsSaving] = useState(false);
@@ -141,6 +141,16 @@ export default function Profile() {
             <h2 id="admin-tools-heading" className="text-lg font-semibold text-slate-950">Club admin</h2>
           </div>
           <div className="card divide-y divide-slate-100">
+            <button onClick={startMemberPreview} className="flex min-h-[72px] w-full items-center gap-3 rounded-t-2xl px-4 py-3 text-left transition-colors hover:bg-slate-50">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-secondary-50 text-secondary-700">
+                <Eye className="h-5 w-5" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-slate-900">Preview as member</span>
+                <span className="block text-xs text-slate-500">Temporarily hide every admin-only control</span>
+              </span>
+              <ChevronRight className="h-5 w-5 text-slate-400" />
+            </button>
             <AdminLink to="/admin" icon={Settings} label="Admin home" description="Join requests, settings and announcements" />
             <AdminLink to="/admin/sessions" icon={CalendarDays} label="Manage sessions" description="Schedule, edit and settle sessions" />
             <AdminLink to="/admin/members" icon={UsersRound} label="Manage members" description="Invite, edit or reinstate club members" />

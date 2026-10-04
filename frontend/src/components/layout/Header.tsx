@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
-import { CalendarDays, Home, LogOut, Settings, UsersRound, WalletCards } from 'lucide-react';
+import { CalendarDays, Eye, Home, LogOut, Settings, UsersRound, WalletCards } from 'lucide-react';
 import { useAuth } from '../../context/useAuth';
 import { api } from '../../services/api';
 import Avatar from '../ui/Avatar';
@@ -9,7 +9,7 @@ import type { MyBalance } from '../../types';
 import { displayName } from '../../utils/members';
 
 export default function Header() {
-  const { user, logout, isAdmin, isApproved } = useAuth();
+  const { user, logout, isAdmin, isApproved, startMemberPreview } = useAuth();
   const [balance, setBalance] = useState<MyBalance | null>(null);
 
   // The number people check most often, so it lives where they already look.
@@ -105,6 +105,10 @@ export default function Header() {
                 </NavLink>
               ))}
             </nav>
+            <button onClick={startMemberPreview} className="mt-2 flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900">
+              <Eye className="h-5 w-5" />
+              Preview as member
+            </button>
           </div>
         )}
 
