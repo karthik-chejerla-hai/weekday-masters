@@ -67,15 +67,16 @@ describe('Navigation', () => {
     expect(screen.queryByText('Admin')).not.toBeInTheDocument();
   });
 
-  it('adds an admin tab for admins', () => {
+  it('keeps four stable member destinations for admins', () => {
     mockAuth({ isAdmin: true });
     renderAt(<Navigation />);
-    expect(screen.getByText('Admin')).toBeInTheDocument();
+    expect(screen.queryByText('Admin')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('link')).toHaveLength(4);
   });
 
   it('marks the current tab as active', () => {
     renderAt(<Navigation />, '/sessions');
-    expect(screen.getByText('Sessions').closest('a')).toHaveClass('text-primary-600');
+    expect(screen.getByText('Sessions').closest('a')).toHaveClass('text-primary-800');
   });
 });
 
@@ -93,6 +94,6 @@ describe('Layout', () => {
 
     expect(screen.getByText('Routed content')).toBeInTheDocument();
     expect(screen.getByRole('banner')).toBeInTheDocument();
-    expect(screen.getByRole('navigation')).toBeInTheDocument();
+    expect(screen.getAllByRole('navigation')).toHaveLength(2);
   });
 });

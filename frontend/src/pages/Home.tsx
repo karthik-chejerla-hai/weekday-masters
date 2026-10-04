@@ -13,27 +13,34 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-primary-600 to-primary-800">
-      <div className="max-w-4xl mx-auto px-4 py-12">
-        <div className="text-center text-white mb-12">
-          <div className="w-20 h-20 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-6 text-5xl">
-            🏸
+    <div className="min-h-screen bg-slate-50">
+      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-14">
+        <header className="flex items-center gap-3">
+          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-50 ring-1 ring-primary-100">
+            <img src="/badminton.svg" alt="" className="h-9 w-9" />
+          </span>
+          <span className="text-lg font-bold tracking-tight text-slate-950">Rally</span>
+        </header>
+
+        <main className="py-12 text-center sm:py-20">
+          <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-primary-50 ring-1 ring-primary-100">
+            <img src="/badminton.svg" alt="" className="h-16 w-16" />
           </div>
-          <h1 className="text-4xl font-bold mb-4">
+          <h1 className="text-4xl font-semibold tracking-tight text-slate-950 sm:text-5xl">
             {club?.name || 'Rally'}
           </h1>
-          <p className="text-xl text-primary-100 mb-8">
-            Join our badminton community and play with us!
+          <p className="mx-auto mt-4 max-w-xl text-lg leading-8 text-slate-600">
+            Everything your badminton club needs to organise games, track RSVPs, and stay connected.
           </p>
           <button
             onClick={login}
-            className="bg-white text-primary-700 px-8 py-4 rounded-xl font-semibold text-lg hover:bg-primary-50 transition-colors shadow-lg"
+            className="btn-primary mt-8 px-7"
           >
             Sign in with Google
           </button>
-        </div>
+        </main>
 
-        <div className="grid md:grid-cols-3 gap-6 mb-12">
+        <section className="grid gap-3 md:grid-cols-3">
           <FeatureCard
             icon={Calendar}
             title="Weekly Sessions"
@@ -49,16 +56,16 @@ export default function Home() {
             title="Friendly Community"
             description="Play with players of all skill levels in a welcoming environment"
           />
-        </div>
+        </section>
 
         {club?.venue_name && (
-          <div className="bg-white/10 backdrop-blur rounded-xl border border-white/20 p-6 text-white text-center">
-            <h2 className="font-semibold text-lg mb-2">Our Venue</h2>
-            <p className="text-primary-100">{club.venue_name}</p>
+          <section className="card mt-6 p-5 text-center">
+            <h2 className="font-semibold text-slate-950">Our venue</h2>
+            <p className="mt-1 text-sm text-slate-700">{club.venue_name}</p>
             {club.venue_address && (
-              <p className="text-primary-200 text-sm mt-1">{club.venue_address}</p>
+              <p className="mt-1 text-sm text-slate-500">{club.venue_address}</p>
             )}
-          </div>
+          </section>
         )}
       </div>
     </div>
@@ -71,10 +78,12 @@ function FeatureCard({ icon: Icon, title, description }: {
   description: string;
 }) {
   return (
-    <div className="bg-white/10 backdrop-blur rounded-xl border border-white/20 p-6 text-white text-center">
-      <Icon className="w-10 h-10 mx-auto mb-4 text-secondary-400" />
-      <h3 className="font-semibold text-lg mb-2">{title}</h3>
-      <p className="text-primary-100 text-sm">{description}</p>
+    <div className="card p-5 text-left">
+      <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-50 text-primary-700">
+        <Icon className="h-5 w-5" />
+      </span>
+      <h3 className="mt-4 font-semibold text-slate-950">{title}</h3>
+      <p className="mt-1 text-sm leading-6 text-slate-600">{description}</p>
     </div>
   );
 }

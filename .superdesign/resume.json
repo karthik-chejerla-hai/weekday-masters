@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "targets": {
+    "/dashboard": {
+      "targetKind": "existing-ui",
+      "projectId": "9d36069a-eab7-4a3d-9462-73db91866f73",
+      "activeDraftId": "a9e96423-56d3-466b-8aaa-ea808299c49d",
+      "designSystemPath": ".superdesign/design-system.md",
+      "referenceIds": [
+        "frontend-public-badminton.svg"
+      ],
+      "brandAssets": {
+        "logo": {
+          "assetKey": "frontend-public-badminton.svg",
+          "url": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/9d36069a-eab7-4a3d-9462-73db91866f73/brand-assets/frontend-public-badminton.svg/badminton.svg",
+          "sourcePath": "frontend/public/badminton.svg"
+        }
+      },
+      "contextFiles": [
+        ".superdesign/design-system.md"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "827ae2afbe8f91650c8d5a19c52980bf7d1b26e0f0e065d7f707564f7a3d2c37"
+      },
+      "components": [
+        {
+          "name": "Header",
+          "id": "0cfa648f-64a2-4b74-be7a-22ef05ee8ba0",
+          "sourcePath": "frontend/src/components/layout/Header.tsx",
+          "logoAssetKey": "frontend-public-badminton.svg"
+        },
+        {
+          "name": "Navigation",
+          "id": "7683d0ae-7830-415a-9f38-4d4496424625",
+          "sourcePath": "frontend/src/components/layout/Navigation.tsx"
+        }
+      ],
+      "drafts": {
+        "a9e96423-56d3-466b-8aaa-ea808299c49d": {
+          "title": "Rally · mobile-first dashboard direction",
+          "visualDirection": "quiet action-first mobile dashboard",
+          "currentVersion": 1
+        }
+      },
+      "updatedAt": "2026-10-04T01:27:40Z"
+    }
+  }
+}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Calendar, ArrowRight, Loader2, AlertTriangle } from 'lucide-react';
+import { ArrowRight, CalendarDays, Loader2, AlertTriangle, WalletCards } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { useAuth } from '../context/useAuth';
 import { api } from '../services/api';
@@ -37,44 +37,74 @@ export default function Dashboard() {
   };
 
   const upcomingSessions = sessions.slice(0, 3);
+  const nextSession = upcomingSessions[0];
+  const laterSessions = upcomingSessions.slice(1);
   const getConfirmedCount = (session: Session) =>
     session.rsvps?.filter(r => r.status === 'in').length || 0;
 
   return (
-    <div className="space-y-6">
-      <div className="bg-gradient-to-r from-primary-600 to-primary-700 rounded-xl p-6 text-white">
-        <h1 className="text-2xl font-bold mb-2">
-          Welcome back, {displayName(user).split(' ')[0]}!
-        </h1>
-        <p className="text-primary-100">
-          Ready for some badminton? Check out the upcoming sessions below.
-        </p>
+    <div className="space-y-7">
+      <div className="page-heading">
+        <p className="page-kicker">Welcome back, {displayName(user).split(' ')[0]}</p>
+        <h1 className="page-title">Ready for your next game?</h1>
+        <p className="page-description">Your next session, RSVP status, and club essentials—all in one place.</p>
       </div>
 
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-primary-600" />
-            Upcoming Sessions
-          </h2>
-          <Link
-            to="/sessions"
-            className="text-primary-600 hover:text-primary-700 text-sm font-medium flex items-center gap-1"
-          >
-            View All
-            <ArrowRight className="w-4 h-4" />
-          </Link>
+      {isLoading ? (
+        <div className="card flex min-h-48 items-center justify-center" aria-label="Loading upcoming sessions">
+          <Loader2 className="h-8 w-8 animate-spin text-primary-700" />
         </div>
+      ) : !nextSession ? (
+        <div className="card px-5 py-10 text-center">
+          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100">
+            <CalendarDays className="h-6 w-6 text-slate-400" />
+          </span>
+          <h2 className="mt-4 font-semibold text-slate-900">No upcoming games</h2>
+          <p className="mt-1 text-sm text-slate-500">New sessions will appear here when they are scheduled.</p>
+        </div>
+      ) : (
+        <section aria-labelledby="next-session-heading">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 id="next-session-heading" className="text-base font-semibold text-slate-950">Your next game</h2>
+            <Link to={`/sessions/${nextSession.id}`} className="flex min-h-11 items-center gap-1 px-1 text-sm font-semibold text-primary-700 hover:text-primary-800">
+              Full details <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+          <SessionCard session={nextSession} venueName={venueName} featured />
+        </section>
+      )}
 
-        {/* Cancelled Session Banners */}
-        {cancelledSessions.length > 0 && (
-          <div className="space-y-2 mb-4">
+      <nav aria-label="Quick links" className="grid grid-cols-2 gap-3">
+        <Link to="/sessions" className="card flex min-h-[76px] items-center gap-3 p-3.5 transition-colors hover:bg-slate-50">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-700">
+            <CalendarDays className="h-5 w-5" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-slate-950">All sessions</span>
+            <span className="block truncate text-xs text-slate-500">Schedule and history</span>
+          </span>
+        </Link>
+        <Link to="/money" className="card flex min-h-[76px] items-center gap-3 p-3.5 transition-colors hover:bg-slate-50">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-700">
+            <WalletCards className="h-5 w-5" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-slate-950">Money</span>
+            <span className="block truncate text-xs text-slate-500">Balances and ledger</span>
+          </span>
+        </Link>
+      </nav>
+
+      {cancelledSessions.length > 0 && (
+        <section aria-labelledby="updates-heading">
+          <h2 id="updates-heading" className="mb-3 text-base font-semibold text-slate-950">Important updates</h2>
+          <div className="space-y-2">
             {cancelledSessions.map((session) => (
               <div
                 key={session.id}
-                className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-3"
+                className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4"
               >
-                <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-600" />
                 <div className="flex-1">
                   <p className="text-sm font-medium text-red-800">
                     Session Cancelled: {format(parseISO(session.session_date), 'EEEE, d MMMM yyyy')}
@@ -88,38 +118,36 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
-        )}
+        </section>
+      )}
 
-        {isLoading ? (
-          <div className="bg-white rounded-xl border border-slate-200 p-8 flex items-center justify-center">
-            <Loader2 className="w-8 h-8 text-primary-600 animate-spin" />
+      {laterSessions.length > 0 && (
+        <section aria-labelledby="later-sessions-heading">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 id="later-sessions-heading" className="text-base font-semibold text-slate-950">Later sessions</h2>
+            <Link to="/sessions" className="flex min-h-11 items-center gap-1 px-1 text-sm font-semibold text-primary-700 hover:text-primary-800">
+              See all <ArrowRight className="h-4 w-4" />
+            </Link>
           </div>
-        ) : upcomingSessions.length === 0 ? (
-          <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
-            <Calendar className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-            <p className="text-slate-600">No upcoming sessions scheduled</p>
+          <div className="space-y-3">
+            {laterSessions.map((session) => <SessionCard key={session.id} session={session} venueName={venueName} />)}
           </div>
-        ) : (
-          <div className="space-y-4">
-            {upcomingSessions.map((session) => (
-              <SessionCard key={session.id} session={session} venueName={venueName} />
-            ))}
-          </div>
-        )}
-      </div>
+        </section>
+      )}
 
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
-          <p className="text-3xl font-bold text-primary-600">{sessions.length}</p>
-          <p className="text-sm text-slate-600">Upcoming Sessions</p>
+      <section aria-labelledby="club-summary-heading">
+        <h2 id="club-summary-heading" className="mb-3 text-base font-semibold text-slate-950">Club at a glance</h2>
+        <div className="card grid grid-cols-2 divide-x divide-slate-200 py-4 text-center">
+          <div className="px-3">
+            <p className="text-xl font-semibold tabular-nums text-slate-950">{sessions.length}</p>
+            <p className="mt-1 text-xs text-slate-500">Upcoming sessions</p>
+          </div>
+          <div className="px-3">
+            <p className="text-xl font-semibold tabular-nums text-slate-950">{sessions.reduce((acc, s) => acc + getConfirmedCount(s), 0)}</p>
+            <p className="mt-1 text-xs text-slate-500">Confirmed RSVPs</p>
+          </div>
         </div>
-        <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
-          <p className="text-3xl font-bold text-secondary-500">
-            {sessions.reduce((acc, s) => acc + getConfirmedCount(s), 0)}
-          </p>
-          <p className="text-sm text-slate-600">Confirmed RSVPs</p>
-        </div>
-      </div>
+      </section>
     </div>
   );
 }

@@ -10,9 +10,10 @@ import { displayName } from '../../utils/members';
 interface SessionCardProps {
   session: Session;
   venueName?: string;
+  featured?: boolean;
 }
 
-export default function SessionCard({ session, venueName }: SessionCardProps) {
+export default function SessionCard({ session, venueName, featured = false }: SessionCardProps) {
   const navigate = useNavigate();
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -28,6 +29,7 @@ export default function SessionCard({ session, venueName }: SessionCardProps) {
   const maybeCount = maybeRsvps.length;
   const declinedCount = declinedRsvps.length;
   const spotsLeft = session.max_players - confirmedCount;
+  const capacityPercent = Math.min(100, Math.max(0, (confirmedCount / session.max_players) * 100));
 
   const handleCardClick = () => {
     navigate(`/sessions/${session.id}`);
@@ -39,92 +41,81 @@ export default function SessionCard({ session, venueName }: SessionCardProps) {
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+    <article className={`overflow-hidden rounded-2xl border bg-white shadow-sm ${featured ? 'border-primary-200' : 'border-slate-200'}`}>
       {/* Main Card Content - Clickable */}
       <div
         onClick={handleCardClick}
-        className="p-4 cursor-pointer hover:bg-slate-50 transition-colors"
+        className={`${featured ? 'p-5' : 'p-4'} cursor-pointer transition-colors hover:bg-slate-50`}
       >
-        <div className="flex items-start justify-between mb-3">
-          <h3 className="font-semibold text-slate-900">{session.title}</h3>
-          {session.status === 'cancelled' ? (
-            <Badge variant="danger">Cancelled</Badge>
-          ) : isDeadlinePassed ? (
-            <Badge variant="warning">RSVP Closed</Badge>
-          ) : spotsLeft <= 2 && spotsLeft > 0 ? (
-            <Badge variant="danger">{spotsLeft} spots left</Badge>
-          ) : spotsLeft <= 0 ? (
-            <Badge variant="danger">
-              {waitlistedRsvps.length > 0 ? `Full · ${waitlistedRsvps.length} waiting` : 'Full'}
-            </Badge>
-          ) : (
-            <Badge variant="success">Open</Badge>
-          )}
+        <div className="flex gap-4">
+          <div className={`flex shrink-0 flex-col items-center justify-center rounded-xl bg-primary-50 text-primary-800 ${featured ? 'h-[76px] w-16' : 'h-14 w-14'}`}>
+            <span className="text-[11px] font-semibold uppercase tracking-wide">{format(sessionDate, 'EEE')}</span>
+            <span className={`${featured ? 'text-2xl' : 'text-xl'} font-semibold leading-6 tabular-nums`}>{format(sessionDate, 'd')}</span>
+            {featured && <span className="text-[11px]">{format(sessionDate, 'MMM')}</span>}
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-2">
+              <h3 className="font-semibold text-slate-950">{session.title}</h3>
+              {session.status === 'cancelled' ? (
+                <Badge variant="danger">Cancelled</Badge>
+              ) : isDeadlinePassed ? (
+                <Badge variant="warning">RSVP Closed</Badge>
+              ) : spotsLeft <= 2 && spotsLeft > 0 ? (
+                <Badge variant="danger">{spotsLeft} spots left</Badge>
+              ) : spotsLeft <= 0 ? (
+                <Badge variant="danger">{waitlistedRsvps.length > 0 ? `Full · ${waitlistedRsvps.length} waiting` : 'Full'}</Badge>
+              ) : (
+                <Badge variant="success">RSVP open</Badge>
+              )}
+            </div>
+
+            <div className="mt-2 space-y-1.5 text-sm text-slate-600">
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4 shrink-0 text-slate-400" />
+                <span>{session.start_time} - {session.end_time}</span>
+              </div>
+              {venueName && (
+                <div className="flex items-center gap-2">
+                  <MapPin className="h-4 w-4 shrink-0 text-slate-400" />
+                  <span className="truncate">{venueName}</span>
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 shrink-0 text-slate-400" />
+                <span>{session.courts} court{session.courts === 1 ? '' : 's'}</span>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-600 mb-3">
-          <div className="flex items-center gap-1.5">
-            <Calendar className="w-4 h-4 text-primary-500" />
-            <span>{format(sessionDate, 'EEE, d MMM')}</span>
+        <div className="mt-4 rounded-xl bg-slate-100/70 p-3">
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span className="font-medium text-slate-700">{confirmedCount} of {session.max_players} confirmed</span>
+            <span className="text-xs tabular-nums text-slate-500">{spotsLeft > 0 ? `${spotsLeft} left` : 'At capacity'}</span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <Clock className="w-4 h-4 text-primary-500" />
-            <span>{session.start_time} - {session.end_time}</span>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200" role="progressbar" aria-label={`${confirmedCount} of ${session.max_players} spots confirmed`} aria-valuemin={0} aria-valuemax={session.max_players} aria-valuenow={confirmedCount}>
+            <div className="h-full rounded-full bg-primary-700" style={{ width: `${capacityPercent}%` }} />
           </div>
-          {venueName && (
-            <div className="flex items-center gap-1.5">
-              <MapPin className="w-4 h-4 text-primary-500" />
-              <span className="truncate max-w-[180px]">{venueName}</span>
-            </div>
-          )}
-          {!isDeadlinePassed && session.status !== 'cancelled' && (
-            <div className="flex items-center gap-1.5">
-              <Timer className="w-4 h-4 text-amber-500" />
-              <span className="text-amber-700">RSVP by {format(new Date(session.rsvp_deadline), 'EEE, d MMM')}</span>
-            </div>
-          )}
         </div>
 
-        {/* RSVP Summary Icons */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            {/* Confirmed */}
-            <div className="flex items-center gap-1.5" title="Confirmed">
-              <div className="w-5 h-5 rounded-full bg-green-100 flex items-center justify-center">
-                <Check className="w-3 h-3 text-green-600" />
-              </div>
-              <span className="text-sm font-medium text-green-700">{confirmedCount}</span>
+        <div className="mt-3 flex items-center justify-between gap-3">
+          {!isDeadlinePassed && session.status !== 'cancelled' ? (
+            <div className="flex min-w-0 items-center gap-2 text-xs text-amber-800">
+              <Timer className="h-4 w-4 shrink-0 text-amber-600" />
+              <span className="truncate">RSVP by {format(new Date(session.rsvp_deadline), 'EEE, d MMM')}</span>
             </div>
-
-            {/* Maybe */}
-            <div className="flex items-center gap-1.5" title="Maybe">
-              <div className="w-5 h-5 rounded-full bg-amber-100 flex items-center justify-center">
-                <HelpCircle className="w-3 h-3 text-amber-600" />
-              </div>
-              <span className="text-sm font-medium text-amber-700">{maybeCount}</span>
-            </div>
-
-            {/* Declined */}
-            <div className="flex items-center gap-1.5" title="Can't make it">
-              <div className="w-5 h-5 rounded-full bg-red-100 flex items-center justify-center">
-                <X className="w-3 h-3 text-red-600" />
-              </div>
-              <span className="text-sm font-medium text-red-700">{declinedCount}</span>
-            </div>
-
-            <span className="text-xs text-slate-400">/ {session.max_players} max</span>
-          </div>
-
-          {/* Expand/Collapse Button */}
+          ) : <span />}
           <button
             onClick={handleExpandClick}
-            className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+            className="flex min-h-11 shrink-0 items-center gap-1 rounded-xl px-2 text-sm font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-800"
             title={isExpanded ? 'Collapse' : 'Expand'}
           >
+            {isExpanded ? 'Hide players' : `${maybeCount + declinedCount + confirmedCount} responses`}
             {isExpanded ? (
-              <ChevronUp className="w-5 h-5" />
+              <ChevronUp className="h-4 w-4" />
             ) : (
-              <ChevronDown className="w-5 h-5" />
+              <ChevronDown className="h-4 w-4" />
             )}
           </button>
         </div>
@@ -132,7 +123,7 @@ export default function SessionCard({ session, venueName }: SessionCardProps) {
 
       {/* Expanded Player List */}
       {isExpanded && (
-        <div className="border-t border-slate-100 p-4 bg-slate-50 space-y-3">
+        <div className="space-y-3 border-t border-slate-100 bg-slate-50 p-4">
           {/* Confirmed Players */}
           {confirmedRsvps.length > 0 && (
             <div>
@@ -184,7 +175,7 @@ export default function SessionCard({ session, venueName }: SessionCardProps) {
           )}
         </div>
       )}
-    </div>
+    </article>
   );
 }
 
