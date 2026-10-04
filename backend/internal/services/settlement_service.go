@@ -677,13 +677,15 @@ func (s *SettlementService) LiveSettlementForSession(sessionID uuid.UUID) (*mode
 
 // PastSessionView is one row of the history list.
 type PastSessionView struct {
-	SessionID   uuid.UUID  `json:"session_id"`
-	Title       string     `json:"title"`
-	StartsAt    *time.Time `json:"starts_at,omitempty"`
-	EndsAt      *time.Time `json:"ends_at,omitempty"`
-	Settled     bool       `json:"settled"`
-	TotalCents  int64      `json:"total_cents"`
-	PlayerCount int        `json:"player_count"`
+	ImportedDate string     `json:"imported_date,omitempty"`
+	DateBasis    string     `json:"date_basis,omitempty"`
+	SessionID    uuid.UUID  `json:"session_id"`
+	Title        string     `json:"title"`
+	StartsAt     *time.Time `json:"starts_at,omitempty"`
+	EndsAt       *time.Time `json:"ends_at,omitempty"`
+	Settled      bool       `json:"settled"`
+	TotalCents   int64      `json:"total_cents"`
+	PlayerCount  int        `json:"player_count"`
 }
 
 // ListPastSessions returns sessions that have finished, newest first.
@@ -691,47 +693,58 @@ type PastSessionView struct {
 // A finished session nobody has costed yet still appears, marked unsettled. It
 // is exactly the thing the admin needs reminding about, so hiding it would be
 // the wrong kindness.
+// historyQuery combines scheduled sessions with imported date-only sessions.
+// All source rows for a play date form one session, including extra-hour rows.
+const historyQuery = `WITH imported AS (
+ SELECT import_id, played_date,
+        (array_agg(id ORDER BY row_number))[1] AS session_id,
+        (array_agg(description ORDER BY row_number))[1] AS title,
+        (array_agg(date_basis ORDER BY row_number))[1] AS date_basis,
+        SUM(cost_cents) AS total_cents
+ FROM splitwise_records WHERE is_session = true
+ GROUP BY import_id, played_date
+), history AS (
+ SELECT s.id AS session_id, s.title, s.starts_at, s.ends_at,
+        (st.id IS NOT NULL) AS settled,
+        COALESCE(charges.total_cents,0) AS total_cents,
+        COALESCE(charges.player_count,0) AS player_count,
+        ''::text AS imported_date, ''::text AS date_basis, s.ends_at AS sort_at
+ FROM sessions s
+ LEFT JOIN settlements st ON st.session_id=s.id AND st.reversed_at IS NULL
+ LEFT JOIN (SELECT settlement_id,SUM(amount_cents) AS total_cents,COUNT(*) AS player_count
+            FROM charge_lines GROUP BY settlement_id) charges ON charges.settlement_id=st.id
+ WHERE s.ends_at IS NOT NULL AND s.ends_at < ?
+ UNION ALL
+ SELECT i.session_id,i.title,NULL::timestamptz,NULL::timestamptz,true,i.total_cents,
+        (SELECT COUNT(DISTINCT c.participant_id) FROM splitwise_changes c
+         JOIN splitwise_records r ON r.id=c.record_id
+         WHERE r.import_id=i.import_id AND r.played_date=i.played_date
+           AND r.is_session=true AND c.charge_cents>0),
+        to_char(i.played_date,'YYYY-MM-DD'), i.date_basis,
+        i.played_date::timestamp AT TIME ZONE 'Australia/Sydney'
+ FROM imported i
+)`
+
 func (s *SettlementService) ListPastSessions(limit, offset int) ([]PastSessionView, int64, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
 	now := utils.NowInSydney()
-
 	var total int64
-	if err := database.DB.Model(&models.Session{}).
-		Where("ends_at IS NOT NULL AND ends_at < ?", now).
-		Count(&total).Error; err != nil {
+	if err := database.DB.Raw(historyQuery+" SELECT COUNT(*) FROM history", now).Scan(&total).Error; err != nil {
 		return nil, 0, err
 	}
-
 	var views []PastSessionView
-	err := database.DB.Raw(`
-		SELECT s.id AS session_id,
-		       s.title,
-		       s.starts_at,
-		       s.ends_at,
-		       (st.id IS NOT NULL) AS settled,
-		       COALESCE(charges.total_cents, 0) AS total_cents,
-		       COALESCE(charges.player_count, 0) AS player_count
-		FROM sessions s
-		LEFT JOIN settlements st
-		       ON st.session_id = s.id AND st.reversed_at IS NULL
-		LEFT JOIN (
-		    SELECT settlement_id,
-		           SUM(amount_cents) AS total_cents,
-		           COUNT(*) AS player_count
-		    FROM charge_lines
-		    GROUP BY settlement_id
-		) charges ON charges.settlement_id = st.id
-		WHERE s.ends_at IS NOT NULL AND s.ends_at < ?
-		ORDER BY s.ends_at DESC
-		LIMIT ? OFFSET ?
-	`, now, limit, offset).Scan(&views).Error
-	if err != nil {
-		return nil, 0, err
-	}
-	return views, total, nil
+	err := database.DB.Raw(historyQuery+" SELECT * FROM history ORDER BY sort_at DESC, session_id DESC LIMIT ? OFFSET ?", now, limit, offset).Scan(&views).Error
+	return views, total, err
 }
 
 // SettlementView is the full breakdown of a settled session.
 type SettlementView struct {
+	Imported   *ImportedSessionView `json:"imported,omitempty"`
 	Session    SessionSummary       `json:"session"`
 	Rates      SettlementRates      `json:"rates"`
 	Bands      map[string]*BandView `json:"bands"`
@@ -761,6 +774,9 @@ type SettlementRates struct {
 // stored, not from current club settings — a session viewed a year later still
 // shows what it actually cost.
 func (s *SettlementService) SettlementForSession(sessionID uuid.UUID) (*SettlementView, error) {
+	if imported, err := importedSessionView(sessionID); err != nil || imported != nil {
+		return imported, err
+	}
 	settlement, err := s.LiveSettlementForSession(sessionID)
 	if err != nil {
 		return nil, err

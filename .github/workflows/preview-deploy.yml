@@ -121,6 +121,8 @@ jobs:
             --tag pr-${PR_NUMBER} \
             --allow-unauthenticated \
             --set-env-vars="GIN_MODE=release" \
+            --set-env-vars="NOTIFICATIONS_DISABLED=true" \
+            --set-env-vars="INVITATION_TEST_EMAILS_ENABLED=false" \
             --set-env-vars="TIMEZONE=Australia/Sydney" \
             --set-env-vars="FRONTEND_URL=*" \
             --set-env-vars="AUTH0_DOMAIN=${{ secrets.AUTH0_DOMAIN }}" \

@@ -14,6 +14,7 @@ export default function Admin() {
   // Club settings state
   const [clubForm, setClubForm] = useState({ name: '', venue_name: '', venue_address: '' });
   const [isSavingClub, setIsSavingClub] = useState(false);
+  const [notificationsPaused, setNotificationsPaused] = useState(false);
   const [clubMessage, setClubMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Announcement state
@@ -32,6 +33,7 @@ export default function Admin() {
         api.getClub(),
       ]);
       setJoinRequests(requestsData);
+      setNotificationsPaused(clubData.notifications_paused ?? false);
       setClubForm({
         name: clubData.name || '',
         venue_name: clubData.venue_name || '',
@@ -104,6 +106,11 @@ export default function Admin() {
 
   return (
     <div className="space-y-6">
+      {notificationsPaused && (
+        <div role="status" className="rounded-lg border border-secondary-300 bg-secondary-50 p-3 text-sm text-secondary-900">
+          All notifications are paused while the imported data is reviewed.
+        </div>
+      )}
       <div>
         <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
           <Settings className="w-7 h-7 text-primary-600" />
@@ -254,7 +261,7 @@ export default function Admin() {
 
           <button
             onClick={handleSendAnnouncement}
-            disabled={isSendingAnnouncement || !announcementForm.title.trim() || !announcementForm.body.trim()}
+            disabled={notificationsPaused || isSendingAnnouncement || !announcementForm.title.trim() || !announcementForm.body.trim()}
             className="bg-secondary-500 text-white px-6 py-2 rounded-lg font-medium hover:bg-secondary-600 transition-colors disabled:opacity-50 flex items-center gap-2"
           >
             {isSendingAnnouncement ? (

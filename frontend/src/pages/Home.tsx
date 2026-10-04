@@ -5,7 +5,7 @@ import { api } from '../services/api';
 import type { Club } from '../types';
 
 export default function Home() {
-  const { login } = useAuth();
+  const { login, authError, retryAuth } = useAuth();
   const [club, setClub] = useState<Club | null>(null);
 
   useEffect(() => {
@@ -38,6 +38,7 @@ export default function Home() {
           >
             Sign in with Google
           </button>
+          {authError && <div role="alert" className="mx-auto mt-4 max-w-xl rounded-lg bg-red-50 p-3 text-sm text-red-700"><p>{authError}</p>{retryAuth && <button type="button" onClick={retryAuth} className="mt-2 font-medium underline">Try again</button>}</div>}
         </main>
 
         <section className="grid gap-3 md:grid-cols-3">

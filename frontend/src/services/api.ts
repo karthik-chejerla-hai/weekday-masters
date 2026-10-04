@@ -3,6 +3,8 @@ import type {
   User,
   Club,
   InviteMemberInput,
+  InvitationPreview,
+  InvitationDelivery,
   UpdateMemberInput,
   UpdateProfileInput,
   Session,
@@ -15,6 +17,7 @@ import type {
   PlayerBalance,
   MyBalance,
   LedgerEntryView,
+  LedgerActivityView,
   Transaction,
   SettlementInput,
   SettlementPreview,
@@ -157,6 +160,16 @@ class ApiService {
     return response.data;
   }
 
+  async previewInvitation(userId: string): Promise<InvitationPreview> {
+    return (await this.client.get<InvitationPreview>(`/admin/users/${userId}/invitation`)).data;
+  }
+
+  async sendInvitation(userId: string, requestId: string, expectedEmail: string, test = false): Promise<InvitationDelivery> {
+    return (await this.client.post<InvitationDelivery>(`/admin/users/${userId}/invitation${test ? '/test' : ''}`, {
+      request_id: requestId, expected_email: expectedEmail,
+    })).data;
+  }
+
   async updateMember(userId: string, input: UpdateMemberInput): Promise<User> {
     const response = await this.client.put<User>(`/admin/users/${userId}`, input);
     return response.data;
@@ -272,6 +285,14 @@ class ApiService {
     return { items: response.data.items ?? [], total: response.data.total ?? 0 };
   }
 
+  async getLedgerActivity(scope: 'mine' | 'all', topupsOnly: boolean, limit = 50, offset = 0): Promise<{ items: LedgerActivityView[]; total: number }> {
+    const response = await this.client.get<{ items: LedgerActivityView[]; total: number }>(
+      '/accounts/activity',
+      { params: { scope, type: topupsOnly ? 'topup' : 'all', limit, offset } }
+    );
+    return { items: response.data.items ?? [], total: response.data.total ?? 0 };
+  }
+
   async recordTopup(userId: string, amountCents: number, description?: string, occurredAt?: string): Promise<Transaction> {
     const response = await this.client.post<Transaction>('/admin/transactions/topup', {
       user_id: userId,
@@ -376,10 +397,10 @@ class ApiService {
     return response.data;
   }
 
-  // --- Club position (admin) ----------------------------------------------
+  // --- Club position (approved members) -----------------------------------
 
   async getClubPosition(): Promise<ClubPosition> {
-    const response = await this.client.get<ClubPosition>('/admin/position');
+    const response = await this.client.get<ClubPosition>('/position');
     return response.data;
   }
 }

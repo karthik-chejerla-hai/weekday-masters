@@ -1,70 +1,56 @@
-import { format, parseISO } from 'date-fns';
+import { ArrowLeftRight, ArrowUpRight, Clapperboard, Landmark, PiggyBank, ReceiptText, RotateCcw, Split, Utensils } from 'lucide-react';
+import { formatInTimeZone } from 'date-fns-tz';
 import { formatCents } from './format';
-import type { LedgerEntryView, TransactionKind } from '../../types';
+import ShuttleIcon from './ShuttleIcon';
+import LedgerGameRow from './LedgerGameRow';
+import type { LedgerActivityView } from '../../types';
 
-const LABELS: Record<TransactionKind, string> = {
-  player_topup: 'Top-up',
-  withdrawal: 'Paid out',
-  court_credit_purchase: 'Court credit',
-  shuttle_purchase: 'Shuttles',
-  session_settlement: 'Session',
-  opening_balance: 'Opening balance',
-  reversal: 'Reversal',
+const CATEGORIES = {
+  topup: { label: 'Top-up', Icon: PiggyBank, style: 'bg-emerald-50 text-emerald-700' },
+  session: { label: 'Session', Icon: ShuttleIcon, style: 'bg-primary-50 text-primary-700' },
+  food: { label: 'Food and drink', Icon: Utensils, style: 'bg-orange-50 text-orange-700' },
+  entertainment: { label: 'Entertainment', Icon: Clapperboard, style: 'bg-violet-50 text-violet-700' },
+  shuttles: { label: 'Shuttles', Icon: ShuttleIcon, style: 'bg-primary-50 text-primary-700' },
+  court_credit: { label: 'Court credit', Icon: Landmark, style: 'bg-sky-50 text-sky-700' },
+  transfer: { label: 'Member transfer', Icon: ArrowLeftRight, style: 'bg-slate-100 text-slate-600' },
+  withdrawal: { label: 'Paid out', Icon: ArrowUpRight, style: 'bg-slate-100 text-slate-600' },
+  reversal: { label: 'Reversal', Icon: RotateCcw, style: 'bg-slate-100 text-slate-600' },
+  opening_balance: { label: 'Opening balance', Icon: ReceiptText, style: 'bg-slate-100 text-slate-600' },
+  other: { label: 'Other transaction', Icon: ReceiptText, style: 'bg-slate-100 text-slate-600' },
 };
 
-interface LedgerListProps {
-  entries: LedgerEntryView[];
-}
-
-/**
- * A member's own history, newest first.
- *
- * Every row carries the balance it produced, so the arithmetic can be followed
- * down the page rather than re-added by hand. That is the thing Splitwise never
- * made easy and the reason people stopped trusting it.
- */
-export default function LedgerList({ entries }: LedgerListProps) {
-  if (entries.length === 0) {
-    return (
-      <p className="text-sm text-slate-500 py-8 text-center">
-        Nothing here yet. Top-ups and session charges will appear as they happen.
-      </p>
-    );
-  }
-
+export default function LedgerList({ entries, showMember = false, userId }: { entries: LedgerActivityView[]; showMember?: boolean; userId?: string }) {
   return (
-    <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">
-      {entries.map((entry) => {
+    <ul aria-label="Transactions" className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">
+      {entries.map((activity) => {
+        if (activity.game) return <LedgerGameRow key={activity.id} id={activity.id} game={activity.game} occurredAt={activity.occurred_at} userId={userId} mineOnly={!showMember} />;
+        const entry = activity.entry;
+        if (!entry) return null;
         const isCredit = entry.amount_cents >= 0;
+        const { label, Icon, style } = CATEGORIES[entry.category] ?? CATEGORIES.other;
         return (
-          <li key={entry.id} className="px-4 py-3">
-            <div className="flex items-baseline justify-between gap-3">
-              <span className="text-sm font-medium text-slate-800">
-                {LABELS[entry.kind] ?? entry.kind}
-                {entry.reversed && (
-                  <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-xs font-normal text-slate-500">
-                    reversed
-                  </span>
-                )}
-              </span>
-              <span
-                className={`text-sm font-semibold tabular-nums ${
-                  isCredit ? 'text-primary-700' : 'text-slate-700'
-                }`}
-              >
-                {isCredit ? '+' : ''}
-                {formatCents(entry.amount_cents)}
-              </span>
-            </div>
-
-            <div className="mt-0.5 flex items-baseline justify-between gap-3">
-              <span className="truncate text-xs text-slate-500">
-                {format(parseISO(entry.occurred_at), 'd MMM yyyy')}
-                {entry.description ? ` · ${entry.description}` : ''}
-              </span>
-              <span className="text-xs text-slate-400 tabular-nums">
-                {formatCents(entry.balance_after_cents)}
-              </span>
+          <li key={entry.id} className="flex items-start gap-3 p-4">
+            <span className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${style}`} role="img" aria-label={label}>
+              <Icon className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-3">
+                <p className="break-words text-sm font-semibold text-slate-900">{entry.description.trim() || label}</p>
+                <span className={`shrink-0 text-sm font-semibold tabular-nums ${isCredit ? 'text-primary-700' : 'text-slate-700'}`}>
+                  {isCredit ? '+' : ''}{formatCents(entry.amount_cents)}
+                </span>
+              </div>
+              <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs text-slate-500">
+                <span>{formatInTimeZone(entry.occurred_at, 'Australia/Sydney', 'd MMM yyyy')} · {label}</span>
+                <span className="tabular-nums">Balance {formatCents(entry.balance_after_cents)}</span>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                {showMember && <span className="font-medium text-slate-700">{entry.member_name}{entry.inactive ? ' · Inactive' : ''}</span>}
+                {entry.source === 'splitwise' && <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-emerald-800" title="Imported from Splitwise">
+                  <Split className="h-3 w-3" aria-hidden="true" />Source: Splitwise
+                </span>}
+                {entry.reversed && <span className="rounded-md bg-slate-100 px-2 py-0.5 text-slate-600">Reversed</span>}
+              </div>
             </div>
           </li>
         );

@@ -19,6 +19,8 @@ const (
 	TxnSessionSettlement   TransactionKind = "session_settlement"
 	TxnOpeningBalance      TransactionKind = "opening_balance"
 	TxnReversal            TransactionKind = "reversal"
+	TxnSplitwiseImport     TransactionKind = "splitwise_import"
+	TxnImportAssets        TransactionKind = "import_assets"
 )
 
 // Transaction is one recorded financial event.

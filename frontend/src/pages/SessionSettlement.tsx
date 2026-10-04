@@ -4,6 +4,7 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { api } from '../services/api';
 import SettlementBreakdown from '../components/settlement/SettlementBreakdown';
+import ImportedBreakdown from '../components/settlement/ImportedBreakdown';
 import type { SettlementView } from '../types';
 
 /**
@@ -63,7 +64,7 @@ export default function SessionSettlement() {
         </div>
       )}
 
-      <SettlementBreakdown preview={view} rates={view.rates} showRates />
+      {view.imported ? <ImportedBreakdown session={view.imported} /> : <SettlementBreakdown preview={view} rates={view.rates} showRates />}
     </div>
   );
 }

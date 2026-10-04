@@ -19,6 +19,7 @@ import type { InviteMemberInput, User, UserRole } from '../types';
 import { displayName, isPendingInvite } from '../utils/members';
 import Avatar from '../components/ui/Avatar';
 import Badge from '../components/ui/Badge';
+import InvitationPanel from '../components/members/InvitationPanel';
 
 /**
  * The member endpoints answer failures as `{ "error": "..." }`, and the messages
@@ -35,7 +36,7 @@ type Tab = 'members' | 'invited' | 'removed';
 
 const tabs: Array<{ id: Tab; label: string }> = [
   { id: 'members', label: 'Members' },
-  { id: 'invited', label: 'Invited' },
+  { id: 'invited', label: 'Not signed in' },
   { id: 'removed', label: 'Removed' },
 ];
 
@@ -74,6 +75,7 @@ export default function AdminMembers() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [invitationId, setInvitationId] = useState<string | null>(null);
 
   useEffect(() => {
     loadMembers();
@@ -213,7 +215,7 @@ export default function AdminMembers() {
             <p className="text-sm text-slate-600 mt-1">
               They are a member straight away — you can RSVP them into sessions and settle against
               them. The first time they sign in with this email address, this record becomes their
-              account. No email is sent from here, so let them know yourself.
+              account. Adding a member sends no email. Review and send their invitation separately.
             </p>
           </div>
 
@@ -394,7 +396,11 @@ export default function AdminMembers() {
                     }}
                     onRemove={() => handleRemove(member)}
                     onReinstate={() => handleReinstate(member)}
+                    onInvitation={() => setInvitationId(invitationId === member.id ? null : member.id)}
                   />
+                )}
+                {invitationId === member.id && member.membership_status === 'approved' && isPendingInvite(member) && (
+                  <InvitationPanel key={`${member.id}:${member.email}`} member={member} onClose={() => setInvitationId(null)} />
                 )}
               </li>
             ))}
@@ -411,17 +417,19 @@ function MemberRow({
   onEdit,
   onRemove,
   onReinstate,
+  onInvitation,
 }: {
   member: User;
   isBusy: boolean;
   onEdit: () => void;
   onRemove: () => void;
   onReinstate: () => void;
+  onInvitation: () => void;
 }) {
   const removed = member.membership_status === 'removed';
 
   return (
-    <div className="flex items-center justify-between gap-4">
+    <div className="flex flex-wrap items-center justify-between gap-4">
       <div className="flex items-center gap-3 min-w-0">
         <Avatar src={member.profile_picture} name={displayName(member)} />
         <div className="min-w-0">
@@ -474,6 +482,11 @@ function MemberRow({
           </button>
         ) : (
           <>
+            {isPendingInvite(member) && member.membership_status === 'approved' && (
+              <button type="button" onClick={onInvitation} className="inline-flex items-center gap-2 rounded-lg bg-primary-50 px-3 py-2 text-sm font-medium text-primary-700 hover:bg-primary-100" aria-label={`Review invitation for ${displayName(member)}`}>
+                <Mail className="h-4 w-4" />Send invitation
+              </button>
+            )}
             <button
               onClick={onEdit}
               className="p-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors"

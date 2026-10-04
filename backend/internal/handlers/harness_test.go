@@ -76,6 +76,8 @@ func newHarness(t *testing.T) *harness {
 	// the frontend and the OpenAPI spec are written against, so the harness must
 	// not invent its own.
 	api := r.Group("/api")
+	ledgerHandler.RegisterRoutes(api)
+	NewInvitationHandler(services.NewInvitationService(services.NotificationConfig{FrontendURL: "https://rally.test"}, false)).RegisterRoutes(api)
 	{
 		api.POST("/auth/callback", authHandler.Callback)
 
@@ -104,9 +106,6 @@ func newHarness(t *testing.T) *harness {
 		api.DELETE("/sessions/:id/rsvp", rsvpHandler.DeleteRSVP)
 		api.GET("/sessions/:id/rsvp/me", rsvpHandler.GetMyRSVP)
 
-		api.GET("/accounts", ledgerHandler.ListBalances)
-		api.GET("/accounts/me", ledgerHandler.GetMyBalance)
-		api.GET("/accounts/me/entries", ledgerHandler.GetMyEntries)
 		api.GET("/sessions/history", settlementHandler.ListSessionHistory)
 		api.GET("/sessions/:id/settlement", settlementHandler.GetSessionSettlement)
 	}
@@ -130,17 +129,9 @@ func newHarness(t *testing.T) *harness {
 		admin.PUT("/club", adminHandler.UpdateClub)
 		admin.POST("/announcements", notificationHandler.SendAnnouncement)
 
-		admin.POST("/transactions/topup", ledgerHandler.RecordTopup)
-		admin.POST("/transactions/withdrawal", ledgerHandler.RecordWithdrawal)
-		admin.POST("/transactions/court-credit", ledgerHandler.RecordCourtCredit)
-		admin.POST("/transactions/shuttle-purchase", ledgerHandler.RecordShuttlePurchase)
-		admin.POST("/transactions/opening-balances", ledgerHandler.RecordOpeningBalances)
-		admin.POST("/transactions/:id/reverse", ledgerHandler.ReverseTransaction)
 		admin.POST("/sessions/:id/settlement/preview", settlementHandler.PreviewSettlement)
 		admin.POST("/sessions/:id/settle", settlementHandler.SettleSession)
 		admin.POST("/settlements/:id/reverse", settlementHandler.ReverseSettlement)
-		admin.GET("/position", ledgerHandler.GetPosition)
-		admin.GET("/position/integrity", ledgerHandler.GetIntegrity)
 		// NOTE: AdminHandler.GetClub is deliberately absent — main.go registers
 		// only PUT /admin/club, so the GET handler is unreachable in the running
 		// server. Mounting it here would manufacture coverage for dead code.

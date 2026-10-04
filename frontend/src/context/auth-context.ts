@@ -12,6 +12,9 @@ export interface AuthContextType {
   startMemberPreview: () => void;
   stopMemberPreview: () => void;
   login: () => void;
+  loginForInvitation?: () => void;
+  authError?: string | null;
+  retryAuth?: () => Promise<void>;
   logout: () => void;
   refreshUser: () => Promise<void>;
 }

@@ -20,6 +20,7 @@ import (
 )
 
 type NotificationService struct {
+	disabled       bool
 	fcmClient      *messaging.Client
 	sendGridClient *sendgrid.Client
 	fromEmail      string
@@ -30,6 +31,7 @@ type NotificationService struct {
 }
 
 type NotificationConfig struct {
+	Disabled            bool
 	FirebaseCredentials string
 	SendGridAPIKey      string
 	SendGridFromEmail   string
@@ -40,6 +42,9 @@ type NotificationConfig struct {
 // NewNotificationService creates a new notification service
 // It gracefully handles missing credentials (FCM or SendGrid can be disabled independently)
 func NewNotificationService(cfg NotificationConfig) *NotificationService {
+	if cfg.Disabled {
+		return &NotificationService{disabled: true}
+	}
 	service := &NotificationService{
 		fromEmail:   cfg.SendGridFromEmail,
 		fromName:    cfg.SendGridFromName,
@@ -80,7 +85,7 @@ func NewNotificationService(cfg NotificationConfig) *NotificationService {
 
 // IsEnabled returns true if at least one notification channel is enabled
 func (s *NotificationService) IsEnabled() bool {
-	return s.fcmEnabled || s.emailEnabled
+	return !s.disabled && (s.fcmEnabled || s.emailEnabled)
 }
 
 // SendNotification sends a notification to a single user via configured channels
@@ -91,6 +96,18 @@ func (s *NotificationService) SendNotification(
 	title, body string,
 	data map[string]string,
 ) error {
+	if s.disabled {
+		return nil
+	}
+	// Fail closed if the pause cannot be read. The importer sets it in the
+	// same commit as membership, so cron cannot see an unpaused imported user.
+	var club models.Club
+	if err := database.DB.Select("notifications_paused").First(&club).Error; err != nil {
+		return err
+	}
+	if club.NotificationsPaused {
+		return nil
+	}
 	// Get user
 	var user models.User
 	if err := database.DB.First(&user, "id = ?", userID).Error; err != nil {

@@ -72,9 +72,9 @@ describe('the roll', () => {
     expect(await screen.findByText('Signed')).toBeInTheDocument();
     expect(screen.queryByText('Not')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('tab', { name: /invited \(1\)/i }));
+    await user.click(screen.getByRole('tab', { name: /not signed in \(1\)/i }));
     expect(screen.getByText('Not')).toBeInTheDocument();
-    expect(screen.getByText(/not signed in/i)).toBeInTheDocument();
+    expect(screen.getByText('Not signed in', { exact: true })).toBeInTheDocument();
   });
 
   it('leaves join requests to the approval queue rather than listing them here', async () => {
@@ -150,7 +150,7 @@ describe('adding a member', () => {
     // The invite only means something once they sign in, so the page says so.
     expect(await screen.findByRole('status')).toHaveTextContent(/invited@example.com/);
     // And it drops them where they now live.
-    expect(screen.getByRole('tab', { name: /invited \(1\)/i })).toHaveAttribute(
+    expect(screen.getByRole('tab', { name: /not signed in \(1\)/i })).toHaveAttribute(
       'aria-selected',
       'true'
     );
@@ -206,7 +206,7 @@ describe('editing a member', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.click(screen.getByRole('tab', { name: /invited/i }));
+    await user.click(screen.getByRole('tab', { name: /not signed in/i }));
     await user.click(await screen.findByRole('button', { name: /edit not/i }));
 
     const email = screen.getByLabelText(/email/i);

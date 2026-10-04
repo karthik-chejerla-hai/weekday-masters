@@ -16,7 +16,7 @@ interface PastSessionCardProps {
  * the thing the admin needs reminding about.
  */
 export default function PastSessionCard({ session, isAdmin }: PastSessionCardProps) {
-  const played = session.ends_at ? parseISO(session.ends_at) : null;
+  const played = session.imported_date ? parseISO(session.imported_date) : session.ends_at ? parseISO(session.ends_at) : null;
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -25,7 +25,7 @@ export default function PastSessionCard({ session, isAdmin }: PastSessionCardPro
           <h3 className="font-semibold text-slate-900 truncate">{session.title}</h3>
           {played && (
             <p className="text-sm text-slate-500 mt-0.5">
-              {format(played, 'EEE d MMM yyyy')}
+              {session.date_basis === 'recorded' && 'Recorded '}{format(played, 'EEE d MMM yyyy')}
             </p>
           )}
         </div>
@@ -45,7 +45,7 @@ export default function PastSessionCard({ session, isAdmin }: PastSessionCardPro
         {session.settled ? (
           <>
             <span className="text-sm text-slate-500">
-              {session.player_count} {session.player_count === 1 ? 'player' : 'players'}
+              {session.player_count} {session.player_count === 1 ? 'player' : 'players'}{session.imported_date && ' · Splitwise'}
             </span>
             <Link
               to={`/sessions/${session.session_id}/settlement`}

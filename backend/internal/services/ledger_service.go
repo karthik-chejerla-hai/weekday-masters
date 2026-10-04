@@ -559,6 +559,9 @@ func (s *LedgerService) ReverseTransaction(transactionID uuid.UUID, description 
 	if err := database.DB.Preload("Entries").First(&original, "id = ?", transactionID).Error; err != nil {
 		return nil, err
 	}
+	if original.Kind == models.TxnSplitwiseImport || original.Kind == models.TxnImportAssets {
+		return nil, errors.New("imported history requires a reviewed correction, not an individual reversal")
+	}
 
 	var alreadyReversed int64
 	if err := database.DB.Model(&models.Transaction{}).
@@ -597,72 +600,6 @@ func (s *LedgerService) ReverseTransaction(transactionID uuid.UUID, description 
 	})
 }
 
-// --- history --------------------------------------------------------------
-
-// LedgerEntryView is one line of a member's history, carrying the balance that
-// line produced so the reader can follow the arithmetic rather than redo it.
-type LedgerEntryView struct {
-	ID                uuid.UUID              `json:"id"`
-	OccurredAt        time.Time              `json:"occurred_at"`
-	Kind              models.TransactionKind `json:"kind"`
-	Description       string                 `json:"description"`
-	AmountCents       int64                  `json:"amount_cents"`
-	BalanceAfterCents int64                  `json:"balance_after_cents"`
-	SessionID         *uuid.UUID             `json:"session_id,omitempty"`
-	Reversed          bool                   `json:"reversed"`
-}
-
-// MyEntries returns a member's history, newest first.
-//
-// The running balance is computed over the member's whole history and only then
-// paged, so page two does not restart the arithmetic from zero.
-func (s *LedgerService) MyEntries(userID uuid.UUID, limit, offset int) ([]LedgerEntryView, int64, error) {
-	if limit <= 0 || limit > 200 {
-		limit = 50
-	}
-	if offset < 0 {
-		offset = 0
-	}
-
-	var total int64
-	if err := database.DB.Raw(`
-		SELECT COUNT(*)
-		FROM ledger_entries e
-		JOIN accounts a ON a.id = e.account_id
-		WHERE a.user_id = ?
-	`, userID).Scan(&total).Error; err != nil {
-		return nil, 0, err
-	}
-
-	var views []LedgerEntryView
-	err := database.DB.Raw(`
-		SELECT * FROM (
-			SELECT e.id,
-			       t.occurred_at,
-			       t.kind,
-			       t.description,
-			       e.amount_cents,
-			       SUM(e.amount_cents) OVER (
-			           ORDER BY t.occurred_at, e.created_at, e.id
-			       ) AS balance_after_cents,
-			       t.session_id,
-			       EXISTS (
-			           SELECT 1 FROM transactions r WHERE r.reverses_transaction_id = t.id
-			       ) AS reversed
-			FROM ledger_entries e
-			JOIN transactions t ON t.id = e.transaction_id
-			JOIN accounts a ON a.id = e.account_id
-			WHERE a.user_id = ?
-		) history
-		ORDER BY occurred_at DESC, id DESC
-		LIMIT ? OFFSET ?
-	`, userID, limit, offset).Scan(&views).Error
-	if err != nil {
-		return nil, 0, err
-	}
-	return views, total, nil
-}
-
 // --- club position --------------------------------------------------------
 
 // ClubAssets is where the club's money actually is.
@@ -671,11 +608,15 @@ func (s *LedgerService) MyEntries(userID uuid.UUID, limit, offset int) ([]Ledger
 // the club will consume: credit sitting at the venue, and shuttles sitting in a
 // bag. Looking at any one of them in isolation answers nothing.
 type ClubAssets struct {
-	BankCents         int64 `json:"bank_cents"`
-	CourtCreditCents  int64 `json:"court_credit_cents"`
-	ShuttleStockCents int64 `json:"shuttle_stock_cents"`
-	ShuttleStockUnits int   `json:"shuttle_stock_units"`
-	TotalCents        int64 `json:"total_cents"`
+	BankCents         int64   `json:"bank_cents"`
+	CourtCreditCents  int64   `json:"court_credit_cents"`
+	ShuttleStockCents int64   `json:"shuttle_stock_cents"`
+	ShuttleStockUnits int     `json:"shuttle_stock_units"`
+	TotalCents        int64   `json:"total_cents"`
+	BankAsOf          *string `json:"bank_as_of"`
+	CourtCreditAsOf   *string `json:"court_credit_as_of"`
+	ShuttleStockAsOf  *string `json:"shuttle_stock_as_of"`
+	ShuttleAuditedOn  *string `json:"shuttle_audited_on"`
 }
 
 type ClubLiabilities struct {
@@ -692,11 +633,12 @@ type PositionWarning struct {
 // ClubPosition answers the question the club actually cares about: is what we
 // hold equal to what members have prepaid?
 type ClubPosition struct {
-	Assets       ClubAssets        `json:"assets"`
-	Liabilities  ClubLiabilities   `json:"liabilities"`
-	SurplusCents int64             `json:"surplus_cents"`
-	Balanced     bool              `json:"balanced"`
-	Warnings     []PositionWarning `json:"warnings"`
+	AssetsPending bool              `json:"assets_pending"`
+	Assets        ClubAssets        `json:"assets"`
+	Liabilities   ClubLiabilities   `json:"liabilities"`
+	SurplusCents  int64             `json:"surplus_cents"`
+	Balanced      bool              `json:"balanced"`
+	Warnings      []PositionWarning `json:"warnings"`
 }
 
 // Position assembles the club's standing.
@@ -705,6 +647,10 @@ type ClubPosition struct {
 // operation, because a posting that would falsify it is rolled back — so a false
 // here means something wrote entries without going through LedgerService.
 func (s *LedgerService) Position() (*ClubPosition, error) {
+	var pending int64
+	if err := database.DB.Model(&models.SplitwiseImport{}).Where("assets_confirmed = false").Count(&pending).Error; err != nil {
+		return nil, err
+	}
 	bank, err := s.BalanceOfKind(nil, models.AccountKindBank)
 	if err != nil {
 		return nil, err
@@ -739,6 +685,9 @@ func (s *LedgerService) Position() (*ClubPosition, error) {
 		ShuttleStockUnits: stock.Units,
 		TotalCents:        bank + courtCredit + stock.ValueCents,
 	}
+	if err := s.assetDates(&assets); err != nil {
+		return nil, err
+	}
 
 	warnings, err := s.positionWarnings(courtCredit, stock)
 	if err != nil {
@@ -746,12 +695,43 @@ func (s *LedgerService) Position() (*ClubPosition, error) {
 	}
 
 	return &ClubPosition{
-		Assets:       assets,
-		Liabilities:  ClubLiabilities{PlayerBalancesCents: playerTotal},
-		SurplusCents: surplus,
-		Balanced:     assets.TotalCents-playerTotal-surplus == 0,
-		Warnings:     warnings,
+		AssetsPending: pending > 0,
+		Assets:        assets,
+		Liabilities:   ClubLiabilities{PlayerBalancesCents: playerTotal},
+		SurplusCents:  surplus,
+		Balanced:      assets.TotalCents-playerTotal-surplus == 0,
+		Warnings:      warnings,
 	}, nil
+}
+
+// assetDates reports recorded movements, not today's date. The import uses
+// synthetic timestamps for ordering, so its verified snapshot uses its cutoff.
+// Buying or consuming shuttles must never claim a new physical stock audit.
+func (s *LedgerService) assetDates(assets *ClubAssets) error {
+	var dates ClubAssets
+	err := database.DB.Raw(`
+		WITH movements AS (
+			SELECT a.kind, t.kind AS transaction_kind,
+			       COALESCE(i.cutoff, (t.occurred_at AT TIME ZONE 'Australia/Sydney')::date) AS on_date,
+			       NOT EXISTS (SELECT 1 FROM transactions r WHERE r.reverses_transaction_id = t.id) AS unreversed
+			FROM ledger_entries e
+			JOIN accounts a ON a.id = e.account_id
+			JOIN transactions t ON t.id = e.transaction_id
+			LEFT JOIN splitwise_imports i ON i.asset_transaction_id = t.id AND i.assets_confirmed
+			WHERE a.kind IN ('bank', 'court_credit', 'shuttle_stock')
+		)
+		SELECT to_char(MAX(on_date) FILTER (WHERE kind = 'bank'), 'YYYY-MM-DD') AS bank_as_of,
+		       to_char(MAX(on_date) FILTER (WHERE kind = 'court_credit'), 'YYYY-MM-DD') AS court_credit_as_of,
+		       to_char(MAX(on_date) FILTER (WHERE kind = 'shuttle_stock'), 'YYYY-MM-DD') AS shuttle_stock_as_of,
+		       to_char(MAX(on_date) FILTER (WHERE kind = 'shuttle_stock' AND unreversed
+		         AND transaction_kind IN ('opening_balance', 'import_assets')), 'YYYY-MM-DD') AS shuttle_audited_on
+		FROM movements
+	`).Scan(&dates).Error
+	assets.BankAsOf = dates.BankAsOf
+	assets.CourtCreditAsOf = dates.CourtCreditAsOf
+	assets.ShuttleStockAsOf = dates.ShuttleStockAsOf
+	assets.ShuttleAuditedOn = dates.ShuttleAuditedOn
+	return err
 }
 
 // positionWarnings looks ahead to the next session and says whether the club can
