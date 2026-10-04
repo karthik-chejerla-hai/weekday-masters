@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Loader2, Wallet } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useAuth } from '../context/useAuth';
 import { api } from '../services/api';
 import BalancesList from '../components/money/BalancesList';
@@ -66,6 +66,16 @@ export default function Money() {
     load();
   }, [load]);
 
+  // If an admin-only view is hidden (for example when entering member
+  // preview), immediately show a tab that is still available to members.
+  useEffect(() => {
+    if (!isAdmin) {
+      setTab((current) => current === 'club' ? 'balances' : current);
+    }
+  }, [isAdmin]);
+
+  const activeTab = !isAdmin && tab === 'club' ? 'balances' : tab;
+
   if (isLoading) {
     return (
       <div className="card p-8 flex items-center justify-center">
@@ -76,12 +86,18 @@ export default function Money() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
-          <Wallet className="w-5 h-5 text-primary-600" />
-          Money
-        </h1>
-        {myBalance && <BalanceChip cents={myBalance.balance_cents} state={myBalance.state} />}
+      <div className="flex items-start justify-between gap-4">
+        <div className="page-heading mb-0">
+          <p className="page-kicker">Club finances</p>
+          <h1 className="page-title">Money</h1>
+          <p className="page-description">Check member balances and understand every change to yours.</p>
+        </div>
+        {myBalance && (
+          <div className="shrink-0 text-right">
+            <p className="mb-1 text-xs font-medium text-slate-500">Your balance</p>
+            <BalanceChip cents={myBalance.balance_cents} state={myBalance.state} />
+          </div>
+        )}
       </div>
 
       {error && (
@@ -90,17 +106,17 @@ export default function Money() {
         </div>
       )}
 
-      <div className="flex gap-1 border-b border-slate-200" role="tablist">
+      <div className={`grid gap-1 rounded-xl bg-slate-100 p-1 ${isAdmin ? 'grid-cols-3' : 'grid-cols-2'}`} role="tablist" aria-label="Money views">
         {TABS.filter((t) => !t.adminOnly || isAdmin).map(({ id, label }) => (
           <button
             key={id}
             role="tab"
-            aria-selected={tab === id}
+            aria-selected={activeTab === id}
             onClick={() => setTab(id)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              tab === id
-                ? 'border-primary-600 text-primary-700'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
+            className={`min-h-11 rounded-lg px-2 py-2 text-sm font-semibold transition-colors ${
+              activeTab === id
+                ? 'bg-white text-slate-950 shadow-sm'
+                : 'text-slate-500 hover:text-slate-800'
             }`}
           >
             {label}
@@ -108,7 +124,7 @@ export default function Money() {
         ))}
       </div>
 
-      {tab === 'balances' && (
+      {activeTab === 'balances' && (
         <div className="space-y-6">
           <BalancesList
             balances={balances}
@@ -119,9 +135,9 @@ export default function Money() {
         </div>
       )}
 
-      {tab === 'ledger' && <LedgerList entries={entries} />}
+      {activeTab === 'ledger' && <LedgerList entries={entries} />}
 
-      {tab === 'club' && isAdmin && (
+      {activeTab === 'club' && isAdmin && (
         <div className="space-y-6">
           {position && <PositionPanel position={position} />}
           <AssetPurchaseForms onRecorded={load} />

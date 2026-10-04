@@ -55,6 +55,7 @@ test-results/
 # Temporary files
 tmp/
 temp/
+.superdesign/tmp/
 
 # Terraform
 infrastructure/.terraform/

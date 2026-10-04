@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Calendar, Loader2 } from 'lucide-react';
+import { CalendarDays, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/useAuth';
 import { api } from '../services/api';
 import type { PastSession, Session } from '../types';
@@ -58,25 +58,24 @@ export default function Sessions() {
   }, [tab, past.length, isLoadingHistory, loadHistory]);
 
   return (
-    <div>
-      <div className="mb-4">
-        <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-          <Calendar className="w-7 h-7 text-primary-600" />
-          Sessions
-        </h1>
+    <div className="space-y-6">
+      <div className="page-heading">
+        <p className="page-kicker">Club schedule</p>
+        <h1 className="page-title">Sessions</h1>
+        <p className="page-description">RSVP for upcoming games or review sessions you have already played.</p>
       </div>
 
-      <div className="flex gap-1 border-b border-slate-200 mb-6" role="tablist">
+      <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1" role="tablist" aria-label="Session views">
         {TABS.map(({ id, label }) => (
           <button
             key={id}
             role="tab"
             aria-selected={tab === id}
             onClick={() => setTab(id)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            className={`min-h-11 rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
               tab === id
-                ? 'border-primary-600 text-primary-700'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
+                ? 'bg-white text-slate-950 shadow-sm'
+                : 'text-slate-500 hover:text-slate-800'
             }`}
           >
             {label}
@@ -87,17 +86,17 @@ export default function Sessions() {
       {tab === 'upcoming' && (
         <>
           {isLoading ? (
-            <div className="bg-white rounded-xl border border-slate-200 p-8 flex items-center justify-center">
-              <Loader2 className="w-8 h-8 text-primary-600 animate-spin" />
+            <div className="card flex min-h-40 items-center justify-center">
+              <Loader2 className="h-8 w-8 animate-spin text-primary-700" />
             </div>
           ) : sessions.length === 0 ? (
-            <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
-              <Calendar className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-              <p className="text-slate-600">No upcoming sessions scheduled</p>
+            <div className="card p-8 text-center">
+              <CalendarDays className="mx-auto mb-4 h-12 w-12 text-slate-300" />
+              <p className="font-medium text-slate-700">No upcoming sessions scheduled</p>
               <p className="text-sm text-slate-500 mt-1">Check back later for new sessions</p>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {sessions.map((session) => (
                 <SessionCard key={session.id} session={session} venueName={venueName} />
               ))}
@@ -109,16 +108,16 @@ export default function Sessions() {
       {tab === 'history' && (
         <>
           {isLoadingHistory ? (
-            <div className="bg-white rounded-xl border border-slate-200 p-8 flex items-center justify-center">
-              <Loader2 className="w-8 h-8 text-primary-600 animate-spin" />
+            <div className="card flex min-h-40 items-center justify-center">
+              <Loader2 className="h-8 w-8 animate-spin text-primary-700" />
             </div>
           ) : past.length === 0 ? (
-            <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
-              <Calendar className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-              <p className="text-slate-600">No sessions have been played yet</p>
+            <div className="card p-8 text-center">
+              <CalendarDays className="mx-auto mb-4 h-12 w-12 text-slate-300" />
+              <p className="font-medium text-slate-700">No sessions have been played yet</p>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {past.map((session) => (
                 <PastSessionCard key={session.session_id} session={session} isAdmin={isAdmin} />
               ))}
