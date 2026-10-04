@@ -492,9 +492,10 @@ func (h *AdminHandler) GetClub(c *gin.Context) {
 }
 
 type UpdateClubRequest struct {
-	Name         *string `json:"name"`
-	VenueName    *string `json:"venue_name"`
-	VenueAddress *string `json:"venue_address"`
+	NotificationsPaused *bool   `json:"notifications_paused"`
+	Name                *string `json:"name"`
+	VenueName           *string `json:"venue_name"`
+	VenueAddress        *string `json:"venue_address"`
 }
 
 // UpdateClub updates club information
@@ -513,6 +514,9 @@ func (h *AdminHandler) UpdateClub(c *gin.Context) {
 
 	if req.Name != nil {
 		club.Name = *req.Name
+	}
+	if req.NotificationsPaused != nil {
+		club.NotificationsPaused = *req.NotificationsPaused
 	}
 	if req.VenueName != nil {
 		club.VenueName = *req.VenueName

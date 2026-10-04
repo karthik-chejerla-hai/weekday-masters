@@ -252,3 +252,66 @@ func TestIntegrityReportsBalanced(t *testing.T) {
 		t.Error("integrity checked zero entries")
 	}
 }
+
+func TestSharedMoneyRoutesEnforceAccessAndFilters(t *testing.T) {
+	h := newHarness(t)
+	admin, player := makeAdmin(t), makePlayer(t)
+	pending := makePending(t)
+	removed := makeUser(t, models.RolePlayer, models.MembershipRemoved)
+	topup(t, h, admin, admin, 1000)
+	topup(t, h, admin, player, 5000)
+	for _, path := range []string{"/api/position", "/api/accounts/entries?scope=all", "/api/accounts/activity?scope=all"} {
+		h.as(nil).get(path).expect(http.StatusUnauthorized)
+		h.as(pending).get(path).expect(http.StatusForbidden)
+		h.as(removed).get(path).expect(http.StatusForbidden)
+		h.as(player).get(path).expect(http.StatusOK)
+		h.as(admin).get(path).expect(http.StatusOK)
+	}
+	for _, path := range []string{"/api/admin/transactions/court-credit", "/api/admin/transactions/shuttle-purchase", "/api/admin/transactions/topup"} {
+		h.as(player).post(path, map[string]any{"amount_cents": 100, "units": 12, "user_id": player.ID}).expect(http.StatusForbidden)
+	}
+	var body struct {
+		Items []struct {
+			UserID   string `json:"user_id"`
+			Category string `json:"category"`
+		} `json:"items"`
+		Total int `json:"total"`
+	}
+	h.as(player).get("/api/accounts/entries").expect(http.StatusOK).decode(&body)
+	if body.Total != 1 || body.Items[0].UserID != player.ID.String() {
+		t.Fatalf("default scope %+v", body)
+	}
+	h.as(player).get("/api/accounts/entries?scope=all&type=topup&limit=1&offset=1").expect(http.StatusOK).decode(&body)
+	if body.Total != 2 || len(body.Items) != 1 || body.Items[0].Category != "topup" {
+		t.Fatalf("filters %+v", body)
+	}
+	h.as(player).get("/api/accounts/entries?scope=invalid").expect(http.StatusBadRequest)
+	h.as(player).get("/api/accounts/entries?type=invalid").expect(http.StatusBadRequest)
+}
+
+func TestLedgerActivityReturnsWrappedEntriesAndFilters(t *testing.T) {
+	h := newHarness(t)
+	admin, player := makeAdmin(t), makePlayer(t)
+	topup(t, h, admin, admin, 1000)
+	topup(t, h, admin, player, 5000)
+	var body struct {
+		Items []struct {
+			Entry *struct {
+				UserID   string `json:"user_id"`
+				Category string `json:"category"`
+			} `json:"entry"`
+			Game interface{} `json:"game"`
+		} `json:"items"`
+		Total int `json:"total"`
+	}
+	h.as(player).get("/api/accounts/activity").expect(http.StatusOK).decode(&body)
+	if body.Total != 1 || body.Items[0].Entry == nil || body.Items[0].Entry.UserID != player.ID.String() {
+		t.Fatalf("mine %+v", body)
+	}
+	h.as(player).get("/api/accounts/activity?scope=all&type=topup&limit=1&offset=1").expect(http.StatusOK).decode(&body)
+	if body.Total != 2 || len(body.Items) != 1 || body.Items[0].Entry.Category != "topup" || body.Items[0].Game != nil {
+		t.Fatalf("topups %+v", body)
+	}
+	h.as(player).get("/api/accounts/activity?scope=invalid").expect(http.StatusBadRequest)
+	h.as(player).get("/api/accounts/activity?type=invalid").expect(http.StatusBadRequest)
+}

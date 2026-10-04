@@ -34,6 +34,33 @@ export interface InviteMemberInput {
   role?: Extract<UserRole, 'player' | 'admin'>;
 }
 
+export interface InvitationDelivery {
+  id: string;
+  user_id: string;
+  recipient_email: string;
+  is_test: boolean;
+  status: 'pending' | 'accepted' | 'failed' | 'unknown';
+  message: string;
+  accepted_at?: string;
+  created_at: string;
+}
+
+export interface InvitationPreview {
+  subject: string;
+  html: string;
+  text: string;
+  login_url: string;
+  recipient_email: string;
+  from_email: string;
+  test_recipient: string;
+  can_send: boolean;
+  can_test: boolean;
+  send_blocked_reason?: string;
+  test_blocked_reason?: string;
+  last_invitation?: InvitationDelivery;
+  last_test?: InvitationDelivery;
+}
+
 /** Every field optional: an omitted one is left unchanged by the backend. */
 export interface UpdateMemberInput {
   name?: string;
@@ -52,6 +79,7 @@ export interface UpdateProfileInput {
 }
 
 export interface Club {
+	 notifications_paused?: boolean;
   id: string;
   name: string;
   venue_name: string;
@@ -165,6 +193,8 @@ export type TransactionKind =
   | 'shuttle_purchase'
   | 'session_settlement'
   | 'opening_balance'
+	| 'splitwise_import'
+	| 'import_assets'
   | 'reversal';
 
 export interface Account {
@@ -202,19 +232,58 @@ export interface LedgerEntryView {
   occurred_at: string;
   kind: TransactionKind;
   description: string;
+  category: 'topup' | 'session' | 'food' | 'entertainment' | 'shuttles' | 'court_credit' | 'transfer' | 'withdrawal' | 'reversal' | 'opening_balance' | 'other';
+  source?: 'splitwise';
+  member_name: string;
+  user_id?: string;
+  inactive: boolean;
   amount_cents: number;
   balance_after_cents: number;
   session_id?: string;
   reversed: boolean;
 }
 
+export interface LedgerActivityView {
+  id: string;
+  occurred_at: string;
+  entry?: LedgerEntryView;
+  game?: LedgerGameView;
+}
+
+export interface LedgerGameView {
+  session_id: string;
+  title: string;
+  played_date: string;
+  date_basis: 'title' | 'recorded';
+  source?: 'splitwise';
+  total_charged_cents: number;
+  reversed: boolean;
+  source_count: number;
+  shares: Array<{
+    id: string;
+    user_id?: string;
+    member_name: string;
+    inactive: boolean;
+    charge_cents: number;
+    paid_cents: number;
+    amount_cents: number;
+    balance_after_cents: number;
+    guest_names?: string[];
+  }>;
+}
+
 export interface ClubPosition {
+	 assets_pending?: boolean;
   assets: {
     bank_cents: number;
     court_credit_cents: number;
     shuttle_stock_cents: number;
     shuttle_stock_units: number;
     total_cents: number;
+    bank_as_of?: string | null;
+    court_credit_as_of?: string | null;
+    shuttle_stock_as_of?: string | null;
+    shuttle_audited_on?: string | null;
   };
   liabilities: { player_balances_cents: number };
   surplus_cents: number;
@@ -274,7 +343,23 @@ export interface SettlementPreview {
   stock_after: { units: number; amount_cents: number };
 }
 
+export interface ImportedSession {
+  played_date: string;
+  date_basis: 'title' | 'recorded';
+  total_cents: number;
+  lines: Array<{
+    name: string;
+    user_id?: string;
+    inactive: boolean;
+    charge_cents: number;
+    paid_cents: number;
+    net_cents: number;
+  }>;
+  sources: Array<{ description: string; recorded_date: string; cost_cents: number }>;
+}
+
 export interface SettlementView extends SettlementPreview {
+	 imported?: ImportedSession;
   session: { id: string; title: string; starts_at: string; ends_at: string };
   rates: SettlementRates;
   settled_at: string;
@@ -282,6 +367,8 @@ export interface SettlementView extends SettlementPreview {
 }
 
 export interface PastSession {
+	 imported_date?: string;
+	 date_basis?: 'title' | 'recorded';
   session_id: string;
   title: string;
   starts_at: string;

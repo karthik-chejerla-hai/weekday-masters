@@ -87,6 +87,8 @@ jobs:
             --platform managed \
             --allow-unauthenticated \
             --set-env-vars="GIN_MODE=release" \
+            --set-env-vars="NOTIFICATIONS_DISABLED=${{ vars.NOTIFICATIONS_DISABLED || 'true' }}" \
+            --set-env-vars="INVITATION_TEST_EMAILS_ENABLED=${{ vars.INVITATION_TEST_EMAILS_ENABLED || 'false' }}" \
             --set-env-vars="TIMEZONE=Australia/Sydney" \
             --set-env-vars="FRONTEND_URL=${{ secrets.FRONTEND_URL }}" \
             --set-env-vars="AUTH0_DOMAIN=${{ secrets.AUTH0_DOMAIN }}" \

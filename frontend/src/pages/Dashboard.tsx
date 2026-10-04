@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, CalendarDays, Loader2, AlertTriangle, WalletCards } from 'lucide-react';
+import { ArrowRight, CalendarDays, Loader2, AlertTriangle } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { useAuth } from '../context/useAuth';
 import { api } from '../services/api';
@@ -70,27 +70,6 @@ export default function Dashboard() {
           <SessionCard session={nextSession} venueName={venueName} featured />
         </section>
       )}
-
-      <nav aria-label="Quick links" className="grid grid-cols-2 gap-3">
-        <Link to="/sessions" className="card flex min-h-[76px] items-center gap-3 p-3.5 transition-colors hover:bg-slate-50">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-700">
-            <CalendarDays className="h-5 w-5" />
-          </span>
-          <span className="min-w-0">
-            <span className="block text-sm font-semibold text-slate-950">All sessions</span>
-            <span className="block truncate text-xs text-slate-500">Schedule and history</span>
-          </span>
-        </Link>
-        <Link to="/money" className="card flex min-h-[76px] items-center gap-3 p-3.5 transition-colors hover:bg-slate-50">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-700">
-            <WalletCards className="h-5 w-5" />
-          </span>
-          <span className="min-w-0">
-            <span className="block text-sm font-semibold text-slate-950">Money</span>
-            <span className="block truncate text-xs text-slate-500">Balances and ledger</span>
-          </span>
-        </Link>
-      </nav>
 
       {cancelledSessions.length > 0 && (
         <section aria-labelledby="updates-heading">

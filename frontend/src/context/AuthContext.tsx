@@ -1,4 +1,4 @@
-import { useEffect, useState, ReactNode } from 'react';
+import { useCallback, useEffect, useState, ReactNode } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
 import { api } from '../services/api';
 import { AuthContext, type AuthContextType } from './auth-context';
@@ -12,13 +12,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loginWithRedirect,
     logout: auth0Logout,
     getAccessTokenSilently,
+    error: auth0Error,
   } = useAuth0();
 
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isViewingAsMember, setIsViewingAsMember] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
-  const syncUser = async () => {
+  const syncUser = useCallback(async () => {
+    setAuthError(null);
     if (!auth0IsAuthenticated || !auth0User) {
       setUser(null);
       setIsLoading(false);
@@ -26,6 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
+      setIsLoading(true);
       const token = await getAccessTokenSilently();
       api.setAccessToken(token);
 
@@ -38,11 +42,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(response.user);
     } catch (error) {
       console.error('Failed to sync user:', error);
+      setAuthError((error as { response?: { data?: { error?: string } } })?.response?.data?.error
+        || 'We could not finish signing you in. Try again or contact your club admin.');
       setUser(null);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [auth0IsAuthenticated, auth0User, getAccessTokenSilently]);
 
   const refreshUser = async () => {
     if (!auth0IsAuthenticated) return;
@@ -60,7 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!auth0IsLoading) {
       syncUser();
     }
-  }, [auth0IsLoading, auth0IsAuthenticated, auth0User]);
+  }, [auth0IsLoading, syncUser]);
 
   const login = () => {
     loginWithRedirect({
@@ -68,6 +74,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         connection: 'google-oauth2',
       },
     });
+  };
+
+  const loginForInvitation = () => {
+    loginWithRedirect({
+      appState: { returnTo: '/welcome' },
+      authorizationParams: { connection: 'google-oauth2', prompt: 'select_account' },
+    }).catch(() => setAuthError('Google sign-in could not start. Please try again.'));
   };
 
   const logout = () => {
@@ -101,6 +114,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     startMemberPreview,
     stopMemberPreview,
     login,
+    loginForInvitation,
+    authError: authError || (auth0Error ? 'Google sign-in did not finish. Try again or contact your club admin.' : null),
+    retryAuth: syncUser,
     logout,
     refreshUser,
   };

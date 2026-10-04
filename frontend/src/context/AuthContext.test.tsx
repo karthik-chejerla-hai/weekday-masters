@@ -28,6 +28,7 @@ function TestConsumer() {
     isViewingAsMember,
     startMemberPreview,
     stopMemberPreview,
+    loginForInvitation,
   } = useAuth();
   if (isLoading) return <div>Loading Auth...</div>;
   return (
@@ -39,6 +40,7 @@ function TestConsumer() {
       <div>User: {user?.name || 'None'}</div>
       <button onClick={startMemberPreview}>Preview as member</button>
       <button onClick={stopMemberPreview}>Exit preview</button>
+      <button onClick={loginForInvitation}>Invitation sign-in</button>
     </div>
   );
 }
@@ -46,6 +48,20 @@ function TestConsumer() {
 describe('AuthContext', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('returns invitation sign-in to the welcome page and requests account selection', async () => {
+    const loginWithRedirect = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(useAuth0).mockReturnValue({
+      isAuthenticated: false, isLoading: false, user: undefined,
+      loginWithRedirect, logout: vi.fn(), getAccessTokenSilently: vi.fn(),
+    } as unknown as ReturnType<typeof useAuth0>);
+    render(<AuthProvider><TestConsumer /></AuthProvider>);
+    await userEvent.click(await screen.findByRole('button', { name: 'Invitation sign-in' }));
+    expect(loginWithRedirect).toHaveBeenCalledWith({
+      appState: { returnTo: '/welcome' },
+      authorizationParams: { connection: 'google-oauth2', prompt: 'select_account' },
+    });
   });
 
   it('handles unauthenticated state', async () => {

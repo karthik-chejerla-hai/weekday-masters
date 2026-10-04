@@ -30,6 +30,7 @@ func Migrate() error {
 	err := DB.AutoMigrate(
 		&models.Club{},
 		&models.User{},
+		&models.InvitationDelivery{},
 		&models.Session{},
 		&models.RSVP{},
 		// Notification models
@@ -43,6 +44,10 @@ func Migrate() error {
 		&models.LedgerEntry{},
 		&models.Settlement{},
 		&models.ChargeLine{},
+		&models.SplitwiseImport{},
+		&models.SplitwiseParticipant{},
+		&models.SplitwiseRecord{},
+		&models.SplitwiseChange{},
 	)
 	if err != nil {
 		return err

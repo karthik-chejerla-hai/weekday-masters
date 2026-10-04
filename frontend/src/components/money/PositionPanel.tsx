@@ -1,4 +1,6 @@
-import { AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Landmark, Wallet } from 'lucide-react';
+import { format, parseISO } from 'date-fns';
+import ShuttleIcon from './ShuttleIcon';
 import { formatCents } from './format';
 import type { ClubPosition } from '../../types';
 
@@ -6,16 +8,19 @@ interface PositionPanelProps {
   position: ClubPosition;
 }
 
-/**
- * Whether the club is square with its players.
- *
- * The point of showing three asset lines rather than one total is that only the
- * first is cash. The other two are money already spent on things the club will
- * consume — credit at the venue, and shuttles in a bag — and a single number
- * cannot tell you whether you are covered.
- */
 export default function PositionPanel({ position }: PositionPanelProps) {
   const { assets, liabilities, surplus_cents, balanced, warnings } = position;
+
+  if (position.assets_pending) {
+    return (
+      <div className="rounded-lg border border-secondary-300 bg-secondary-50 p-4" role="status">
+        <p className="font-semibold text-secondary-900">Club assets need review</p>
+        <p className="mt-1 text-sm text-secondary-900">
+          Member history is imported. Bank funds, court credit and shuttle stock still need to be confirmed.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -29,14 +34,17 @@ export default function PositionPanel({ position }: PositionPanelProps) {
         </div>
       ))}
 
+      <div className="grid grid-cols-[repeat(3,minmax(240px,1fr))] gap-4 overflow-x-auto pb-2 sm:grid-cols-3" role="region" aria-label="Club asset cards" tabIndex={0}>
+        <AssetCard title="Unused Court Credit" value={formatCents(assets.court_credit_cents)} note="Available for next session" Icon={Wallet} date={`On: ${assetDate(assets.court_credit_as_of)}`} />
+        <AssetCard title="Shuttles available" value={formatCents(assets.shuttle_stock_cents)} note={`${assets.shuttle_stock_units} shuttles in the bag`} Icon={ShuttleIcon} date={`Audited on: ${assetDate(assets.shuttle_audited_on)}`}>
+          {assets.shuttle_stock_as_of && assets.shuttle_stock_as_of !== assets.shuttle_audited_on && (
+            <p className="mt-1 text-xs text-slate-500">Stock updated: {assetDate(assets.shuttle_stock_as_of)}</p>
+          )}
+        </AssetCard>
+        <AssetCard title="Bank Account balance" value={formatCents(assets.bank_cents)} note="Club funds" Icon={Landmark} date={`On: ${assetDate(assets.bank_as_of)}`} />
+      </div>
+
       <div className="rounded-xl border border-slate-200 bg-white divide-y divide-slate-100">
-        <Row label="In the bank" value={assets.bank_cents} />
-        <Row label="Credit at the venue" value={assets.court_credit_cents} />
-        <Row
-          label="Shuttles in the bag"
-          value={assets.shuttle_stock_cents}
-          note={`${assets.shuttle_stock_units} left`}
-        />
         <Row label="What the club holds" value={assets.total_cents} strong />
       </div>
 
@@ -59,19 +67,40 @@ export default function PositionPanel({ position }: PositionPanelProps) {
         {balanced ? (
           <>
             <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-            <span>The books balance. What the club holds matches what members have prepaid.</span>
+            <span>The books balance. Assets match member balances plus club surplus.</span>
           </>
         ) : (
           <>
             <AlertTriangle className="w-5 h-5 flex-shrink-0" />
             <span>
-              The books do not balance. Something wrote to the ledger without going through
-              the usual path — check the integrity report.
+              The books do not balance. Ask an admin to check the account records.
             </span>
           </>
         )}
       </div>
     </div>
+  );
+}
+
+function assetDate(value?: string | null) {
+  return value ? format(parseISO(value), 'd MMM yyyy') : 'Not recorded';
+}
+
+function AssetCard({ title, value, note, date, Icon, children }: {
+  title: string; value: string; note: string; date: string;
+  Icon: React.ComponentType<React.SVGProps<SVGSVGElement>>; children?: React.ReactNode;
+}) {
+  return (
+    <article className="flex min-w-0 flex-col rounded-2xl border border-primary-100 bg-white p-5 shadow-sm">
+      <span className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-primary-50 text-primary-700"><Icon className="h-5 w-5" aria-hidden="true" /></span>
+      <h2 className="text-sm font-semibold text-slate-700">{title}</h2>
+      <p className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 tabular-nums">{value}</p>
+      <p className="mt-1 mb-6 text-sm text-slate-500">{note}</p>
+      <div className="mt-auto border-t border-slate-100 pt-3">
+        <p className="text-xs font-medium text-slate-500">{date}</p>
+        {children}
+      </div>
+    </article>
   );
 }
 

@@ -14,10 +14,12 @@ import (
 // actually used, so changing a rate here never rewrites what a past session
 // cost — see Settlement.
 type Club struct {
-	ID           uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	Name         string    `gorm:"size:255;not null" json:"name"`
-	VenueName    string    `gorm:"size:255" json:"venue_name"`
-	VenueAddress string    `gorm:"type:text" json:"venue_address"`
+	// Setup pause applies to all delivery channels, independent of credentials.
+	NotificationsPaused bool      `gorm:"not null;default:false" json:"notifications_paused"`
+	ID                  uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	Name                string    `gorm:"size:255;not null" json:"name"`
+	VenueName           string    `gorm:"size:255" json:"venue_name"`
+	VenueAddress        string    `gorm:"type:text" json:"venue_address"`
 
 	// Settlement defaults. The club plays a standing two-hour booking on one
 	// court, sometimes extending by an hour at the cheaper off-peak rate.

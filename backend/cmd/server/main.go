@@ -30,12 +30,21 @@ func main() {
 	// Initialize notification service first: the RSVP service uses it to tell players
 	// when they have been promoted off a session waitlist.
 	notificationService := services.NewNotificationService(services.NotificationConfig{
+		Disabled:            cfg.NotificationsDisabled,
 		FirebaseCredentials: cfg.FirebaseCredentials,
 		SendGridAPIKey:      cfg.SendGridAPIKey,
 		SendGridFromEmail:   cfg.SendGridFromEmail,
 		SendGridFromName:    cfg.SendGridFromName,
 		FrontendURL:         cfg.FrontendURL,
 	})
+	invitationService := services.NewInvitationService(services.NotificationConfig{
+		Disabled:          cfg.NotificationsDisabled,
+		SendGridAPIKey:    cfg.SendGridAPIKey,
+		SendGridFromEmail: cfg.SendGridFromEmail,
+		SendGridFromName:  cfg.SendGridFromName,
+		FrontendURL:       cfg.FrontendURL,
+	}, cfg.InvitationTestEmailsEnabled)
+	invitationHandler := handlers.NewInvitationHandler(invitationService)
 
 	// Initialize services
 	auth0Service := services.NewAuth0Service(cfg.Auth0Domain)
@@ -109,8 +118,10 @@ func main() {
 		// Protected routes (requires valid JWT)
 		protected := api.Group("")
 		protected.Use(middleware.AuthMiddleware(auth0Config))
+		ledgerHandler.RegisterRoutes(protected)
 		{
 			// User routes
+			invitationHandler.RegisterRoutes(protected)
 			protected.GET("/users/me", userHandler.GetMe)
 			protected.PUT("/users/me", userHandler.UpdateMe)
 
@@ -138,12 +149,6 @@ func main() {
 				approved.PUT("/sessions/:id/rsvp", rsvpHandler.UpdateRSVP)
 				approved.DELETE("/sessions/:id/rsvp", rsvpHandler.DeleteRSVP)
 				approved.GET("/sessions/:id/rsvp/me", rsvpHandler.GetMyRSVP)
-
-				// Ledger reads. Every approved member can see every balance:
-				// the club already worked this way in Splitwise.
-				approved.GET("/accounts", ledgerHandler.ListBalances)
-				approved.GET("/accounts/me", ledgerHandler.GetMyBalance)
-				approved.GET("/accounts/me/entries", ledgerHandler.GetMyEntries)
 
 				// Session history and settlement breakdowns are readable by any
 				// approved member, so the split can be checked by the people in it.
@@ -182,24 +187,10 @@ func main() {
 				// Club management
 				admin.PUT("/club", adminHandler.UpdateClub)
 
-				// Ledger writes. Only admins move money; there is deliberately
-				// no edit or delete route, only reversal.
-				admin.POST("/transactions/topup", ledgerHandler.RecordTopup)
-				admin.POST("/transactions/withdrawal", ledgerHandler.RecordWithdrawal)
-				admin.POST("/transactions/court-credit", ledgerHandler.RecordCourtCredit)
-				admin.POST("/transactions/shuttle-purchase", ledgerHandler.RecordShuttlePurchase)
-				admin.POST("/transactions/opening-balances", ledgerHandler.RecordOpeningBalances)
-				admin.POST("/transactions/:id/reverse", ledgerHandler.ReverseTransaction)
-
 				// Settlement. Preview writes nothing; settle moves money.
 				admin.POST("/sessions/:id/settlement/preview", settlementHandler.PreviewSettlement)
 				admin.POST("/sessions/:id/settle", settlementHandler.SettleSession)
 				admin.POST("/settlements/:id/reverse", settlementHandler.ReverseSettlement)
-
-				// The club's asset position is admin-only: balances are shared
-				// with everyone, but what the club holds is not the same thing.
-				admin.GET("/position", ledgerHandler.GetPosition)
-				admin.GET("/position/integrity", ledgerHandler.GetIntegrity)
 
 				// Announcements
 				admin.POST("/announcements", notificationHandler.SendAnnouncement)

@@ -3,19 +3,19 @@ import { Loader2 } from 'lucide-react';
 import { useAuth } from '../context/useAuth';
 import { api } from '../services/api';
 import BalancesList from '../components/money/BalancesList';
-import LedgerList from '../components/money/LedgerList';
+import LedgerBrowser from '../components/money/LedgerBrowser';
 import TopupForm from '../components/money/TopupForm';
 import BalanceChip from '../components/money/BalanceChip';
 import PositionPanel from '../components/money/PositionPanel';
 import AssetPurchaseForms from '../components/money/AssetPurchaseForms';
-import type { ClubPosition, LedgerEntryView, MyBalance, PlayerBalance } from '../types';
+import type { ClubPosition, MyBalance, PlayerBalance } from '../types';
 
 type Tab = 'balances' | 'ledger' | 'club';
 
-const TABS: Array<{ id: Tab; label: string; adminOnly?: boolean }> = [
+const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'balances', label: 'Balances' },
-  { id: 'ledger', label: 'My ledger' },
-  { id: 'club', label: 'Club assets', adminOnly: true },
+  { id: 'ledger', label: 'Ledger' },
+  { id: 'club', label: 'Club assets' },
 ];
 
 export default function Money() {
@@ -24,7 +24,8 @@ export default function Money() {
 
   const [balances, setBalances] = useState<PlayerBalance[]>([]);
   const [myBalance, setMyBalance] = useState<MyBalance | null>(null);
-  const [entries, setEntries] = useState<LedgerEntryView[]>([]);
+  const [revision, setRevision] = useState(0);
+  const [positionError, setPositionError] = useState(false);
   const [lowThreshold, setLowThreshold] = useState(2000);
   const [position, setPosition] = useState<ClubPosition | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -32,49 +33,30 @@ export default function Money() {
 
   const load = useCallback(async () => {
     setError(null);
-    try {
-      const [balanceList, mine, history] = await Promise.all([
-        api.listBalances(),
-        api.getMyBalance(),
-        api.getMyEntries(),
-      ]);
-      setBalances(balanceList);
-      setMyBalance(mine);
-      setEntries(history.items);
-
-      // The threshold is a club setting, so other members' chips use the same
-      // rule the server applied to ours.
-      if (isAdmin) {
-        try {
-          const [club, clubPosition] = await Promise.all([api.getClub(), api.getClubPosition()]);
-          if (typeof club.low_balance_threshold_cents === 'number') {
-            setLowThreshold(club.low_balance_threshold_cents);
-          }
-          setPosition(clubPosition);
-        } catch {
-          // Non-fatal: the balances still render without the club's own figures.
-        }
-      }
-    } catch {
-      setError('Could not load balances. Pull to refresh, or try again shortly.');
-    } finally {
-      setIsLoading(false);
+    setPositionError(false);
+    const [balanceList, mine, club, clubPosition] = await Promise.allSettled([
+      api.listBalances(), api.getMyBalance(), api.getClub(), api.getClubPosition(),
+    ]);
+    if (balanceList.status === 'fulfilled') setBalances(balanceList.value);
+    if (mine.status === 'fulfilled') setMyBalance(mine.value);
+    if (balanceList.status === 'rejected' || mine.status === 'rejected') {
+      setError('Could not load balances. Please try again.');
     }
-  }, [isAdmin]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  // If an admin-only view is hidden (for example when entering member
-  // preview), immediately show a tab that is still available to members.
-  useEffect(() => {
-    if (!isAdmin) {
-      setTab((current) => current === 'club' ? 'balances' : current);
+    if (club.status === 'fulfilled' && typeof club.value?.low_balance_threshold_cents === 'number') {
+      setLowThreshold(club.value.low_balance_threshold_cents);
     }
-  }, [isAdmin]);
+    if (clubPosition.status === 'fulfilled' && clubPosition.value) {
+      setPosition(clubPosition.value);
+    } else {
+      setPositionError(true);
+    }
+    setRevision((current) => current + 1);
+    setIsLoading(false);
+  }, []);
 
-  const activeTab = !isAdmin && tab === 'club' ? 'balances' : tab;
+  useEffect(() => { void load(); }, [load]);
+
+  const activeTab = tab;
 
   if (isLoading) {
     return (
@@ -106,8 +88,8 @@ export default function Money() {
         </div>
       )}
 
-      <div className={`grid gap-1 rounded-xl bg-slate-100 p-1 ${isAdmin ? 'grid-cols-3' : 'grid-cols-2'}`} role="tablist" aria-label="Money views">
-        {TABS.filter((t) => !t.adminOnly || isAdmin).map(({ id, label }) => (
+      <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1" role="tablist" aria-label="Money views">
+        {TABS.map(({ id, label }) => (
           <button
             key={id}
             role="tab"
@@ -135,12 +117,16 @@ export default function Money() {
         </div>
       )}
 
-      {activeTab === 'ledger' && <LedgerList entries={entries} />}
+      {activeTab === 'ledger' && <LedgerBrowser userId={user?.id} revision={revision} />}
 
-      {activeTab === 'club' && isAdmin && (
+      {activeTab === 'club' && (
         <div className="space-y-6">
+          {positionError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            Could not load club assets.
+            <button className="ml-2 font-semibold underline" onClick={() => void load()}>Try again</button>
+          </div>}
           {position && <PositionPanel position={position} />}
-          <AssetPurchaseForms onRecorded={load} />
+          {isAdmin && position && !position.assets_pending && <AssetPurchaseForms onRecorded={load} />}
         </div>
       )}
     </div>

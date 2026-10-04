@@ -866,6 +866,78 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /accounts/entries:
+    get:
+      tags: [Ledger]
+      summary: Filtered member ledger history
+      description: >
+        Newest first. Each row carries the balance it produced, computed over the
+        member's whole history before filtering or paging. Defaults to the caller.
+        The all scope includes inactive player accounts, without bank/surplus legs.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: scope, in: query, schema: { type: string, enum: [mine, all], default: mine } }
+        - { name: type, in: query, schema: { type: string, enum: [all, topup], default: all } }
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 200 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        "200":
+          description: Ledger entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/LedgerEntryView"
+                  total:
+                    type: integer
+        "400":
+          description: Invalid scope or type
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /accounts/activity:
+    get:
+      tags: [Ledger]
+      summary: Ledger activities with complete game splits
+      description: >
+        One expandable activity per game. Imported regular and extra-hour rows on
+        the same play date form one game. Native settlement transactions stay
+        distinct. Mine selects games the caller participated in while retaining
+        every account share. Grouping happens before paging. Non-game account
+        entries keep their full running balances. The total counts activities.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: scope, in: query, schema: { type: string, enum: [mine, all], default: mine } }
+        - { name: type, in: query, schema: { type: string, enum: [all, topup], default: all } }
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 200 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        "200":
+          description: Ledger entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/LedgerActivityView"
+                  total:
+                    type: integer
+        "400":
+          description: Invalid scope or type
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /admin/transactions/topup:
     post:
       tags: [Ledger]
@@ -999,14 +1071,34 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /position:
+    get:
+      tags: [Ledger]
+      summary: The club's true position
+      description: >
+        Bank, prepaid court credit and shuttle stock against what members have
+        prepaid. Available to all approved members. Dates report the latest recorded
+        movement, with the last confirmed physical stock snapshot shown separately.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Position
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClubPosition"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /admin/position:
     get:
       tags: [Ledger]
       summary: The club's true position
       description: >
         Bank, prepaid court credit and shuttle stock against what members have
-        prepaid. Admin-only: balances are shared with the whole club, but what the
-        club itself holds is a different question.
+        prepaid. Legacy admin URL. Approved members use GET /position.
       security: [{ bearerAuth: [] }]
       responses:
         "200":
@@ -1177,6 +1269,67 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /admin/users/{id}/invitation:
+    parameters:
+      - $ref: "#/components/parameters/UserId"
+    get:
+      tags: ["Admin: Members"]
+      summary: Preview an invitation without sending email
+      description: Approved admins only. The target must be approved and not yet signed in. The preview includes exact HTML/plain text, send controls, and latest attempt status.
+      responses:
+        "200":
+          description: Invitation preview
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InvitationPreview" }
+        "403":
+          description: Approved admin access required
+        "409":
+          description: Member is not eligible for an invitation
+    post:
+      tags: ["Admin: Members"]
+      summary: Send or resend the reviewed invitation
+      description: Obeys both notification stops. Reusing a request ID returns its saved result without another send. Provider acceptance does not confirm inbox delivery.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InvitationSendRequest" }
+      responses:
+        "200":
+          description: Saved attempt, including accepted, failed, pending or unknown results
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InvitationDelivery" }
+        "409":
+          description: Sending paused, stale preview, or ineligible member
+        "429":
+          description: Wait one minute between sends to this address
+  /admin/users/{id}/invitation/test:
+    parameters:
+      - $ref: "#/components/parameters/UserId"
+    post:
+      tags: ["Admin: Members"]
+      summary: Send a test copy only to the signed-in admin
+      description: Requires the separate test-email setting. Ignores caller-supplied destinations. Keeps member invitations and routine notifications paused. Does not mark a member invitation sent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InvitationSendRequest" }
+      responses:
+        "200":
+          description: Test attempt result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InvitationDelivery" }
+        "403":
+          description: Approved admin access required
+        "409":
+          description: Test sending disabled, provider unavailable, or stale preview
+        "429":
+          description: Wait one minute between tests
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1268,6 +1421,40 @@ components:
                 type: string
 
   schemas:
+    InvitationSendRequest:
+      type: object
+      required: [request_id, expected_email]
+      properties:
+        request_id: { type: string, format: uuid }
+        expected_email: { type: string, format: email, description: Member email shown in the reviewed preview }
+    InvitationDelivery:
+      type: object
+      required: [id, user_id, recipient_email, is_test, status, message, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        recipient_email: { type: string, format: email }
+        is_test: { type: boolean }
+        status: { type: string, enum: [pending, accepted, failed, unknown] }
+        message: { type: string }
+        accepted_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+    InvitationPreview:
+      type: object
+      properties:
+        subject: { type: string }
+        html: { type: string }
+        text: { type: string }
+        login_url: { type: string, format: uri }
+        recipient_email: { type: string, format: email }
+        from_email: { type: string }
+        test_recipient: { type: string, format: email }
+        can_send: { type: boolean }
+        can_test: { type: boolean }
+        send_blocked_reason: { type: string }
+        test_blocked_reason: { type: string }
+        last_invitation: { $ref: "#/components/schemas/InvitationDelivery" }
+        last_test: { $ref: "#/components/schemas/InvitationDelivery" }
     Error:
       type: object
       properties:
@@ -1286,6 +1473,9 @@ components:
           type: string
         venue_address:
           type: string
+        notifications_paused:
+          type: boolean
+          description: Discards notifications while setup or data review is in progress.
         created_at:
           type: string
           format: date-time
@@ -1697,6 +1887,9 @@ components:
     UpdateClubRequest:
       type: object
       properties:
+        notifications_paused:
+          type: boolean
+          description: Pauses all notification delivery. Does not queue messages for later sending.
         name:
           type: string
         venue_name:
@@ -1802,6 +1995,8 @@ components:
             - court_credit_purchase
             - shuttle_purchase
             - session_settlement
+            - splitwise_import
+            - import_assets
             - opening_balance
             - reversal
         session_id: { type: string, format: uuid }
@@ -1814,13 +2009,62 @@ components:
         created_by: { type: string, format: uuid }
         created_at: { type: string, format: date-time }
 
+    LedgerActivityView:
+      type: object
+      required: [id, occurred_at]
+      oneOf:
+        - required: [entry]
+        - required: [game]
+      properties:
+        id: { type: string, format: uuid }
+        occurred_at: { type: string, format: date-time, description: Last accounting posting for this activity }
+        entry:
+          $ref: "#/components/schemas/LedgerEntryView"
+        game:
+          $ref: "#/components/schemas/LedgerGameView"
+
+    LedgerGameView:
+      type: object
+      properties:
+        session_id: { type: string, format: uuid }
+        title: { type: string }
+        played_date: { type: string, format: date }
+        date_basis: { type: string, enum: [title, recorded] }
+        source: { type: string, enum: [splitwise] }
+        total_charged_cents: { type: integer, format: int64, description: Sum of gross member shares, including the payer's own share }
+        reversed: { type: boolean }
+        source_count: { type: integer }
+        shares:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string, format: uuid }
+              user_id: { type: string, format: uuid }
+              member_name: { type: string }
+              inactive: { type: boolean }
+              charge_cents: { type: integer, format: int64 }
+              paid_cents: { type: integer, format: int64, description: Paid on behalf of the group }
+              amount_cents: { type: integer, format: int64, description: Net account movement for the game }
+              balance_after_cents: { type: integer, format: int64, description: Account balance at the game's last posting }
+              guest_names:
+                type: array
+                items: { type: string }
+
     LedgerEntryView:
       type: object
       properties:
         id: { type: string, format: uuid }
         occurred_at: { type: string, format: date-time }
         kind: { type: string }
-        description: { type: string }
+        description: { type: string, description: Original transaction title }
+        category:
+          type: string
+          enum: [topup, session, food, entertainment, shuttles, court_credit, transfer, withdrawal, reversal, opening_balance, other]
+        source: { type: string, enum: [splitwise], description: Present only for imported entries }
+        member_name: { type: string }
+        user_id: { type: string, format: uuid }
+        inactive: { type: boolean }
         amount_cents: { type: integer, format: int64 }
         balance_after_cents:
           type: integer
@@ -1873,6 +2117,9 @@ components:
     ClubPosition:
       type: object
       properties:
+        assets_pending:
+          type: boolean
+          description: Imported member history is verified but the actual asset snapshot has not been supplied. Do not present placeholder asset values as confirmed holdings.
         assets:
           type: object
           properties:
@@ -1881,6 +2128,14 @@ components:
             shuttle_stock_cents: { type: integer, format: int64 }
             shuttle_stock_units: { type: integer }
             total_cents: { type: integer, format: int64 }
+            bank_as_of: { type: string, format: date, nullable: true }
+            court_credit_as_of: { type: string, format: date, nullable: true }
+            shuttle_stock_as_of: { type: string, format: date, nullable: true }
+            shuttle_audited_on:
+              type: string
+              format: date
+              nullable: true
+              description: Last unreversed opening or verified import stock snapshot. Purchases and consumption do not advance this date.
         liabilities:
           type: object
           properties:
@@ -1990,6 +2245,8 @@ components:
         - $ref: "#/components/schemas/SettlementPreview"
         - type: object
           properties:
+            imported:
+              $ref: "#/components/schemas/ImportedSession"
             session:
               type: object
               properties:
@@ -2012,6 +2269,8 @@ components:
     PastSession:
       type: object
       properties:
+        imported_date: { type: string, format: date }
+        date_basis: { type: string, enum: [title, recorded] }
         session_id: { type: string, format: uuid }
         title: { type: string }
         starts_at: { type: string, format: date-time }
@@ -2021,3 +2280,30 @@ components:
           description: False for a finished session nobody has costed yet. Shown rather than hidden.
         total_cents: { type: integer, format: int64 }
         player_count: { type: integer }
+
+    ImportedSession:
+      type: object
+      description: Exact Splitwise charges, independent of the live rate calculator. Extra-hour rows for the same play date are grouped. Use this object instead of the live settlement bands and rates when present.
+      properties:
+        played_date: { type: string, format: date }
+        date_basis: { type: string, enum: [title, recorded] }
+        total_cents: { type: integer, format: int64 }
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              user_id: { type: string, format: uuid }
+              inactive: { type: boolean, description: Historical participant without a user record. }
+              charge_cents: { type: integer, format: int64 }
+              paid_cents: { type: integer, format: int64 }
+              net_cents: { type: integer, format: int64 }
+        sources:
+          type: array
+          items:
+            type: object
+            properties:
+              description: { type: string }
+              recorded_date: { type: string, format: date }
+              cost_cents: { type: integer, format: int64 }

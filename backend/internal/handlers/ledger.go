@@ -23,6 +23,30 @@ func NewLedgerHandler(ledgerService *services.LedgerService) *LedgerHandler {
 	return &LedgerHandler{ledgerService: ledgerService}
 }
 
+// RegisterRoutes binds access checks before handlers in both server and tests.
+// protected must already validate identity (AuthMiddleware in the server).
+func (h *LedgerHandler) RegisterRoutes(protected *gin.RouterGroup) {
+	approved := protected.Group("")
+	approved.Use(middleware.RequireApproved())
+	approved.GET("/accounts", h.ListBalances)
+	approved.GET("/accounts/me", h.GetMyBalance)
+	approved.GET("/accounts/me/entries", h.GetMyEntries)
+	approved.GET("/accounts/entries", h.GetEntries)
+	approved.GET("/accounts/activity", h.GetActivity)
+	approved.GET("/position", h.GetPosition)
+
+	admin := protected.Group("/admin")
+	admin.Use(middleware.RequireAdmin())
+	admin.POST("/transactions/topup", h.RecordTopup)
+	admin.POST("/transactions/withdrawal", h.RecordWithdrawal)
+	admin.POST("/transactions/court-credit", h.RecordCourtCredit)
+	admin.POST("/transactions/shuttle-purchase", h.RecordShuttlePurchase)
+	admin.POST("/transactions/opening-balances", h.RecordOpeningBalances)
+	admin.POST("/transactions/:id/reverse", h.ReverseTransaction)
+	admin.GET("/position", h.GetPosition) // Compatibility with older clients.
+	admin.GET("/position/integrity", h.GetIntegrity)
+}
+
 // respondLedgerError translates a domain failure into the structured body the
 // frontend keys off. A bare 500 would leave the settlement form unable to tell
 // "you are short on shuttles" from "the server fell over".
@@ -112,6 +136,54 @@ func (h *LedgerHandler) GetMyEntries(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"items": entries, "total": total})
+}
+
+// GetEntries shares member movements, but never accepts a caller-selected user
+// ID for the default personal view. Membership is checked by the route group.
+func (h *LedgerHandler) GetEntries(c *gin.Context) {
+	h.getHistory(c, false)
+}
+
+func (h *LedgerHandler) GetActivity(c *gin.Context) {
+	h.getHistory(c, true)
+}
+
+func (h *LedgerHandler) getHistory(c *gin.Context, groupGames bool) {
+	user, err := middleware.GetUserFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": "unauthorized", "message": err.Error()})
+		return
+	}
+	limit, offset := parsePaging(c)
+	filter := services.LedgerHistoryFilter{UserID: &user.ID, Limit: limit, Offset: offset}
+	switch c.DefaultQuery("scope", "mine") {
+	case "mine":
+	case "all":
+		filter.UserID = nil
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "scope must be mine or all"})
+		return
+	}
+	switch c.DefaultQuery("type", "all") {
+	case "all":
+	case "topup":
+		filter.TopupsOnly = true
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "type must be all or topup"})
+		return
+	}
+	var items interface{}
+	var total int64
+	if groupGames {
+		items, total, err = h.ledgerService.Activity(filter)
+	} else {
+		items, total, err = h.ledgerService.Entries(filter)
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": "internal", "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items, "total": total})
 }
 
 // --- writes (admin only) --------------------------------------------------

@@ -3,6 +3,7 @@ import { AuthProvider } from './context/AuthContext';
 import { useAuth } from './context/useAuth';
 import Layout from './components/layout/Layout';
 import Home from './pages/Home';
+import Welcome from './pages/Welcome';
 import Dashboard from './pages/Dashboard';
 import Sessions from './pages/Sessions';
 import Money from './pages/Money';
@@ -51,6 +52,7 @@ function AppRoutes() {
 
   return (
     <Routes>
+      <Route path="/welcome" element={<Welcome />} />
       <Route path="/" element={isAuthenticated ? <Navigate to={isApproved ? "/dashboard" : "/pending"} replace /> : <Home />} />
 
       <Route path="/pending" element={

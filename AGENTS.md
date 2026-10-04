@@ -61,6 +61,16 @@ transaction, and no session is settled — settling would charge the players and
 exported figures. Without the asset flags the whole balance is recorded as bank, which balances
 but claims the club holds no court credit and no shuttles.
 
+### Importing real Splitwise history
+
+Use `backend/cmd/import-splitwise`, not the fixture seed command. It imports reviewed
+identity mappings, original transactions, historical charges and current assets
+without sending invitations. Private inputs and reports stay in the ignored
+`tmp/splitwise-import/` directory. Production requires an explicit target confirmation
+and disabled notifications. See `specs/002-splitwise-history-import/quickstart.md`
+for backup, rehearsal, import and verification steps. Invitations require separate
+owner confirmation.
+
 ### Frontend (React + Vite)
 ```bash
 cd frontend
@@ -154,6 +164,7 @@ handler chain at registration time, so using the wrong group silently skips the 
   is the caller. It cancels their upcoming RSVPs first, promoting from the waitlist
 - `SchedulerService`: hourly cron sends 24h/12h session reminders and 6h deadline alerts
 - `NotificationService`: FCM push + SendGrid email, both optional and independently initialized
+- `InvitationService`: admin-only preview and explicit send/resend for approved members who have not signed in. Preview and send share an escaped HTML template. `InvitationDelivery` records provider acceptance, failure, or uncertainty, never claims inbox delivery, and separates test attempts. Request IDs and a one-minute per-address cooldown prevent duplicate submissions. Member sends obey both notification stops. `INVITATION_TEST_EMAILS_ENABLED=true` permits only explicit test copies to the signed-in admin while those stops remain active. It defaults to false. No send occurs when adding a member or opening a preview.
 - `LedgerService`: **the only writer of ledger entries.** Posts a transaction and its entries inside one DB transaction, locking the accounts it touches `FOR UPDATE` in `id` order, then asserts the club-position identity and rolls back if it does not come to zero. Balances are derived by aggregating entries — there is no cached balance column, so drift is impossible. Corrections are reversing transactions; nothing updates or deletes an entry.
 - `SettlementService`: costs a played session into two bands (standard hours, optional extension), splits each band equally among only its own participants, and hands the resulting movements to `LedgerService`. Locks the session row like the RSVP capacity check. Refuses to drive shuttle stock negative, and refuses to settle a session twice
 
@@ -200,7 +211,14 @@ Read `.specify/memory/constitution.md` principles V–VII before touching any of
 separate: the dashboard handles people asking to join, the members page handles people who are (or
 were) in the club.
 
-**Money screens:** `/money` has Balances, My ledger and (admin) Club assets tabs; `/sessions`
+The **Not signed in** tab has invitation review controls: exact desktop/mobile email previews,
+test copy to the current admin, and paused or available member sending. `/welcome` is the public
+invitation landing page. It uses Google account selection and returns to a sign-in result screen.
+`handleAuthRedirect` updates both browser history and React Router after OAuth. The invitation
+URL contains no credentials and never grants membership; verified Auth0 email still claims the
+existing member row, retaining its ledger and RSVPs.
+
+**Money screens:** `/money` has Balances, Ledger and Club assets tabs for all approved members. The three asset cards highlight dollar values, with shuttle count below its value. Asset purchase forms remain admin-only. `LedgerHandler.RegisterRoutes` binds the same access checks in the server and handler tests. The ledger defaults to the caller, with all-member and top-up-only filters and paged history. `/accounts/activity` groups each game into one expandable row before filtering and pagination; expansion retains all member shares and balances. Imported regular and extra-hour charges combine by import and play date. Native settlements remain distinct. Raw entry endpoints remain available. Running balances use full account history before filtering. Imported source titles and category/source metadata come from retained Splitwise records. Asset movement dates use Sydney time; shuttle audit dates come only from confirmed opening/import snapshots. `/sessions`
 splits Upcoming from History; `/admin/sessions/:id/settle` is the settlement form, which
 re-previews on every change so the figures on screen are the figures that will be posted. A
 balance chip sits in the header on every screen.
