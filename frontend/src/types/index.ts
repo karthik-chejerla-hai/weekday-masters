@@ -367,12 +367,12 @@ export interface SettlementView extends SettlementPreview {
 }
 
 export interface PastSession {
-	 imported_date?: string;
-	 date_basis?: 'title' | 'recorded';
+  imported_date?: string;
+  date_basis?: 'title' | 'recorded';
   session_id: string;
   title: string;
-  starts_at: string;
-  ends_at: string;
+  starts_at?: string;
+  ends_at?: string;
   settled: boolean;
   total_cents: number;
   player_count: number;

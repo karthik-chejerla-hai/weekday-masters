@@ -180,6 +180,9 @@ func (s *SettlementService) defaultLines(sessionID uuid.UUID, hasExtra bool) ([]
 // The form re-previews on every change, so what the admin is looking at is
 // always what pressing settle will post.
 func (s *SettlementService) Preview(in SettleInput) (*SettlementPreview, error) {
+	if err := rejectImportedSettlement(database.DB, in.SessionID); err != nil {
+		return nil, err
+	}
 	r, err := s.resolveRates(in)
 	if err != nil {
 		return nil, err
@@ -435,6 +438,9 @@ func (s *SettlementService) Settle(in SettleInput) (*models.Settlement, *Settlem
 		var session models.Session
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			First(&session, "id = ?", in.SessionID).Error; err != nil {
+			return err
+		}
+		if err := rejectImportedSettlement(tx, in.SessionID); err != nil {
 			return err
 		}
 		if session.Status == models.SessionStatusCancelled {
@@ -695,15 +701,7 @@ type PastSessionView struct {
 // the wrong kindness.
 // historyQuery combines scheduled sessions with imported date-only sessions.
 // All source rows for a play date form one session, including extra-hour rows.
-const historyQuery = `WITH imported AS (
- SELECT import_id, played_date,
-        (array_agg(id ORDER BY row_number))[1] AS session_id,
-        (array_agg(description ORDER BY row_number))[1] AS title,
-        (array_agg(date_basis ORDER BY row_number))[1] AS date_basis,
-        SUM(cost_cents) AS total_cents
- FROM splitwise_records WHERE is_session = true
- GROUP BY import_id, played_date
-), history AS (
+const historyQuery = importedSessionsQuery + `, history AS (
  SELECT s.id AS session_id, s.title, s.starts_at, s.ends_at,
         (st.id IS NOT NULL) AS settled,
         COALESCE(charges.total_cents,0) AS total_cents,
@@ -714,6 +712,7 @@ const historyQuery = `WITH imported AS (
  LEFT JOIN (SELECT settlement_id,SUM(amount_cents) AS total_cents,COUNT(*) AS player_count
             FROM charge_lines GROUP BY settlement_id) charges ON charges.settlement_id=st.id
  WHERE s.ends_at IS NOT NULL AND s.ends_at < ?
+   AND NOT EXISTS (SELECT 1 FROM imported_schedule matched WHERE matched.session_id = s.id)
  UNION ALL
  SELECT i.session_id,i.title,NULL::timestamptz,NULL::timestamptz,true,i.total_cents,
         (SELECT COUNT(DISTINCT c.participant_id) FROM splitwise_changes c

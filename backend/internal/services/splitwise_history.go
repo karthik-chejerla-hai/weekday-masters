@@ -34,13 +34,53 @@ type ImportedSessionView struct {
 	Sources    []ImportedSessionSource `json:"sources"`
 }
 
-func importedSessionView(id uuid.UUID) (*SettlementView, error) {
-	var record models.SplitwiseRecord
-	err := database.DB.Where("id = ? AND is_session = true", id).First(&record).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil
-	}
+// A schedule with no native settlement on an imported play date is already
+// represented by the imported game. Keep native settlement history (including
+// reversals) distinct. Both history and settlement guards use this projection.
+const importedSessionsQuery = `WITH imported AS (
+ SELECT import_id, played_date,
+        (array_agg(id ORDER BY row_number))[1] AS session_id,
+        (array_agg(description ORDER BY row_number))[1] AS title,
+        (array_agg(date_basis ORDER BY row_number))[1] AS date_basis,
+        SUM(cost_cents) AS total_cents
+ FROM splitwise_records WHERE is_session = true
+ GROUP BY import_id, played_date
+), imported_schedule AS (
+ SELECT s.id AS session_id, i.session_id AS imported_session_id
+ FROM sessions s JOIN imported i ON i.played_date = s.session_date
+ WHERE NOT EXISTS (SELECT 1 FROM settlements st WHERE st.session_id = s.id)
+)`
+
+// importedSessionRecordID accepts either an imported source ID or an old
+// schedule ID. A zero UUID means that the session belongs to the native flow.
+func importedSessionRecordID(db *gorm.DB, id uuid.UUID) (uuid.UUID, error) {
+	var match struct{ ID uuid.UUID }
+	err := db.Raw(importedSessionsQuery+`
+ SELECT id FROM splitwise_records WHERE id = ? AND is_session = true
+ UNION ALL
+ SELECT imported_session_id AS id FROM imported_schedule WHERE session_id = ?
+ ORDER BY id LIMIT 1`, id, id).Scan(&match).Error
+	return match.ID, err
+}
+
+func rejectImportedSettlement(db *gorm.DB, id uuid.UUID) error {
+	importedID, err := importedSessionRecordID(db, id)
 	if err != nil {
+		return err
+	}
+	if importedID != uuid.Nil {
+		return ErrNotSettleable("This session was settled in Splitwise. View its imported split instead.")
+	}
+	return nil
+}
+
+func importedSessionView(id uuid.UUID) (*SettlementView, error) {
+	importedID, err := importedSessionRecordID(database.DB, id)
+	if err != nil || importedID == uuid.Nil {
+		return nil, err
+	}
+	var record models.SplitwiseRecord
+	if err := database.DB.First(&record, "id = ?", importedID).Error; err != nil {
 		return nil, err
 	}
 	// Extra-hour rows are separate source transactions but part of the same

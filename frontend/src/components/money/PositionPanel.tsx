@@ -34,7 +34,7 @@ export default function PositionPanel({ position }: PositionPanelProps) {
         </div>
       ))}
 
-      <div className="grid grid-cols-[repeat(3,minmax(240px,1fr))] gap-4 overflow-x-auto pb-2 sm:grid-cols-3" role="region" aria-label="Club asset cards" tabIndex={0}>
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 lg:gap-4" role="region" aria-label="Club asset cards">
         <AssetCard title="Unused Court Credit" value={formatCents(assets.court_credit_cents)} note="Available for next session" Icon={Wallet} date={`On: ${assetDate(assets.court_credit_as_of)}`} />
         <AssetCard title="Shuttles available" value={formatCents(assets.shuttle_stock_cents)} note={`${assets.shuttle_stock_units} shuttles in the bag`} Icon={ShuttleIcon} date={`Audited on: ${assetDate(assets.shuttle_audited_on)}`}>
           {assets.shuttle_stock_as_of && assets.shuttle_stock_as_of !== assets.shuttle_audited_on && (
@@ -91,14 +91,16 @@ function AssetCard({ title, value, note, date, Icon, children }: {
   Icon: React.ComponentType<React.SVGProps<SVGSVGElement>>; children?: React.ReactNode;
 }) {
   return (
-    <article className="flex min-w-0 flex-col rounded-2xl border border-primary-100 bg-white p-5 shadow-sm">
-      <span className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-primary-50 text-primary-700"><Icon className="h-5 w-5" aria-hidden="true" /></span>
-      <h2 className="text-sm font-semibold text-slate-700">{title}</h2>
-      <p className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 tabular-nums">{value}</p>
-      <p className="mt-1 mb-6 text-sm text-slate-500">{note}</p>
-      <div className="mt-auto border-t border-slate-100 pt-3">
-        <p className="text-xs font-medium text-slate-500">{date}</p>
-        {children}
+    <article className="flex min-w-0 gap-3 rounded-2xl border border-primary-100 bg-white p-4 shadow-sm lg:flex-col lg:gap-0 lg:p-5">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-700 lg:mb-4 lg:h-10 lg:w-10"><Icon className="h-5 w-5" aria-hidden="true" /></span>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <h2 className="text-sm font-semibold text-slate-700">{title}</h2>
+        <p className="mt-1 text-2xl font-semibold tracking-tight text-slate-950 tabular-nums lg:mt-2 lg:text-3xl">{value}</p>
+        <p className="mt-1 mb-3 text-sm text-slate-500 lg:mb-6">{note}</p>
+        <div className="mt-auto border-t border-slate-100 pt-2 lg:pt-3">
+          <p className="text-xs font-medium text-slate-500">{date}</p>
+          {children}
+        </div>
       </div>
     </article>
   );
