@@ -73,6 +73,22 @@ jobs:
           DATABASE_URL: ${{ steps.neon.outputs.db_url }}
         run: go run ./cmd/migrate
 
+      # A branch of production arrives carrying real members, but none of the
+      # states worth testing: nobody under the low-balance threshold, nobody in
+      # debt, no join request waiting, no played session left to settle. The
+      # seed adds those as clearly-tagged fixtures — @seed.invalid addresses,
+      # "[seed]" titles — and never modifies a row it did not create. It is
+      # idempotent, so re-running it on every synchronize push is a no-op.
+      - name: Seed the preview branch with test fixtures
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ steps.neon.outputs.db_url }}
+          # cmd/seed refuses a non-local target without this. It is set on this
+          # step alone, never at workflow level, so it cannot reach a job that
+          # has the production DATABASE_URL in scope.
+          SEED_ALLOW_PREVIEW: 'true'
+        run: go run ./cmd/seed -env=preview
+
       - name: Login to Artifact Registry
         uses: docker/login-action@v4
         with:
