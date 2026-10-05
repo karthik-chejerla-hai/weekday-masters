@@ -191,11 +191,21 @@ handler chain at registration time, so using the wrong group silently skips the 
   reading stock. Changed costs/stock reject confirmation; duplicates cannot post.
   `Settlement.ActualShuttles` is nullable so old estimated settlements retain their
   original meaning. Court top-up warnings use a standard two-hour booking.
+- `GameService`: doubles-only results for started native sessions. Any approved member can
+  save a reviewed result. Four distinct approved members and unequal integer scores
+  from 0 to 99 are required. Create request IDs prevent duplicate retries. The
+  recorder and approved admins can correct or void with a version check. Each
+  write appends an immutable `GameRevision`; voided games stay visible but do not
+  count in head-to-head records. Player comparisons count opposite sides only;
+  exact-team comparisons ignore partner order. Statistics are derived in SQL.
+  Referenced sessions cannot be deleted. Game data never changes money or RSVPs.
 - `AssistantService`: a bounded tool loop for approved members. Read tools resolve
   sessions, members, balances and stock from services. Only admins receive
   `prepare_expense`; no assistant tool writes money. Explicit HTTP confirmation
   uses `ExpenseService`. Provider interfaces and Groq HTTP code live under
   `internal/assistant`. Audio and conversation history are not persisted by Rally.
+  Approved members also receive `prepare_game`, which resolves exact names and
+  rejects ambiguous names. It only creates a review form; Save uses `GameService`.
 
 **Display names**: `User.DisplayName()` — the nickname a member chose, else their **first name**
 — is what should reach a screen; the full `Name` is for identifying them. Members set their own
@@ -257,6 +267,11 @@ Native charge lines include hosted guests; imported sessions use reviewed gross
 charges, not net credits. Deposits, opening balances and reversed charges do not
 count. Totals cover recorded history through today and refresh on the existing
 balance-change event.
+
+**Game screens:** `/sessions/:id/games` provides voice review, a manual form, paged
+results, correction controls and revision history. `/games` compares players or
+exact doubles teams across sessions. Both require approved membership. Native
+session history cards link to score entry; imported Splitwise cards do not.
 
 **Routing pattern:** `App.tsx` defines routes wrapped in `ProtectedRoute` which checks `isAuthenticated`, `isApproved`, and `isAdmin` from `AuthContext`. Unapproved users are redirected to `/pending`.
 

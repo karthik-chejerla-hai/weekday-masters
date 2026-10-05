@@ -41,6 +41,7 @@ export default function PastSessionCard({ session, isAdmin }: PastSessionCardPro
         )}
       </div>
 
+      {!session.imported_date && <Link to={`/sessions/${session.session_id}/games`} className="mt-3 inline-block text-sm font-medium text-primary-700">Game scores</Link>}
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
         {session.settled ? (
           <>

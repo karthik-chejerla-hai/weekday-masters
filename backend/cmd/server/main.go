@@ -131,6 +131,7 @@ func main() {
 		ledgerHandler.RegisterRoutes(protected)
 		expenseHandler.RegisterRoutes(protected)
 		assistantHandler.RegisterRoutes(protected)
+		handlers.NewGameHandler(services.NewGameService()).RegisterRoutes(protected)
 		{
 			// User routes
 			invitationHandler.RegisterRoutes(protected)

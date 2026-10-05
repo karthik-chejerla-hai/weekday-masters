@@ -223,3 +223,26 @@ func TestAssistantResolvesCurrentSessionsAndDuplicateNames(t *testing.T) {
 		t.Fatal("unneeded identity data sent to provider")
 	}
 }
+
+func TestAssistantGamePreviewNeverWrites(t *testing.T) {
+	_, session, players, _ := gameFixture(t)
+	raw, _ := json.Marshal(map[string]any{"session_id": session.ID, "team_a": []string{"Alice", "Bob"}, "team_b": []string{"Cara", "Dan"}, "score_a": 21, "score_b": 17})
+	provider := &scriptedPlanner{steps: []assistant.Step{callStep("prepare_game", string(raw))}}
+	service := NewAssistantService(provider, provider, nil, NewLedgerService())
+	reply, err := service.Reply(context.Background(), AssistantInput{SessionID: &session.ID, Messages: []ConversationMessage{{Role: "user", Content: "Alice and Bob beat Cara and Dan 21 to 17"}}}, players[4])
+	if err != nil || reply.Game == nil || reply.Game.ScoreA != 21 {
+		t.Fatalf("reply %+v %v", reply, err)
+	}
+	var count int64
+	database.DB.Model(&models.GameResult{}).Count(&count)
+	if count != 0 {
+		t.Fatal("assistant saved a game")
+	}
+	database.DB.Model(players[4]).Update("name", "Alice Other")
+	provider.index = 0
+	provider.steps = append(provider.steps, assistant.Step{Text: "Which Alice played?"})
+	reply, err = service.Reply(context.Background(), AssistantInput{Messages: []ConversationMessage{{Role: "user", Content: "Alice and Bob beat Cara and Dan 21 to 17"}}}, players[4])
+	if err != nil || reply.Game != nil || !strings.Contains(reply.Message, "Which Alice") {
+		t.Fatalf("ambiguous result %+v %v", reply, err)
+	}
+}

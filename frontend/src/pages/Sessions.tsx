@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { CalendarDays, Loader2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
 import { api } from '../services/api';
 import type { Club, PastSession, Session } from '../types';
@@ -64,6 +65,8 @@ export default function Sessions() {
         <h1 className="page-title">Sessions</h1>
         <p className="page-description">RSVP for upcoming games or review sessions you have already played.</p>
       </div>
+
+      <Link to="/games" className="btn-outline">Head-to-head records</Link>
 
       <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1" role="tablist" aria-label="Session views">
         {TABS.map(({ id, label }) => (

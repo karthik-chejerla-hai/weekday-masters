@@ -28,7 +28,7 @@ import (
 
 // truncateAll empties every table between tests. Kept in one place so a new
 // table cannot be added to the schema and forgotten in one suite's reset.
-const truncateAll = `TRUNCATE TABLE invitation_deliveries, splitwise_changes, splitwise_records, splitwise_participants, splitwise_imports,
+const truncateAll = `TRUNCATE TABLE game_revisions, game_results, invitation_deliveries, splitwise_changes, splitwise_records, splitwise_participants, splitwise_imports,
 	charge_lines, settlements,
 	ledger_entries, transactions, accounts,
 	rsvps, notifications, user_push_tokens,

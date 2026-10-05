@@ -307,6 +307,13 @@ func (s *SessionService) DeleteSession(id uuid.UUID) error {
 		if session.Status == models.SessionStatusCancelled {
 			return errors.New("cancelled sessions must be retained")
 		}
+		var games int64
+		if err := tx.Model(&models.GameResult{}).Where("session_id = ?", id).Count(&games).Error; err != nil {
+			return err
+		}
+		if games > 0 {
+			return gameConflict("This session has recorded games and cannot be deleted.")
+		}
 		var rsvpCount int64
 		if err := tx.Model(&models.RSVP{}).Where("session_id = ?", id).Count(&rsvpCount).Error; err != nil {
 			return err

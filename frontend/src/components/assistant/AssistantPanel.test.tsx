@@ -6,7 +6,7 @@ import AssistantPanel from './AssistantPanel';
 import { api } from '../../services/api';
 import { expenseFixture } from './fixtures';
 import { useAuth } from '../../context/useAuth';
-vi.mock('../../services/api', () => ({ api: { assistantStatus: vi.fn(), askAssistant: vi.fn(), confirmExpense: vi.fn() } }));
+vi.mock('../../services/api', () => ({ api: { assistantStatus: vi.fn(), askAssistant: vi.fn(), confirmExpense: vi.fn(), listMembers: vi.fn(), createGame: vi.fn() } }));
 vi.mock('../../context/useAuth', () => ({ useAuth: vi.fn() }));
 vi.mock('./VoiceRecorder', () => ({ default: ({ onTranscript }: { onTranscript: (text: string) => void }) => <button onClick={() => onTranscript('Three hours and eight shuttles')}>Mock recording</button> }));
 beforeEach(() => {
@@ -47,4 +47,20 @@ it('shows a quota error and preserves the request for retry', async () => {
   await user.type(screen.getByLabelText('Your message'), 'How much court credit?'); await user.click(screen.getByRole('button', { name: 'Send message' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('Usage limit reached.');
   expect(screen.getByLabelText('Your message')).toHaveValue('How much court credit?');
+});
+
+it('turns a game recording into a review and saves only on explicit confirmation', async () => {
+  const players = ['Alice', 'Bob', 'Cara', 'Dan'].map((name, i) => ({ id: String(i), name }));
+  vi.mocked(api.listMembers).mockResolvedValue(players as never);
+  vi.mocked(api.createGame).mockResolvedValue({id: 'game'} as never);
+  vi.mocked(api.askAssistant).mockResolvedValue({ message: 'Review game', game: { session: {id:'s1', title:'Club night', starts_at:'', ends_at:''}, team_a:players.slice(0,2), team_b:players.slice(2), score_a:21, score_b:17 } });
+  vi.mocked(useAuth).mockReturnValue({ isAdmin: false } as never);
+  const user = userEvent.setup(); const saved = vi.fn();
+  render(<MemoryRouter><AssistantPanel sessionId="s1" mode="games" onGameSaved={saved} /></MemoryRouter>);
+  await user.click(screen.getByRole('button', { name: 'Mock recording' }));
+  expect(await screen.findByRole('region', {name: 'Review game'})).toBeInTheDocument();
+  expect(api.createGame).not.toHaveBeenCalled();
+  await user.click(screen.getByRole('button', {name:'Save game'}));
+  expect(await screen.findByText('Game saved.')).toBeInTheDocument();
+  expect(saved).toHaveBeenCalledOnce();
 });

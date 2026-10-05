@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Calendar, Clock, Users, MapPin, AlertCircle, Loader2 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
@@ -214,6 +214,8 @@ export default function SessionDetail() {
           )}
         </div>
       )}
+
+      <Link to={`/sessions/${id}/games`} className="btn-primary w-full">Game scores and results</Link>
 
       <div className="bg-white rounded-xl border border-slate-200 p-6">
         <PlayerList
