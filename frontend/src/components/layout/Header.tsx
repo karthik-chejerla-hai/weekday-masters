@@ -5,6 +5,7 @@ import { useAuth } from '../../context/useAuth';
 import { api } from '../../services/api';
 import Avatar from '../ui/Avatar';
 import BalanceChip from '../money/BalanceChip';
+import SpendChip from '../money/SpendChip';
 import type { MyBalance } from '../../types';
 import { displayName } from '../../utils/members';
 
@@ -36,7 +37,7 @@ export default function Header() {
     return () => {
       cancelled = true;
     };
-  }, [isApproved, balanceVersion]);
+  }, [isApproved, balanceVersion, user?.id]);
 
   const primaryItems = [
     { to: '/dashboard', icon: Home, label: 'Home' },
@@ -60,13 +61,13 @@ export default function Header() {
 
   return (
     <>
-      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur md:hidden">
-        <div className="flex h-16 items-center justify-between px-4">
-          <Link to="/dashboard" className="flex items-center gap-2" aria-label="Rally home">
+      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
+        <div className="flex min-h-16 items-center justify-between gap-3 px-4 py-2 md:justify-end sm:px-6 lg:px-10">
+          <Link to="/dashboard" className="flex shrink-0 items-center gap-2 md:hidden" aria-label="Rally home">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-50 ring-1 ring-primary-100">
               <img src="/badminton.svg" alt="" className="h-8 w-8" />
             </span>
-            <span className="text-lg font-bold tracking-tight text-slate-950">Rally</span>
+            <span className="hidden text-lg font-bold tracking-tight text-slate-950 min-[400px]:inline">Rally</span>
           </Link>
 
           <div className="flex items-center gap-2">
@@ -75,6 +76,7 @@ export default function Header() {
                 <BalanceChip cents={balance.balance_cents} state={balance.state} compact />
               </Link>
             )}
+            <SpendChip />
             <Link to="/profile" aria-label={`Open ${displayName(user)}'s profile`} className="rounded-full focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2">
               <Avatar src={user?.profile_picture} name={displayName(user)} size="sm" />
             </Link>

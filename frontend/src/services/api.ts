@@ -20,6 +20,7 @@ import type {
   SelectableRSVPStatus,
   PlayerBalance,
   MyBalance,
+  PersonalSpend,
   LedgerEntryView,
   LedgerActivityView,
   Transaction,
@@ -278,6 +279,11 @@ class ApiService {
 
   async getMyBalance(): Promise<MyBalance> {
     const response = await this.client.get<MyBalance>('/accounts/me');
+    return response.data;
+  }
+
+  async getMySpend(): Promise<PersonalSpend> {
+    const response = await this.client.get<PersonalSpend>('/accounts/me/spend');
     return response.data;
   }
 

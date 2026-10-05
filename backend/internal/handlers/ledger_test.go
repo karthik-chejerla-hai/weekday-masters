@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/weekday-masters/backend/internal/models"
+	"github.com/weekday-masters/backend/internal/services"
 )
 
 // The services own the arithmetic and have their own tests. What these assert is
@@ -260,7 +261,7 @@ func TestSharedMoneyRoutesEnforceAccessAndFilters(t *testing.T) {
 	removed := makeUser(t, models.RolePlayer, models.MembershipRemoved)
 	topup(t, h, admin, admin, 1000)
 	topup(t, h, admin, player, 5000)
-	for _, path := range []string{"/api/position", "/api/accounts/entries?scope=all", "/api/accounts/activity?scope=all"} {
+	for _, path := range []string{"/api/position", "/api/accounts/entries?scope=all", "/api/accounts/activity?scope=all", "/api/accounts/me/spend"} {
 		h.as(nil).get(path).expect(http.StatusUnauthorized)
 		h.as(pending).get(path).expect(http.StatusForbidden)
 		h.as(removed).get(path).expect(http.StatusForbidden)
@@ -287,6 +288,24 @@ func TestSharedMoneyRoutesEnforceAccessAndFilters(t *testing.T) {
 	}
 	h.as(player).get("/api/accounts/entries?scope=invalid").expect(http.StatusBadRequest)
 	h.as(player).get("/api/accounts/entries?type=invalid").expect(http.StatusBadRequest)
+}
+
+func TestPersonalSpendOnlyReturnsSignedInMembersCharges(t *testing.T) {
+	h := newHarness(t)
+	admin, player := makeAdmin(t), makePlayer(t)
+	session := pastSession(t, h, admin)
+	h.as(admin).post(fmt.Sprintf("/api/admin/sessions/%s/settle", session.ID), map[string]any{
+		"lines": []map[string]any{{"user_id": player.ID.String(), "in_base": true}},
+	}).expect(http.StatusCreated)
+	var spend services.PersonalSpend
+	h.as(player).get("/api/accounts/me/spend?scope=all&user_id=" + admin.ID.String()).expect(http.StatusOK).decode(&spend)
+	if spend.AllTimeCents != 10167 {
+		t.Fatalf("personal spend %+v", spend)
+	}
+	h.as(admin).get("/api/accounts/me/spend?user_id=" + player.ID.String()).expect(http.StatusOK).decode(&spend)
+	if spend.AllTimeCents != 0 || spend.YTDCents != 0 || spend.RecordedFrom != nil {
+		t.Fatalf("admin request leaked another member's charges: %+v", spend)
+	}
 }
 
 func TestLedgerActivityReturnsWrappedEntriesAndFilters(t *testing.T) {

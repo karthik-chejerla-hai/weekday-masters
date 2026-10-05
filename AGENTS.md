@@ -241,10 +241,16 @@ invitation landing page. It uses Google account selection and returns to a sign-
 URL contains no credentials and never grants membership; verified Auth0 email still claims the
 existing member row, retaining its ledger and RSVPs.
 
-**Money screens:** `/money` has Balances, Ledger and Club assets tabs for all approved members. The three asset cards highlight dollar values, with shuttle count below its value. Asset purchase forms remain admin-only. `LedgerHandler.RegisterRoutes` binds the same access checks in the server and handler tests. The ledger defaults to the caller, with all-member and top-up-only filters and paged history. `/accounts/activity` groups each game into one expandable row before filtering and pagination; expansion retains all member shares and balances. Imported regular and extra-hour charges combine by import and play date. Native settlements remain distinct. Raw entry endpoints remain available. Running balances use full account history before filtering. Imported source titles and category/source metadata come from retained Splitwise records. Asset movement dates use Sydney time; shuttle audit dates come only from confirmed opening/import snapshots. `/sessions`
+**Money screens:** `/money` has Balances, Ledger, Club assets and Analytics tabs for all approved members. The three asset cards highlight dollar values, with shuttle count below its value. Asset purchase forms remain admin-only. `LedgerHandler.RegisterRoutes` binds the same access checks in the server and handler tests. The ledger defaults to the caller, with all-member and top-up-only filters and paged history. `/accounts/activity` groups each game into one expandable row before filtering and pagination; expansion retains all member shares and balances. Imported regular and extra-hour charges combine by import and play date. Native settlements remain distinct. Raw entry endpoints remain available. Running balances use full account history before filtering. Imported source titles and category/source metadata come from retained Splitwise records. Asset movement dates use Sydney time; shuttle audit dates come only from confirmed opening/import snapshots. `/sessions`
 splits Upcoming from History; `/admin/sessions/:id/settle` is the settlement form, which
 re-previews on every change so the figures on screen are the figures that will be posted. A
-balance chip sits in the header on every screen.
+balance chip sits in the header on every screen. A personal spend chip beside it opens
+`/money?tab=analytics`. `GET /accounts/me/spend` returns only the approved caller's
+YTD and all-time session charges plus monthly YTD amounts, using Sydney play dates.
+Native charge lines include hosted guests; imported sessions use reviewed gross
+charges, not net credits. Deposits, opening balances and reversed charges do not
+count. Totals cover recorded history through today and refresh on the existing
+balance-change event.
 
 **Routing pattern:** `App.tsx` defines routes wrapped in `ProtectedRoute` which checks `isAuthenticated`, `isApproved`, and `isAdmin` from `AuthContext`. Unapproved users are redirected to `/pending`.
 

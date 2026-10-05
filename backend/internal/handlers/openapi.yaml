@@ -841,6 +841,64 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /accounts/me/spend:
+    get:
+      tags: [Ledger]
+      summary: The approved caller's personal badminton spend
+      description: >
+        Recorded session charges to the caller's account, including hosted guests.
+        Combines native charge lines and reviewed imported gross charges, excluding
+        reversed charges, deposits, withdrawals, opening balances and unsettled sessions.
+        Calendar periods use Sydney play dates through today, not posting dates.
+        Imported dates retain the source's recorded-date fallback where no play date
+        was known. No query parameter can change the member or select club-wide spend.
+        All time covers only history recorded in Rally.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Personal totals and zero-filled months from January through the current month
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [year, as_of, recorded_from, ytd_cents, all_time_cents, months]
+                properties:
+                  year:
+                    type: integer
+                  as_of:
+                    type: string
+                    format: date
+                  recorded_from:
+                    type: string
+                    format: date
+                    nullable: true
+                    description: Earliest included session date, or null when there is no recorded history
+                  ytd_cents:
+                    type: integer
+                    format: int64
+                  all_time_cents:
+                    type: integer
+                    format: int64
+                  months:
+                    type: array
+                    items:
+                      type: object
+                      required: [month, amount_cents]
+                      properties:
+                        month:
+                          type: integer
+                          minimum: 1
+                          maximum: 12
+                        amount_cents:
+                          type: integer
+                          format: int64
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          description: Personal spend could not be loaded
+
   /accounts/me/entries:
     get:
       tags: [Ledger]

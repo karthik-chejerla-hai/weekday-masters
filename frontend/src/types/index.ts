@@ -222,6 +222,15 @@ export interface MyBalance {
   state: BalanceState;
 }
 
+export interface PersonalSpend {
+  year: number;
+  as_of: string;
+  recorded_from: string | null;
+  ytd_cents: number;
+  all_time_cents: number;
+  months: Array<{ month: number; amount_cents: number }>;
+}
+
 export interface Transaction {
   id: string;
   kind: TransactionKind;
