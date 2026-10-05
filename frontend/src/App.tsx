@@ -5,6 +5,8 @@ import Layout from './components/layout/Layout';
 import Home from './pages/Home';
 import Welcome from './pages/Welcome';
 import Dashboard from './pages/Dashboard';
+import Assistant from './pages/Assistant';
+import AdminExpense from './pages/AdminExpense';
 import Sessions from './pages/Sessions';
 import Money from './pages/Money';
 import SessionSettlement from './pages/SessionSettlement';
@@ -62,6 +64,8 @@ function AppRoutes() {
       } />
 
       <Route element={<Layout />}>
+        <Route path="/assistant" element={<ProtectedRoute><Assistant /></ProtectedRoute>} />
+        <Route path="/admin/sessions/:id/expense" element={<ProtectedRoute requireAdmin><AdminExpense /></ProtectedRoute>} />
         <Route path="/dashboard" element={
           <ProtectedRoute>
             <Dashboard />

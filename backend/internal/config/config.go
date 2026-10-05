@@ -8,6 +8,9 @@ import (
 )
 
 type Config struct {
+	GroqAPIKey                  string
+	GroqModel                   string
+	GroqSpeechModel             string
 	Port                        string
 	DatabaseURL                 string
 	Auth0Domain                 string
@@ -38,6 +41,9 @@ func Load() *Config {
 	godotenv.Load()
 
 	return &Config{
+		GroqAPIKey:                  getEnv("GROQ_API_KEY", ""),
+		GroqModel:                   getEnv("GROQ_MODEL", "openai/gpt-oss-120b"),
+		GroqSpeechModel:             getEnv("GROQ_SPEECH_MODEL", "whisper-large-v3-turbo"),
 		Port:                        getEnv("PORT", "8080"),
 		DatabaseURL:                 getEnv("DATABASE_URL", "postgres://badminton:badminton123@localhost:5432/badminton_club?sslmode=disable"),
 		Auth0Domain:                 getEnv("AUTH0_DOMAIN", ""),

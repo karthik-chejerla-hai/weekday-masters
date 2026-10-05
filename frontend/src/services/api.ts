@@ -1,5 +1,9 @@
 import axios, { AxiosInstance } from 'axios';
 import type {
+  AssistantMessage,
+  AssistantReply,
+  ExpenseInput,
+  ExpensePreview,
   User,
   Club,
   InviteMemberInput,
@@ -394,6 +398,42 @@ class ApiService {
 
   async getSessionSettlement(sessionId: string): Promise<SettlementView> {
     const response = await this.client.get<SettlementView>(`/sessions/${sessionId}/settlement`);
+    return response.data;
+  }
+
+  async listUnsettledSessions(): Promise<{ items: PastSession[]; total: number }> {
+    const response = await this.client.get('/sessions/unsettled');
+    return response.data;
+  }
+
+  async previewExpense(sessionId: string, input: ExpenseInput): Promise<ExpensePreview> {
+    const response = await this.client.post<ExpensePreview>(`/admin/sessions/${sessionId}/expense/preview`, input);
+    return response.data;
+  }
+
+  async confirmExpense(sessionId: string, input: ExpenseInput): Promise<{ id: string }> {
+    const response = await this.client.post(`/admin/sessions/${sessionId}/expense`, input);
+    return response.data;
+  }
+
+  async assistantStatus(): Promise<{ enabled: boolean }> {
+    const response = await this.client.get('/assistant/status');
+    return response.data;
+  }
+
+  async askAssistant(messages: AssistantMessage[], sessionId?: string, signal?: AbortSignal): Promise<AssistantReply> {
+    const response = await this.client.post<AssistantReply>('/assistant/messages', { messages, session_id: sessionId }, { signal });
+    return response.data;
+  }
+
+  async transcribeAudio(audio: Blob, signal?: AbortSignal): Promise<{ text: string }> {
+    const type = audio.type.split(';')[0];
+    const extension = type.includes('mp4') ? 'mp4' : type.includes('ogg') ? 'ogg' : 'webm';
+    const form = new FormData();
+    form.append('file', audio, `recording.${extension}`);
+    const response = await this.client.post('/assistant/transcribe', form, {
+      headers: { 'Content-Type': undefined }, signal,
+    });
     return response.data;
   }
 

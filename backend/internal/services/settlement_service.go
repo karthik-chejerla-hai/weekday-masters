@@ -2,6 +2,9 @@ package services
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -43,6 +46,8 @@ type LineInput struct {
 // else.
 type SettleInput struct {
 	SessionID       uuid.UUID
+	ActualShuttles  *int
+	ExpectedPreview string
 	BaseHours       *float64
 	BaseRateCents   *int64
 	ExtraHours      *float64
@@ -90,14 +95,16 @@ type StockView struct {
 
 // SettlementPreview is what the form shows, and exactly what settling will post.
 type SettlementPreview struct {
-	Bands      map[string]*BandView `json:"bands"`
-	Totals     SettlementTotals     `json:"totals"`
-	Lines      []ChargeLineView     `json:"lines"`
-	StockAfter StockView            `json:"stock_after"`
+	Fingerprint string               `json:"fingerprint,omitempty"`
+	Bands       map[string]*BandView `json:"bands"`
+	Totals      SettlementTotals     `json:"totals"`
+	Lines       []ChargeLineView     `json:"lines"`
+	StockAfter  StockView            `json:"stock_after"`
 }
 
 // rates carries the values actually used, after club defaults are applied.
 type rates struct {
+	actualShuttles  *int
 	baseHours       float64
 	baseRateCents   int64
 	extraHours      float64
@@ -105,11 +112,21 @@ type rates struct {
 	shuttlesPerHour float64
 }
 
-func (r rates) baseCourtCents() int64  { return int64(r.baseHours * float64(r.baseRateCents)) }
-func (r rates) extraCourtCents() int64 { return int64(r.extraHours * float64(r.extraRateCents)) }
-func (r rates) baseShuttles() int      { return int(r.baseHours * r.shuttlesPerHour) }
-func (r rates) extraShuttles() int     { return int(r.extraHours * r.shuttlesPerHour) }
-func (r rates) hasExtra() bool         { return r.extraHours > 0 }
+func (r rates) baseCourtCents() int64 {
+	if r.actualShuttles != nil {
+		return int64(r.baseHours) * r.baseRateCents
+	}
+	return int64(r.baseHours * float64(r.baseRateCents))
+}
+func (r rates) extraCourtCents() int64 {
+	if r.actualShuttles != nil {
+		return int64(r.extraHours) * r.extraRateCents
+	}
+	return int64(r.extraHours * float64(r.extraRateCents))
+}
+func (r rates) baseShuttles() int  { return int(r.baseHours * r.shuttlesPerHour) }
+func (r rates) extraShuttles() int { return int(r.extraHours * r.shuttlesPerHour) }
+func (r rates) hasExtra() bool     { return r.extraHours > 0 }
 
 // resolveRates fills anything the caller left unset from club settings.
 func (s *SettlementService) resolveRates(in SettleInput) (rates, error) {
@@ -123,6 +140,7 @@ func (s *SettlementService) resolveRates(in SettleInput) (rates, error) {
 		baseRateCents:   club.BaseRateCents,
 		extraRateCents:  club.ExtraRateCents,
 		shuttlesPerHour: club.ShuttlesPerHour,
+		actualShuttles:  in.ActualShuttles,
 	}
 	if in.BaseHours != nil {
 		r.baseHours = *in.BaseHours
@@ -145,6 +163,9 @@ func (s *SettlementService) resolveRates(in SettleInput) (rates, error) {
 	}
 	if r.extraHours < 0 || r.baseRateCents < 0 || r.extraRateCents < 0 || r.shuttlesPerHour < 0 {
 		return rates{}, ErrNotSettleable("Rates and hours cannot be negative.")
+	}
+	if r.actualShuttles != nil && (r.baseHours != 2 || (r.extraHours != 0 && r.extraHours != 1)) {
+		return rates{}, ErrNotSettleable("Actual-count expenses support two or three whole hours.")
 	}
 	return r, nil
 }
@@ -233,6 +254,20 @@ func (s *SettlementService) cost(
 	// of a shuttle depends on what is in the bag at that moment.
 	baseUnits := r.baseShuttles()
 	extraUnits := r.extraShuttles()
+	if r.actualShuttles != nil {
+		if *r.actualShuttles < 0 || *r.actualShuttles > 200 {
+			return nil, nil, ErrNotSettleable("Enter a shuttle count from 0 to 200.")
+		}
+		baseUnits, extraUnits = *r.actualShuttles, 0
+		for _, line := range lines {
+			if !line.InBase || line.Comped || line.GuestName != "" {
+				return nil, nil, ErrNotSettleable("Actual-count expenses require approved members in the standard hours, without guests or comped lines.")
+			}
+		}
+		if r.hasExtra() && countHeads(lines, func(l LineInput) bool { return l.InExtra }) == 0 {
+			return nil, nil, ErrNotSettleable("Select at least one extra-hour player, or choose two hours.")
+		}
+	}
 
 	baseShuttleCents, afterBase, err := stock.Consume(baseUnits)
 	if err != nil {
@@ -241,6 +276,16 @@ func (s *SettlementService) cost(
 	extraShuttleCents, afterExtra, err := afterBase.Consume(extraUnits)
 	if err != nil {
 		return nil, nil, wrapStockShortfall(err, baseUnits+extraUnits, stock.Units)
+	}
+	if r.actualShuttles != nil && r.hasExtra() {
+		// Consume the whole actual count once. Allocate its value 2:1 by time,
+		// using largest remainder in integer cents. Units stay on the base band
+		// as the whole-session count; a physical shuttle need not divide by three.
+		extraShuttleCents = baseShuttleCents / 3
+		if baseShuttleCents%3 == 2 {
+			extraShuttleCents++
+		}
+		baseShuttleCents -= extraShuttleCents
 	}
 
 	baseTotal := r.baseCourtCents() + baseShuttleCents
@@ -265,6 +310,16 @@ func (s *SettlementService) cost(
 		amounts[charge.lineIndex] += charge.amount
 	}
 
+	// When everyone stays, split once so shares differ by at most one cent.
+	if r.actualShuttles != nil && (!r.hasExtra() || countHeads(lines, func(l LineInput) bool { return l.InExtra }) == len(lines)) {
+		shares, err := splitBand(sessionID, baseTotal+extraTotal, lines, func(l LineInput) bool { return l.InBase })
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, share := range shares {
+			amounts[share.lineIndex] = share.amount
+		}
+	}
 	// A comped player still counted as a head above, so nobody else's share
 	// moved. Their waived amount is absorbed by the club rather than quietly
 	// redistributed to the others.
@@ -318,6 +373,7 @@ func (s *SettlementService) cost(
 		Lines:      views,
 		StockAfter: StockView{Units: afterExtra.Units, AmountCents: afterExtra.ValueCents},
 	}
+	preview.Fingerprint = settlementFingerprint(sessionID, r, preview)
 	return preview, amounts, nil
 }
 
@@ -473,6 +529,24 @@ func (s *SettlementService) Settle(in SettleInput) (*models.Settlement, *Settlem
 			return ErrNotSettleable("Nobody is on this settlement.")
 		}
 
+		// Acquire all affected account locks in the ledger's global order before
+		// reading stock. Locking stock alone first can deadlock with a purchase.
+		var accounts []models.Account
+		ids := make([]uuid.UUID, 0, len(lines))
+		for _, line := range lines {
+			ids = append(ids, line.UserID)
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("kind != ? OR user_id IN ?", models.AccountKindPlayer, ids).Order("id").Find(&accounts).Error; err != nil {
+			return err
+		}
+		if in.ActualShuttles != nil {
+			if session.EndsAt == nil || !session.EndsAt.Before(utils.NowInSydney()) {
+				return ErrNotSettleable("This session has not finished yet.")
+			}
+			if err := validateExpenseMembers(tx, lines); err != nil {
+				return err
+			}
+		}
 		stock, err := s.ledger.StockPosition(tx)
 		if err != nil {
 			return err
@@ -481,6 +555,9 @@ func (s *SettlementService) Settle(in SettleInput) (*models.Settlement, *Settlem
 		costed, amounts, err := s.cost(in.SessionID, r, lines, stock)
 		if err != nil {
 			return err
+		}
+		if in.ExpectedPreview != "" && in.ExpectedPreview != costed.Fingerprint {
+			return newLedgerError("preview_changed", 409, "The expense has changed. Review a new preview before confirming.")
 		}
 		preview = costed
 
@@ -503,6 +580,7 @@ func (s *SettlementService) Settle(in SettleInput) (*models.Settlement, *Settlem
 
 		record := models.Settlement{
 			SessionID:        in.SessionID,
+			ActualShuttles:   in.ActualShuttles,
 			TransactionID:    txn.ID,
 			BaseHours:        r.baseHours,
 			BaseRateCents:    r.baseRateCents,
@@ -762,6 +840,7 @@ type SessionSummary struct {
 
 // SettlementRates is the snapshot a settlement was costed at.
 type SettlementRates struct {
+	ActualShuttles  *int    `json:"actual_shuttles,omitempty"`
 	BaseHours       float64 `json:"base_hours"`
 	BaseRateCents   int64   `json:"base_rate_cents"`
 	ExtraHours      float64 `json:"extra_hours"`
@@ -829,6 +908,10 @@ func (s *SettlementService) SettlementForSession(sessionID uuid.UUID) (*Settleme
 
 	baseCourt := int64(settlement.BaseHours * float64(settlement.BaseRateCents))
 	extraCourt := int64(settlement.ExtraHours * float64(settlement.ExtraRateCents))
+	if settlement.ActualShuttles != nil {
+		baseCourt = int64(settlement.BaseHours) * settlement.BaseRateCents
+		extraCourt = int64(settlement.ExtraHours) * settlement.ExtraRateCents
+	}
 
 	bands := map[string]*BandView{
 		"base": {
@@ -861,6 +944,7 @@ func (s *SettlementService) SettlementForSession(sessionID uuid.UUID) (*Settleme
 			EndsAt:   session.EndsAt,
 		},
 		Rates: SettlementRates{
+			ActualShuttles:  settlement.ActualShuttles,
 			BaseHours:       settlement.BaseHours,
 			BaseRateCents:   settlement.BaseRateCents,
 			ExtraHours:      settlement.ExtraHours,
@@ -959,4 +1043,19 @@ func (s *SettlementService) notifyLowBalances(
 			"balance_cents": fmt.Sprintf("%d", balance),
 		})
 	}
+}
+
+// settlementFingerprint binds the reviewed costs to their inputs and rates.
+// It is a concurrency token, not an authorization token; routes enforce access.
+func settlementFingerprint(id uuid.UUID, r rates, p *SettlementPreview) string {
+	value := struct {
+		ID      uuid.UUID
+		Hours   [2]float64
+		Rates   [2]int64
+		Actual  *int
+		Preview *SettlementPreview
+	}{id, [2]float64{r.baseHours, r.extraHours}, [2]int64{r.baseRateCents, r.extraRateCents}, r.actualShuttles, p}
+	data, _ := json.Marshal(value)
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }

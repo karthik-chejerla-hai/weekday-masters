@@ -8,7 +8,7 @@ import type { Session } from '../types';
 
 vi.mock('../context/useAuth', () => ({ useAuth: vi.fn() }));
 vi.mock('../services/api', () => ({
-  api: { listSessions: vi.fn(), listCancelledSessions: vi.fn(), getClub: vi.fn() },
+  api: { listSessions: vi.fn(), listCancelledSessions: vi.fn(), listUnsettledSessions: vi.fn(), getClub: vi.fn() },
 }));
 
 function makeSession(overrides: Partial<Session> = {}): Session {
@@ -48,6 +48,7 @@ beforeEach(() => {
     user: { name: 'Jane Player' },
   } as unknown as ReturnType<typeof useAuth>);
   vi.mocked(api.listSessions).mockResolvedValue([]);
+  vi.mocked(api.listUnsettledSessions).mockResolvedValue({items: [],total: 0});
   vi.mocked(api.listCancelledSessions).mockResolvedValue([]);
   vi.mocked(api.getClub).mockResolvedValue({ venue_name: 'Olympic Park' } as never);
 });
@@ -102,4 +103,27 @@ describe('Dashboard page', () => {
 
     await waitFor(() => expect(screen.getByText(/Welcome back/)).toBeInTheDocument());
   });
+});
+
+const outstanding = [
+  {session_id: 'older',title: 'Older game',ends_at: '2026-09-01T12:00:00Z',player_count: 4,settled:false,total_cents:0},
+  {session_id: 'recent',title: 'Recent game',ends_at: '2026-09-08T12:00:00Z',player_count: 5,settled:false,total_cents:0},
+];
+it('shows all pending expenses above Next game for admins', async () => {
+  vi.mocked(useAuth).mockReturnValue({user:{name:'Admin'},isAdmin:true} as ReturnType<typeof useAuth>);
+  vi.mocked(api.listSessions).mockResolvedValue([makeSession()]);
+  vi.mocked(api.listUnsettledSessions).mockResolvedValue({items:outstanding,total:2});
+  renderPage();
+  const region=await screen.findByRole('region',{name:/Expenses to record/});
+  expect(within(region).getByText('Older game')).toBeInTheDocument();
+  expect(within(region).getAllByRole('link',{name:'Record expense'})).toHaveLength(2);
+  expect(within(region).getByText(/4 confirmed players/)).toBeInTheDocument();
+  expect(region.compareDocumentPosition(screen.getByRole('region',{name:'Your next game'})) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+it('shows members the expense status without a write action', async () => {
+  vi.mocked(api.listUnsettledSessions).mockResolvedValue({items:outstanding,total:2});
+  renderPage();
+  expect(await screen.findAllByText('Expense pending')).toHaveLength(2);
+  expect(screen.queryByRole('link',{name:'Record expense'})).not.toBeInTheDocument();
+  expect(screen.queryByText('$0.00')).not.toBeInTheDocument();
 });

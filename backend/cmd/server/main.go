@@ -7,6 +7,7 @@ import (
 	"syscall"
 
 	"github.com/gin-gonic/gin"
+	"github.com/weekday-masters/backend/internal/assistant"
 	"github.com/weekday-masters/backend/internal/config"
 	"github.com/weekday-masters/backend/internal/database"
 	"github.com/weekday-masters/backend/internal/handlers"
@@ -82,6 +83,15 @@ func main() {
 	ledgerHandler := handlers.NewLedgerHandler(ledgerService)
 	settlementService := services.NewSettlementService(ledgerService).WithNotifier(notificationService)
 	settlementHandler := handlers.NewSettlementHandler(settlementService)
+	expenseService := services.NewExpenseService(settlementService, ledgerService)
+	expenseHandler := handlers.NewExpenseHandler(expenseService)
+	var planner assistant.Planner
+	var transcriber assistant.Transcriber
+	if cfg.GroqAPIKey != "" {
+		provider := assistant.NewGroq(cfg.GroqAPIKey, cfg.GroqModel, cfg.GroqSpeechModel)
+		planner, transcriber = provider, provider
+	}
+	assistantHandler := handlers.NewAssistantHandler(services.NewAssistantService(planner, transcriber, expenseService, ledgerService))
 
 	// Auth0 config for middleware
 	auth0Config := middleware.Auth0Config{
@@ -119,6 +129,8 @@ func main() {
 		protected := api.Group("")
 		protected.Use(middleware.AuthMiddleware(auth0Config))
 		ledgerHandler.RegisterRoutes(protected)
+		expenseHandler.RegisterRoutes(protected)
+		assistantHandler.RegisterRoutes(protected)
 		{
 			// User routes
 			invitationHandler.RegisterRoutes(protected)

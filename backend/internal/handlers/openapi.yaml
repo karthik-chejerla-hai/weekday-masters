@@ -17,6 +17,10 @@ tags:
     description: Session listing and details
   - name: RSVP
     description: RSVP management
+  - name: Assistant
+    description: Voice transcription and bounded club-data tools for approved members
+  - name: Settlement
+    description: Session expenses and historical breakdowns
   - name: Notifications
     description: Notification preferences, push tokens, and history
   - name: "Admin: Members"
@@ -1130,6 +1134,196 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  # --- Assistant and actual-count expenses --------------------------------
+
+  /assistant/status:
+    get:
+      tags: [Assistant]
+      summary: Check assistant configuration
+      description: Requires approved membership. Does not return credentials or call the provider.
+      responses:
+        "200":
+          description: Whether speech and planning are configured
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enabled]
+                properties:
+                  enabled: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /assistant/transcribe:
+    post:
+      tags: [Assistant]
+      summary: Transcribe a recording for review
+      description: >
+        Requires approved membership. Accepts at most 10 MiB of audio. Supports
+        WebM, MP4, M4A, Ogg, WAV, MP3 and FLAC. The browser records up to 60 seconds.
+        Rally does not retain recordings. This endpoint never invokes application tools.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "200":
+          description: Transcript to edit before submitting a message
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [text]
+                properties:
+                  text: { type: string, maxLength: 4000 }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { description: No clear speech was recognised }
+        "429": { $ref: "#/components/responses/AssistantFailure" }
+        "502": { $ref: "#/components/responses/AssistantFailure" }
+        "503": { $ref: "#/components/responses/AssistantFailure" }
+        "504": { $ref: "#/components/responses/AssistantFailure" }
+
+  /assistant/messages:
+    post:
+      tags: [Assistant]
+      summary: Ask about club data or prepare an expense
+      description: >
+        Approved members can query club data. Only admins can prepare expense
+        previews. No tool writes money. The caller must confirm through the expense
+        endpoint. Conversation history is bounded and is not stored by Rally.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [messages]
+              properties:
+                session_id: { type: string, format: uuid }
+                messages:
+                  type: array
+                  minItems: 1
+                  maxItems: 16
+                  description: Last message must be user. Total content is limited to 16000 UTF-8 bytes.
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [role, content]
+                    properties:
+                      role: { type: string, enum: [user, assistant] }
+                      content: { type: string, minLength: 1, maxLength: 4000 }
+      responses:
+        "200":
+          description: Answer, follow-up question, or an expense preview
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message]
+                properties:
+                  message: { type: string }
+                  expense: { $ref: "#/components/schemas/ExpensePreview" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/AssistantFailure" }
+        "502": { $ref: "#/components/responses/AssistantFailure" }
+        "503": { $ref: "#/components/responses/AssistantFailure" }
+        "504": { $ref: "#/components/responses/AssistantFailure" }
+
+  /sessions/unsettled:
+    get:
+      tags: [Settlement]
+      summary: List every finished native session awaiting expenses
+      description: Requires approved membership. Excludes cancelled and currently settled sessions. Oldest first, without history pagination. Player count includes only confirmed RSVPs.
+      responses:
+        "200":
+          description: Outstanding sessions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total: { type: integer }
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/PastSession" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /admin/sessions/{id}/expense/preview:
+    post:
+      tags: [Settlement]
+      summary: Preview player shares using actual shuttle consumption
+      description: Admin only. Select a finished, non-cancelled native session. Omitting participant_ids selects confirmed RSVPs, including no-shows. For three hours, extra_participant_ids selects who stayed for the extra hour; omission means everyone stayed. Shuttle value is allocated 2 to 1 by hours and shared within each group. Explicit empty lists are invalid.
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExpenseInput" }
+      responses:
+        "200":
+          description: Exact charges and current asset forecast, without writes
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExpensePreview" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/LedgerConflict" }
+        "422": { $ref: "#/components/responses/LedgerUnprocessable" }
+
+  /admin/sessions/{id}/expense:
+    post:
+      tags: [Settlement]
+      summary: Confirm the reviewed expense
+      description: >
+        Admin only. Send canonical input from the preview and its fingerprint as
+        expected_preview. Under session and account locks, the server recalculates
+        costs and rejects changed previews with 409 preview_changed. Duplicate
+        confirmation returns 409 session_already_settled. Uses the existing ledger.
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/ExpenseInput"
+                - type: object
+                  required: [expected_preview]
+      responses:
+        "201":
+          description: Recorded settlement
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string, format: uuid }
+                  session_id: { type: string, format: uuid }
+                  transaction_id: { type: string, format: uuid }
+                  actual_shuttles: { type: integer }
+                  settled_at: { type: string, format: date-time }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/LedgerConflict" }
+        "422": { $ref: "#/components/responses/LedgerUnprocessable" }
+
   # --- Settlement ---------------------------------------------------------
 
   /sessions/history:
@@ -1362,6 +1556,15 @@ components:
         format: uuid
 
   responses:
+    AssistantFailure:
+      description: Assistant unavailable, rate limited, timed out, or returned an invalid response. No provider details or credentials are exposed.
+      headers:
+        Retry-After:
+          description: Retry delay in seconds when supplied by the provider
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/LedgerError" }
     TransactionCreated:
       description: Transaction written
       content:
@@ -2176,6 +2379,45 @@ components:
 
     # --- Settlement ---------------------------------------------------------
 
+    ExpenseInput:
+      type: object
+      additionalProperties: false
+      required: [total_hours, shuttles_used]
+      properties:
+        total_hours: { type: integer, enum: [2, 3] }
+        shuttles_used: { type: integer, minimum: 0, maximum: 200 }
+        participant_ids:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        extra_participant_ids:
+          type: array
+          description: Only for three hours. Nonempty subset of the main participants. Omission means everyone stayed for the extra hour.
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        expected_preview: { type: string, minLength: 64, maxLength: 64 }
+
+    ExpensePreview:
+      type: object
+      properties:
+        session:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            title: { type: string }
+            starts_at: { type: string, format: date-time }
+            ends_at: { type: string, format: date-time }
+        input: { $ref: "#/components/schemas/ExpenseInput" }
+        settlement: { $ref: "#/components/schemas/SettlementPreview" }
+        fingerprint: { type: string }
+        court_credit_after_cents: { type: integer, format: int64 }
+        next_court_cost_cents: { type: integer, format: int64, description: Cost of the next standard two-hour booking }
+        court_topup_needed: { type: boolean }
+
     SettlementRequest:
       type: object
       description: >
@@ -2232,6 +2474,7 @@ components:
     SettlementPreview:
       type: object
       properties:
+        fingerprint: { type: string }
         bands:
           type: object
           properties:
@@ -2281,6 +2524,7 @@ components:
                 extra_hours: { type: number }
                 extra_rate_cents: { type: integer, format: int64 }
                 shuttles_per_hour: { type: number }
+                actual_shuttles: { type: integer, description: Present for actual-count whole-session expenses. Absent for estimated legacy settlements. }
             settled_at: { type: string, format: date-time }
             reversed_at: { type: string, format: date-time, nullable: true }
 

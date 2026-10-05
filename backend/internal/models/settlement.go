@@ -30,6 +30,10 @@ type Settlement struct {
 	ExtraRateCents  int64   `gorm:"not null;default:0" json:"extra_rate_cents"`
 	ShuttlesPerHour float64 `gorm:"type:numeric(4,2);not null" json:"shuttles_per_hour"`
 
+	// ActualShuttles is set for expenses using a counted whole-session quantity.
+	// Units are recorded once on the base band; value is allocated by hours.
+	ActualShuttles *int `json:"actual_shuttles,omitempty"`
+
 	// What the shuttles consumed by each band were actually worth, valued from
 	// stock at the moment of settlement.
 	BaseShuttleCents  int64 `gorm:"not null;default:0" json:"base_shuttle_cents"`
@@ -63,6 +67,9 @@ func (s *Settlement) IsLive() bool { return s.ReversedAt == nil }
 
 // CourtCents is what the venue was charged for, across both bands.
 func (s *Settlement) CourtCents() int64 {
+	if s.ActualShuttles != nil {
+		return int64(s.BaseHours)*s.BaseRateCents + int64(s.ExtraHours)*s.ExtraRateCents
+	}
 	base := int64(s.BaseHours * float64(s.BaseRateCents))
 	extra := int64(s.ExtraHours * float64(s.ExtraRateCents))
 	return base + extra

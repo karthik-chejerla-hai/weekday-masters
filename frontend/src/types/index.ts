@@ -100,6 +100,8 @@ export interface Club {
 }
 
 export interface Session {
+  starts_at?: string;
+  ends_at?: string;
   id: string;
   title: string;
   description: string;
@@ -323,6 +325,7 @@ export interface ChargeLine {
 }
 
 export interface SettlementRates {
+  actual_shuttles?: number;
   base_hours: number;
   base_rate_cents: number;
   extra_hours: number;
@@ -387,3 +390,22 @@ export interface ApiError {
   message: string;
   details?: Record<string, unknown>;
 }
+
+export interface ExpenseInput {
+  total_hours: number;
+  shuttles_used: number;
+  participant_ids?: string[];
+  extra_participant_ids?: string[];
+  expected_preview?: string;
+}
+export interface ExpensePreview {
+  session: { id: string; title: string; starts_at: string; ends_at: string };
+  input: ExpenseInput;
+  settlement: SettlementPreview;
+  fingerprint: string;
+  court_credit_after_cents: number;
+  next_court_cost_cents: number;
+  court_topup_needed: boolean;
+}
+export interface AssistantMessage { role: 'user' | 'assistant'; content: string }
+export interface AssistantReply { message: string; expense?: ExpensePreview }

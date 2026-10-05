@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
-import { CalendarDays, Eye, Home, LogOut, Settings, UsersRound, WalletCards } from 'lucide-react';
+import { CalendarDays, Eye, Home, LogOut, Settings, UsersRound, WalletCards, MessageCircle } from 'lucide-react';
 import { useAuth } from '../../context/useAuth';
 import { api } from '../../services/api';
 import Avatar from '../ui/Avatar';
@@ -11,6 +11,13 @@ import { displayName } from '../../utils/members';
 export default function Header() {
   const { user, logout, isAdmin, isApproved, startMemberPreview } = useAuth();
   const [balance, setBalance] = useState<MyBalance | null>(null);
+
+  const [balanceVersion, setBalanceVersion] = useState(0);
+  useEffect(() => {
+    const refresh = () => setBalanceVersion((version) => version + 1);
+    window.addEventListener('rally:balances-changed', refresh);
+    return () => window.removeEventListener('rally:balances-changed', refresh);
+  }, []);
 
   // The number people check most often, so it lives where they already look.
   // A chip that is red every time you open the app does more than a reminder
@@ -29,12 +36,13 @@ export default function Header() {
     return () => {
       cancelled = true;
     };
-  }, [isApproved]);
+  }, [isApproved, balanceVersion]);
 
   const primaryItems = [
     { to: '/dashboard', icon: Home, label: 'Home' },
     { to: '/sessions', icon: CalendarDays, label: 'Sessions' },
     { to: '/money', icon: WalletCards, label: 'Money' },
+    { to: '/assistant', icon: MessageCircle, label: 'Ask Rally' },
   ];
 
   const adminItems = [

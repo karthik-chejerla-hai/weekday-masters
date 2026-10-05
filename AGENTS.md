@@ -71,6 +71,15 @@ and disabled notifications. See `specs/002-splitwise-history-import/quickstart.m
 for backup, rehearsal, import and verification steps. Invitations require separate
 owner confirmation.
 
+### Local expense assistant test
+
+Run `./scripts/local-issue40.sh` from the repository root. It uses a dedicated
+loopback PostgreSQL container on port 5434, applies migrations, seeds synthetic
+members and a past session with four confirmed RSVPs, and starts both servers.
+It overrides any remote `DATABASE_URL` from `.env` and disables notifications.
+Add `GROQ_API_KEY` to `backend/.env` and restart for voice/text support. The form
+does not need a key. See `specs/006-session-expense-assistant/quickstart.md`.
+
 ### Frontend (React + Vite)
 ```bash
 cd frontend
@@ -167,6 +176,20 @@ handler chain at registration time, so using the wrong group silently skips the 
 - `InvitationService`: admin-only preview and explicit send/resend for approved members who have not signed in. Preview and send share an escaped HTML template. `InvitationDelivery` records provider acceptance, failure, or uncertainty, never claims inbox delivery, and separates test attempts. Request IDs and a one-minute per-address cooldown prevent duplicate submissions. Member sends obey both notification stops. `INVITATION_TEST_EMAILS_ENABLED=true` permits only explicit test copies to the signed-in admin while those stops remain active. It defaults to false. No send occurs when adding a member or opening a preview.
 - `LedgerService`: **the only writer of ledger entries.** Posts a transaction and its entries inside one DB transaction, locking the accounts it touches `FOR UPDATE` in `id` order, then asserts the club-position identity and rolls back if it does not come to zero. Balances are derived by aggregating entries — there is no cached balance column, so drift is impossible. Corrections are reversing transactions; nothing updates or deletes an entry.
 - `SettlementService`: costs a played session into two bands (standard hours, optional extension), splits each band equally among only its own participants, and hands the resulting movements to `LedgerService`. Locks the session row like the RSVP capacity check. Refuses to drive shuttle stock negative, and refuses to settle a session twice
+- `ExpenseService`: prepares and confirms actual-count expenses for 2 or 3 hours.
+  It defaults to confirmed RSVPs and accepts a separate extra-hour subset. Actual
+  shuttle stock is consumed once; its value splits 2:1 by time for three hours.
+  Each band is shared only by its players. When everyone stays, the whole cost
+  splits once to keep shares within one cent. It requires a reviewed fingerprint
+  that includes attendance. Settlement locks affected accounts in ledger order before
+  reading stock. Changed costs/stock reject confirmation; duplicates cannot post.
+  `Settlement.ActualShuttles` is nullable so old estimated settlements retain their
+  original meaning. Court top-up warnings use a standard two-hour booking.
+- `AssistantService`: a bounded tool loop for approved members. Read tools resolve
+  sessions, members, balances and stock from services. Only admins receive
+  `prepare_expense`; no assistant tool writes money. Explicit HTTP confirmation
+  uses `ExpenseService`. Provider interfaces and Groq HTTP code live under
+  `internal/assistant`. Audio and conversation history are not persisted by Rally.
 
 **Display names**: `User.DisplayName()` — the nickname a member chose, else their **first name**
 — is what should reach a screen; the full `Name` is for identifying them. Members set their own

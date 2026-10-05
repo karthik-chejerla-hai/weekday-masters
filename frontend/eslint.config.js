@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   // Build output and deploy caches are generated, not source.
-  { ignores: ['dist', 'dev-dist', '.firebase'] },
+  { ignores: ['dist', 'dev-dist', '.firebase', 'coverage', 'playwright-report', 'test-results'] },
 
   // Application source.
   {

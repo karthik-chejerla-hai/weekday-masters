@@ -21,8 +21,8 @@ export default function SettlementBreakdown({ preview, rates, showRates }: Settl
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-slate-200 bg-white divide-y divide-slate-100">
-        <BandRow label="Standard hours" band={bands.base} />
-        {bands.extra && <BandRow label="Extra hour" band={bands.extra} />}
+        <BandRow label="Standard hours" band={bands.base} actualCount={rates?.actual_shuttles !== undefined} />
+        {bands.extra && <BandRow label="Extra hour" band={bands.extra} actualCount={rates?.actual_shuttles !== undefined} />}
 
         <div className="flex items-baseline justify-between px-4 py-3">
           <span className="text-sm font-semibold text-slate-900">Total</span>
@@ -68,14 +68,14 @@ export default function SettlementBreakdown({ preview, rates, showRates }: Settl
         <p className="text-xs text-slate-400 px-1">
           Costed at {formatCents(rates.base_rate_cents)}/hour
           {rates.extra_hours > 0 && <> and {formatCents(rates.extra_rate_cents)}/hour for the extra hour</>},
-          {' '}{rates.shuttles_per_hour} shuttles an hour. These are the rates in force at the time.
+          {' '}{rates.actual_shuttles !== undefined ? `${rates.actual_shuttles} shuttles counted for the whole session` : `${rates.shuttles_per_hour} shuttles an hour`}. These are the rates in force at the time.
         </p>
       )}
     </div>
   );
 }
 
-function BandRow({ label, band }: { label: string; band: SettlementPreview['bands']['base'] }) {
+function BandRow({ label, band, actualCount }: { label: string; band: SettlementPreview['bands']['base']; actualCount: boolean }) {
   if (!band) return null;
 
   return (
@@ -85,7 +85,7 @@ function BandRow({ label, band }: { label: string; band: SettlementPreview['band
         <span className="text-sm text-slate-800 tabular-nums">{formatCents(band.total_cents)}</span>
       </div>
       <p className="mt-0.5 text-xs text-slate-500">
-        {band.hours}h court {formatCents(band.court_cents)} · {band.shuttle_units} shuttles{' '}
+        {band.hours}h court {formatCents(band.court_cents)} · {actualCount ? 'shuttle share' : `${band.shuttle_units} shuttles`}{' '}
         {formatCents(band.shuttle_cents)} · split {band.heads} ways
       </p>
     </div>
