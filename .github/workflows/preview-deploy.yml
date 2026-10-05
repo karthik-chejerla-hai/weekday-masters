@@ -107,6 +107,8 @@ jobs:
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
 
       - name: Deploy to Cloud Run (no traffic, tagged revision)
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
           PR_NUMBER=${{ github.event.pull_request.number }}
           # Previews and the production deploy all write to the same service, so
@@ -129,6 +131,7 @@ jobs:
             --set-env-vars="AUTH0_AUDIENCE=${{ secrets.AUTH0_AUDIENCE }}" \
             --set-env-vars="ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }}" \
             --set-env-vars="DATABASE_URL=${{ steps.neon.outputs.db_url }}" \
+            --set-env-vars="GROQ_API_KEY=${GROQ_API_KEY}" \
             --set-env-vars="FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}" \
             --set-env-vars="SENDGRID_API_KEY=${{ secrets.SENDGRID_API_KEY }}" \
             --set-env-vars="SENDGRID_FROM_EMAIL=${{ secrets.SENDGRID_FROM_EMAIL }}" \
