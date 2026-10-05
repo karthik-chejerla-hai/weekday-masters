@@ -19,6 +19,7 @@ import (
 	"github.com/weekday-masters/backend/internal/models"
 	"google.golang.org/api/option"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type NotificationService struct {
@@ -148,17 +149,9 @@ func (s *NotificationService) deliverNotification(ctx context.Context, notificat
 		return fmt.Errorf("failed to get user: %w", err)
 	}
 
-	// Get or create notification preferences
-	var prefs models.UserNotificationPreferences
-	result := database.DB.Where("user_id = ?", userID).First(&prefs)
-	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-		// Create default preferences
-		prefs = models.UserNotificationPreferences{UserID: userID}
-		if err := database.DB.Create(&prefs).Error; err != nil {
-			return err
-		}
-	} else if result.Error != nil {
-		return fmt.Errorf("failed to get preferences: %w", result.Error)
+	prefs, err := s.GetUserPreferences(userID)
+	if err != nil {
+		return fmt.Errorf("failed to get preferences: %w", err)
 	}
 
 	if user.MembershipStatus != models.MembershipApproved {
@@ -266,7 +259,10 @@ func (s *NotificationService) sendEmailNotification(ctx context.Context, toEmail
 
 	message := mail.NewSingleEmail(from, subject, to, body, htmlContent)
 
-	response, err := s.sendGridClient.SendWithContext(ctx, message)
+	// SendWithContext mutates Client.Body. Each send needs its own request
+	// so simultaneous notifications cannot overwrite another email's payload.
+	client := *s.sendGridClient
+	response, err := client.SendWithContext(ctx, message)
 	if err != nil {
 		return err
 	}
@@ -345,9 +341,17 @@ func (s *NotificationService) GetUserPreferences(userID uuid.UUID) (*models.User
 	var prefs models.UserNotificationPreferences
 	result := database.DB.Where("user_id = ?", userID).First(&prefs)
 	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-		// Create default preferences
-		prefs = models.UserNotificationPreferences{UserID: userID}
-		if err := database.DB.Create(&prefs).Error; err != nil {
+		// Concurrent first notifications can both observe no preferences. Keep
+		// whichever row was saved first, including any member opt-outs.
+		defaults := models.UserNotificationPreferences{UserID: userID}
+		if err := database.DB.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "user_id"}}, DoNothing: true,
+		}).Create(&defaults).Error; err != nil {
+			return nil, err
+		}
+		// Reload by user ID, not the generated ID of an insert that may have
+		// lost the race. Delivery must use the persisted preferences.
+		if err := database.DB.Where("user_id = ?", userID).First(&prefs).Error; err != nil {
 			return nil, err
 		}
 	} else if result.Error != nil {

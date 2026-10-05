@@ -130,13 +130,20 @@ it('shows members the expense status without a write action', async () => {
 });
 
 
-it('shows the next scheduled date after each cancellation', async () => {
-  vi.mocked(api.listSessions).mockResolvedValue([
-    makeSession({ id: 'earlier', session_date: '2026-09-10T00:00:00Z' }),
-    makeSession({ id: 'later', status: 'closed', session_date: '2026-09-20T00:00:00Z' }),
-  ]);
-  vi.mocked(api.listCancelledSessions).mockResolvedValue([makeSession({ id: 'cancelled', status: 'cancelled' })]);
-  renderPage();
-  expect(await screen.findByText('Next scheduled session: Sunday, 20 September 2026')).toBeInTheDocument();
-  expect(screen.getByText('No reason provided.')).toBeInTheDocument();
+it('shows a future next date when a cancelled game and another game have started', async () => {
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-05T19:10:00+11:00'));
+  try {
+    vi.mocked(api.listSessions).mockResolvedValue([
+      makeSession({ id: 'ongoing', session_date: '2026-10-05T00:00:00Z', start_time: '19:00', starts_at: '2026-10-05T19:00:00+11:00' }),
+      makeSession({ id: 'later', status: 'closed', session_date: '2026-10-12T00:00:00Z', starts_at: '2026-10-12T18:00:00+11:00' }),
+    ]);
+    vi.mocked(api.listCancelledSessions).mockResolvedValue([
+      makeSession({ id: 'cancelled', status: 'cancelled', session_date: '2026-10-05T00:00:00Z', starts_at: '2026-10-05T18:00:00+11:00' }),
+    ]);
+    renderPage();
+    expect(await screen.findByText('Next scheduled session: Monday, 12 October 2026')).toBeInTheDocument();
+    expect(screen.getByText('No reason provided.')).toBeInTheDocument();
+  } finally {
+    clock.mockRestore();
+  }
 });

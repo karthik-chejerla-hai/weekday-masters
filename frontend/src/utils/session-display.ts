@@ -18,9 +18,10 @@ export function formatSessionVenue(venueName?: string, courtNumber?: number): st
     .filter(Boolean).join(' - ') || 'Venue to be confirmed';
 }
 
-/** Date and time fields are Sydney wall-clock values, regardless of browser zone. */
-export function nextScheduledSession(sessions: Session[], cancelled: Session): Session | undefined {
-  const key = (session: Session) => `${session.session_date.slice(0, 10)}T${session.start_time}`;
-  return sessions.filter(session => session.id !== cancelled.id && session.status !== 'cancelled' && key(session) > key(cancelled))
-    .sort((a, b) => key(a).localeCompare(key(b)))[0];
+/** Use resolved instants so selection matches the backend across timezones. */
+export function nextScheduledSession(sessions: Session[], cancelled: Session, now = Date.now()): Session | undefined {
+  const start = (session: Session) => Date.parse(session.starts_at ?? '');
+  const after = Math.max(start(cancelled), now);
+  return sessions.filter(session => session.id !== cancelled.id && session.status !== 'cancelled' && start(session) > after)
+    .sort((a, b) => start(a) - start(b) || a.id.localeCompare(b.id))[0];
 }

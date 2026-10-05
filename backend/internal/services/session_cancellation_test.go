@@ -355,3 +355,99 @@ func TestCancellationNextSessionHasNotAlreadyStarted(t *testing.T) {
 		t.Fatal(announcement.Body)
 	}
 }
+
+func TestConcurrentCancellationsDeliverWithNewPreferences(t *testing.T) {
+	_, ss, _ := newTestServices(t)
+	member := newUser(t, "member")
+	sessions := []*models.Session{
+		newSession(t, ss, member.ID, 1),
+		newSession(t, ss, member.ID, 1),
+	}
+	var requests atomic.Int32
+	bodies := make(chan string, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		var payload struct {
+			Content []struct{ Type, Value string }
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Error(err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		for _, part := range payload.Content {
+			if part.Type == "text/plain" {
+				bodies <- part.Value
+			}
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer server.Close()
+	ns := NewNotificationService(NotificationConfig{})
+	ns.emailEnabled = true
+	ns.sendGridClient = sendgrid.NewSendClient("test-key")
+	ns.sendGridClient.BaseURL = server.URL
+	ss.WithNotifier(ns)
+
+	// Both cancellations must read missing preferences before either can insert.
+	var arrivals atomic.Int32
+	release := make(chan struct{})
+	const callback = "test:concurrent_cancellation_preferences"
+	if err := database.DB.Callback().Create().Before("gorm:create").Register(callback, func(tx *gorm.DB) {
+		if tx.Statement.Schema == nil || tx.Statement.Schema.Table != "user_notification_preferences" {
+			return
+		}
+		if arrivals.Add(1) == 2 {
+			close(release)
+		}
+		select {
+		case <-release:
+		case <-time.After(5 * time.Second):
+			tx.AddError(errors.New("concurrent preference creation timed out"))
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	defer database.DB.Callback().Create().Remove(callback)
+
+	var wg sync.WaitGroup
+	for _, session := range sessions {
+		wg.Add(1)
+		go func(session *models.Session) {
+			defer wg.Done()
+			if _, err := ss.CancelSession(session.ID, "Venue closed: "+session.ID.String(), member.ID); err != nil {
+				t.Error(err)
+			}
+		}(session)
+	}
+	wg.Wait()
+
+	if arrivals.Load() != 2 {
+		t.Fatalf("preference creation attempts = %d, want 2", arrivals.Load())
+	}
+	if requests.Load() != 2 {
+		t.Fatalf("provider calls = %d, want 2", requests.Load())
+	}
+	close(bodies)
+	delivered := make(map[uuid.UUID]int)
+	for body := range bodies {
+		for _, session := range sessions {
+			if strings.Contains(body, session.ID.String()) {
+				delivered[session.ID]++
+			}
+		}
+	}
+	for _, session := range sessions {
+		if delivered[session.ID] != 1 {
+			t.Fatalf("cancellation %s delivered %d times, want 1", session.ID, delivered[session.ID])
+		}
+	}
+	cancellationCounts(t, 2, 2)
+	var sent, preferences int64
+	if err := database.DB.Model(&models.Notification{}).Where("email_sent = ?", true).Count(&sent).Error; err != nil || sent != 2 {
+		t.Fatalf("sent notifications = %d, want 2: %v", sent, err)
+	}
+	if err := database.DB.Model(&models.UserNotificationPreferences{}).Where("user_id = ?", member.ID).Count(&preferences).Error; err != nil || preferences != 1 {
+		t.Fatalf("preferences = %d, want 1: %v", preferences, err)
+	}
+}
