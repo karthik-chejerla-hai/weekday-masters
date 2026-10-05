@@ -149,10 +149,12 @@ describe('SessionDetail page', () => {
   });
 
   it('marks a cancelled session and hides the RSVP controls', async () => {
-    loads(makeSession({ status: 'cancelled' }));
+    loads(makeSession({ status: 'cancelled', cancellation_reason: 'Court flooded' }));
     renderPage();
 
     expect(await screen.findByText('Cancelled')).toBeInTheDocument();
+    expect(screen.getByText('Court flooded')).toBeInTheDocument();
+    expect(screen.queryByText('RSVP Deadline:')).not.toBeInTheDocument();
     expect(screen.queryByText('Your RSVP')).not.toBeInTheDocument();
   });
 

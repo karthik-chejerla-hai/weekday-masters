@@ -93,6 +93,7 @@ describe('Dashboard page', () => {
     // The banner identifies the session by date, and carries the reason.
     expect(await screen.findByText(/Session Cancelled:/)).toBeInTheDocument();
     expect(screen.getByText('Court flooded')).toBeInTheDocument();
+    expect(screen.getByText('No next session is scheduled.')).toBeInTheDocument();
   });
 
   it('stops loading when the requests fail', async () => {
@@ -126,4 +127,23 @@ it('shows members the expense status without a write action', async () => {
   expect(await screen.findAllByText('Expense pending')).toHaveLength(2);
   expect(screen.queryByRole('link',{name:'Record expense'})).not.toBeInTheDocument();
   expect(screen.queryByText('$0.00')).not.toBeInTheDocument();
+});
+
+
+it('shows a future next date when a cancelled game and another game have started', async () => {
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-05T19:10:00+11:00'));
+  try {
+    vi.mocked(api.listSessions).mockResolvedValue([
+      makeSession({ id: 'ongoing', session_date: '2026-10-05T00:00:00Z', start_time: '19:00', starts_at: '2026-10-05T19:00:00+11:00' }),
+      makeSession({ id: 'later', status: 'closed', session_date: '2026-10-12T00:00:00Z', starts_at: '2026-10-12T18:00:00+11:00' }),
+    ]);
+    vi.mocked(api.listCancelledSessions).mockResolvedValue([
+      makeSession({ id: 'cancelled', status: 'cancelled', session_date: '2026-10-05T00:00:00Z', starts_at: '2026-10-05T18:00:00+11:00' }),
+    ]);
+    renderPage();
+    expect(await screen.findByText('Next scheduled session: Monday, 12 October 2026')).toBeInTheDocument();
+    expect(screen.getByText('No reason provided.')).toBeInTheDocument();
+  } finally {
+    clock.mockRestore();
+  }
 });

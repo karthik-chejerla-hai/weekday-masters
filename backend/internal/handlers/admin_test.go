@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -449,5 +451,54 @@ func TestClubSessionDisplaySettingsRejectInvalidValues(t *testing.T) {
 	h.as(nil).get("/api/club").expect(http.StatusOK).decode(&club)
 	if club.CourtNumber != 0 || club.TimeFormat != "24h" {
 		t.Fatalf("invalid request changed settings: %+v", club)
+	}
+}
+
+func TestCancelSession_RejectsNonAdmins(t *testing.T) {
+	h := newHarness(t)
+	admin := makeAdmin(t)
+	session := makeSession(t, admin.ID, 1)
+	endpoint := "/api/admin/sessions/" + session.ID.String() + "/cancel"
+	h.as(nil).post(endpoint, nil).expect(http.StatusUnauthorized)
+	h.as(makePlayer(t)).post(endpoint, nil).expect(http.StatusForbidden)
+	pending := makePending(t)
+	pending.Role = models.RoleAdmin
+	h.as(pending).post(endpoint, nil).expect(http.StatusForbidden)
+	var stored models.Session
+	if err := database.DB.First(&stored, "id = ?", session.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != models.SessionStatusOpen {
+		t.Fatal("unauthorized cancellation changed the session")
+	}
+	var count int64
+	database.DB.Model(&models.Announcement{}).Count(&count)
+	if count != 0 {
+		t.Fatal("unauthorized request created an announcement")
+	}
+}
+
+func TestCancelSession_OptionalReasonAndMalformedBody(t *testing.T) {
+	h := newHarness(t)
+	admin := makeAdmin(t)
+	session := makeSession(t, admin.ID, 1)
+	endpoint := "/api/admin/sessions/" + session.ID.String() + "/cancel"
+	for _, body := range []any{map[string]any{"reason": 123}, map[string]any{"reason": strings.Repeat("x", 1001)}} {
+		h.as(admin).post(endpoint, body).expect(http.StatusBadRequest)
+	}
+	h.as(admin)
+	request := httptest.NewRequest(http.MethodPost, endpoint, strings.NewReader(`{"reason":`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	h.router.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("malformed JSON accepted: %d", response.Code)
+	}
+	h.as(admin).post(endpoint, nil).expect(http.StatusOK)
+	h.as(admin).post(endpoint, map[string]string{"reason": "Changed"}).expect(http.StatusOK)
+	var notices []models.Notification
+	h.as(admin).get("/api/users/me/notifications/history").expect(http.StatusOK).decode(&notices)
+	if len(notices) != 1 || !strings.Contains(notices[0].Body, "No reason provided.") || !strings.Contains(notices[0].Body, "No next session is scheduled.") {
+		t.Fatalf("unexpected notices: %+v", notices)
 	}
 }

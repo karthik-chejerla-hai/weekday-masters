@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, Calendar, Trash2, Loader2, XCircle, X } from 'lucide-react';
 import { format, parseISO, subDays } from 'date-fns';
@@ -21,6 +21,22 @@ export default function AdminSessions() {
   const [cancellingSession, setCancellingSession] = useState<Session | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [isCancelling, setIsCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState('');
+  const [sessionError, setSessionError] = useState('');
+  const cancelReasonInput = useRef<HTMLTextAreaElement>(null);
+  const cancelTrigger = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (cancellingSession) cancelReasonInput.current?.focus();
+    else cancelTrigger.current?.focus();
+  }, [cancellingSession]);
+
+  const closeCancellation = () => {
+    if (isCancelling) return;
+    setCancellingSession(null);
+    setCancelReason('');
+    setCancelError('');
+  };
 
   const [formData, setFormData] = useState<CreateSessionInput>({
     title: '',
@@ -53,8 +69,9 @@ export default function AdminSessions() {
 
   const loadSessions = async () => {
     try {
-      const [data, club] = await Promise.all([api.listSessions(), api.getClub().catch(() => null)]);
-      setSessions(data);
+      const [data, cancelled, club] = await Promise.all([api.listSessions(), api.listCancelledSessions(), api.getClub().catch(() => null)]);
+      setSessions([...data, ...cancelled].sort((a, b) =>
+        a.session_date.localeCompare(b.session_date) || a.start_time.localeCompare(b.start_time)));
       setTimeFormat(club?.time_format || '24h');
     } catch (error) {
       console.error('Failed to load sessions:', error);
@@ -132,28 +149,30 @@ export default function AdminSessions() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this session?')) return;
+    if (!confirm('Delete this unused session? Members will not receive a cancellation announcement. Use Cancel Session to notify everyone.')) return;
+    setSessionError('');
     setDeletingId(id);
     try {
       await api.deleteSession(id);
       setSessions(prev => prev.filter(s => s.id !== id));
     } catch (error) {
-      console.error('Failed to delete session:', error);
+      setSessionError((error as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Could not delete the session. Please try again.');
     } finally {
       setDeletingId(null);
     }
   };
 
   const handleCancelSession = async () => {
-    if (!cancellingSession) return;
+    if (!cancellingSession || isCancelling) return;
     setIsCancelling(true);
+    setCancelError('');
     try {
-      const updated = await api.cancelSession(cancellingSession.id, cancelReason);
-      setSessions(prev => prev.map(s => s.id === updated.id ? updated : s));
+      const updated = await api.cancelSession(cancellingSession.id, cancelReason.trim());
+      setSessions(prev => prev.map(s => s.id === updated.id ? { ...s, ...updated } : s));
       setCancellingSession(null);
       setCancelReason('');
     } catch (error) {
-      console.error('Failed to cancel session:', error);
+      setCancelError((error as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Could not confirm the cancellation. Please try again.');
     } finally {
       setIsCancelling(false);
     }
@@ -409,14 +428,19 @@ export default function AdminSessions() {
               <div className="flex items-center gap-2">
                 {session.status !== 'cancelled' && (
                   <button
-                    onClick={() => setCancellingSession(session)}
+                    onClick={(event) => {
+                      cancelTrigger.current = event.currentTarget;
+                      setCancelError('');
+                      setCancellingSession(session);
+                    }}
                     className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
                     title="Cancel Session"
                   >
-                    <XCircle className="w-5 h-5" />
+                    <XCircle className="w-5 h-5" aria-hidden="true" />
+                    <span className="sr-only">Cancel Session</span>
                   </button>
                 )}
-                <button
+                {session.status !== 'cancelled' && !session.rsvps?.length && <button
                   onClick={() => handleDelete(session.id)}
                   disabled={deletingId === session.id}
                   className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
@@ -427,24 +451,37 @@ export default function AdminSessions() {
                   ) : (
                     <Trash2 className="w-5 h-5" />
                   )}
-                </button>
+                </button>}
               </div>
             </div>
           ))}
         </div>
       )}
 
+      {sessionError && <p role="alert" className="text-sm text-red-700">{sessionError}</p>}
+
       {/* Cancel Session Modal */}
       {cancellingSession && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl max-w-md w-full p-6">
+          <div role="dialog" aria-modal="true" aria-labelledby="cancel-session-heading"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') { event.preventDefault(); closeCancellation(); }
+              if (event.key === 'Tab') {
+                const controls = event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), textarea:not(:disabled)');
+                const first = controls[0];
+                const last = controls[controls.length - 1];
+                if (!first) { event.preventDefault(); return; }
+                if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+                if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+              }
+            }}
+            className="bg-white rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-slate-900">Cancel Session</h3>
+              <h3 id="cancel-session-heading" className="text-lg font-semibold text-slate-900">Cancel Session</h3>
               <button
-                onClick={() => {
-                  setCancellingSession(null);
-                  setCancelReason('');
-                }}
+                onClick={closeCancellation}
+                disabled={isCancelling}
+                aria-label="Close cancellation"
                 className="p-1 text-slate-400 hover:text-slate-600"
               >
                 <X className="w-5 h-5" />
@@ -456,11 +493,21 @@ export default function AdminSessions() {
               {format(parseISO(cancellingSession.session_date), 'EEE, d MMM yyyy')}?
             </p>
 
+            <p className="text-sm text-slate-600 mb-4">
+              All approved members will receive a cancellation notice in the app.
+              Email and push follow their notification settings.
+              {cancellingSession.is_recurring || cancellingSession.recurring_parent_id ? ' Only this date will be cancelled.' : ''}
+            </p>
+            {cancelError && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{cancelError}</p>}
             <div className="mb-4">
-              <label className="block text-sm font-medium text-slate-700 mb-1">
+              <label htmlFor="cancellation-reason" className="block text-sm font-medium text-slate-700 mb-1">
                 Reason for cancellation (optional)
               </label>
               <textarea
+                id="cancellation-reason"
+                ref={cancelReasonInput}
+                maxLength={1000}
+                disabled={isCancelling}
                 value={cancelReason}
                 onChange={(e) => setCancelReason(e.target.value)}
                 className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-500"
@@ -479,10 +526,8 @@ export default function AdminSessions() {
                 Cancel Session
               </button>
               <button
-                onClick={() => {
-                  setCancellingSession(null);
-                  setCancelReason('');
-                }}
+                onClick={closeCancellation}
+                disabled={isCancelling}
                 className="flex-1 px-4 py-2 rounded-lg font-medium text-slate-600 hover:bg-slate-100 transition-colors"
               >
                 Keep Session

@@ -216,3 +216,36 @@ func TestGameSessionAndMembershipRules(t *testing.T) {
 		t.Fatal("future session")
 	}
 }
+
+func TestGameSessionDeletionPreservesResults(t *testing.T) {
+	for _, state := range []string{"active", "voided"} {
+		t.Run(state, func(t *testing.T) {
+			s, session, players, input := gameFixture(t)
+			ctx := context.Background()
+			game, err := s.Create(ctx, session.ID, input, players[4])
+			if err != nil {
+				t.Fatal(err)
+			}
+			versions := 1
+			if state == "voided" {
+				if _, err := s.Void(ctx, game.ID, game.Version, players[4]); err != nil {
+					t.Fatal(err)
+				}
+				versions++
+			}
+			sessions := NewSessionService()
+			err = sessions.DeleteSession(session.ID)
+			if e, ok := AsLedgerError(err); !ok || e.Code != "game_conflict" || e.Status != 409 {
+				t.Fatalf("expected an explicit game conflict, got %v", err)
+			}
+			stored, err := sessions.GetSessionByID(session.ID)
+			if err != nil || stored.Status != models.SessionStatusOpen {
+				t.Fatalf("deletion changed the session: %+v %v", stored, err)
+			}
+			history, err := s.Revisions(ctx, game.ID)
+			if err != nil || len(history) != versions {
+				t.Fatalf("deletion changed game history: %+v %v", history, err)
+			}
+		})
+	}
+}

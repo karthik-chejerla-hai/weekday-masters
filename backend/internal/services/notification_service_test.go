@@ -2,10 +2,13 @@ package services
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/weekday-masters/backend/internal/database"
 	"github.com/weekday-masters/backend/internal/models"
+	"gorm.io/gorm"
 )
 
 func TestNotificationService_PreferencesAndTokens(t *testing.T) {
@@ -98,5 +101,41 @@ func TestNotificationService_SendAndHistory(t *testing.T) {
 	updatedHistory, err := ns.GetUserNotifications(user.ID, 10, 0)
 	if err != nil || len(updatedHistory) == 0 || updatedHistory[0].ReadAt == nil {
 		t.Fatal("expected notification to have read_at timestamp")
+	}
+}
+
+func TestGetUserPreferencesPreservesConcurrentOptOut(t *testing.T) {
+	requireDB(t)
+	ns := NewNotificationService(NotificationConfig{})
+	user := newUser(t, "preferences")
+	concurrent := models.UserNotificationPreferences{UserID: user.ID}
+
+	// Simulate another request saving an opt-out after the missing-row read,
+	// but before this request can insert its defaults.
+	var inserted atomic.Bool
+	const callback = "test:concurrent_preference_opt_out"
+	if err := database.DB.Callback().Create().Before("gorm:create").Register(callback, func(tx *gorm.DB) {
+		if tx.Statement.Schema == nil || tx.Statement.Schema.Table != "user_notification_preferences" || inserted.Swap(true) {
+			return
+		}
+		tx.AddError(database.DB.Transaction(func(other *gorm.DB) error {
+			if err := other.Create(&concurrent).Error; err != nil {
+				return err
+			}
+			return other.Model(&concurrent).Updates(map[string]interface{}{
+				"push_enabled": false, "email_enabled": false,
+			}).Error
+		}))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	defer database.DB.Callback().Create().Remove(callback)
+
+	prefs, err := ns.GetUserPreferences(user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prefs.ID != concurrent.ID || prefs.PushEnabled || prefs.EmailEnabled {
+		t.Fatalf("did not return the saved opt-out: %+v", prefs)
 	}
 }

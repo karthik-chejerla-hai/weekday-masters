@@ -164,7 +164,13 @@ export default function SessionDetail() {
           </div>
         </div>
 
-        {!isDeadlinePassed && (
+        {isCancelled && (
+          <p role="status" className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-800 whitespace-pre-line break-words">
+            {session.cancellation_reason || 'No reason provided.'}
+          </p>
+        )}
+
+        {!isDeadlinePassed && !isCancelled && (
           <div className="mt-4 p-3 bg-amber-50 rounded-lg">
             <p className="text-sm text-amber-800">
               <span className="font-medium">RSVP Deadline:</span>{' '}

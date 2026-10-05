@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, CalendarDays, Loader2, AlertTriangle } from 'lucide-react';
-import { format, parseISO } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import { useAuth } from '../context/useAuth';
 import { api } from '../services/api';
 import type { Club, Session, PastSession } from '../types';
 import SessionCard from '../components/sessions/SessionCard';
+import { nextScheduledSession } from '../utils/session-display';
 import { displayName } from '../utils/members';
 
 export default function Dashboard() {
@@ -98,24 +98,30 @@ export default function Dashboard() {
         <section aria-labelledby="updates-heading">
           <h2 id="updates-heading" className="mb-3 text-base font-semibold text-slate-950">Important updates</h2>
           <div className="space-y-2">
-            {cancelledSessions.map((session) => (
-              <div
-                key={session.id}
-                className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4"
-              >
-                <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-600" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-red-800">
-                    Session Cancelled: {format(parseISO(session.session_date), 'EEEE, d MMMM yyyy')}
-                  </p>
-                  {session.cancellation_reason && (
-                    <p className="text-sm text-red-600 mt-0.5">
-                      {session.cancellation_reason}
+            {cancelledSessions.map((session) => {
+              const next = nextScheduledSession(sessions, session);
+              return (
+                <div
+                  key={session.id}
+                  className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4"
+                >
+                  <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-600" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-red-800">
+                      Session Cancelled: {formatInTimeZone(session.starts_at || session.session_date, 'Australia/Sydney', 'EEEE, d MMMM yyyy')}
                     </p>
-                  )}
+                    <p className="text-sm text-red-600 mt-0.5 whitespace-pre-line break-words">
+                      {session.cancellation_reason || 'No reason provided.'}
+                    </p>
+                    <p className="mt-1 text-sm text-red-800">
+                      {next
+                        ? `Next scheduled session: ${formatInTimeZone(next.starts_at || next.session_date, 'Australia/Sydney', 'EEEE, d MMMM yyyy')}`
+                        : 'No next session is scheduled.'}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}
