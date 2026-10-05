@@ -28,7 +28,7 @@ Independent test: player and exact-team totals agree with games under both side 
 ## Phase 6: Verification
 - [x] T013 Add routes and discovery links in frontend/src/App.tsx, pages/SessionDetail.tsx and components/sessions/PastSessionCard.tsx; update backend/openapi/openapi.yaml and AGENTS.md.
 - [x] T014 Run backend database/race tests and frontend coverage, lint and build; record results in specs/008-game-scores/quickstart.md.
-- [ ] T015 Review changes, commit and push feat/issue-39-game-scores.
+- [x] T015 Review changes, commit and push feat/issue-39-game-scores.
 
 ## Dependencies and execution
 Foundation precedes all stories. Record a game is the first usable increment. Corrections and comparisons depend on stored games. Verification follows all stories. Backend and frontend tests are independent checks and can run concurrently. Within a story, service tests precede service code and UI tests precede UI code. Complete all three stories for issue #39.
