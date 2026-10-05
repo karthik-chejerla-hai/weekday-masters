@@ -137,7 +137,7 @@ func TestCancelSessionAndListing(t *testing.T) {
 
 	session := newSession(t, ss, creator.ID, 1)
 
-	cancelled, err := ss.CancelSession(session.ID, "Venue closed for maintenance")
+	cancelled, err := ss.CancelSession(session.ID, "Venue closed for maintenance", creator.ID)
 	if err != nil {
 		t.Fatalf("failed to cancel session: %v", err)
 	}
@@ -175,20 +175,20 @@ func TestDeleteSession_WithAndWithoutRSVPs(t *testing.T) {
 		t.Fatal("expected error retrieving deleted session, got nil")
 	}
 
-	// 2. Session with RSVPs should be soft-cancelled instead of hard-deleted
+	// 2. Sessions with RSVPs require explicit cancellation and an announcement.
 	session2 := newSession(t, ss, creator.ID, 1)
 	rsvpIn(t, rs, session2.ID, player.ID)
 
-	if err := ss.DeleteSession(session2.ID); err != nil {
-		t.Fatalf("failed to delete session with rsvps: %v", err)
+	if err := ss.DeleteSession(session2.ID); err == nil {
+		t.Fatal("expected deletion to require the cancel action")
 	}
 
 	found, err := ss.GetSessionByID(session2.ID)
 	if err != nil {
 		t.Fatalf("session with rsvps should still exist: %v", err)
 	}
-	if found.Status != models.SessionStatusCancelled {
-		t.Fatalf("expected session to be marked cancelled, got %s", found.Status)
+	if found.Status != models.SessionStatusOpen {
+		t.Fatalf("expected session to remain open, got %s", found.Status)
 	}
 }
 

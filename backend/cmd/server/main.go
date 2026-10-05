@@ -49,7 +49,7 @@ func main() {
 
 	// Initialize services
 	auth0Service := services.NewAuth0Service(cfg.Auth0Domain)
-	sessionService := services.NewSessionService()
+	sessionService := services.NewSessionService().WithNotifier(notificationService)
 	rsvpService := services.NewRSVPService(notificationService)
 	// Removing a member gives their upcoming spots back, which is the RSVP
 	// service's job — it owns the session lock and the waitlist promotion.

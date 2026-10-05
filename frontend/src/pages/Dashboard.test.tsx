@@ -93,6 +93,7 @@ describe('Dashboard page', () => {
     // The banner identifies the session by date, and carries the reason.
     expect(await screen.findByText(/Session Cancelled:/)).toBeInTheDocument();
     expect(screen.getByText('Court flooded')).toBeInTheDocument();
+    expect(screen.getByText('No next session is scheduled.')).toBeInTheDocument();
   });
 
   it('stops loading when the requests fail', async () => {
@@ -126,4 +127,16 @@ it('shows members the expense status without a write action', async () => {
   expect(await screen.findAllByText('Expense pending')).toHaveLength(2);
   expect(screen.queryByRole('link',{name:'Record expense'})).not.toBeInTheDocument();
   expect(screen.queryByText('$0.00')).not.toBeInTheDocument();
+});
+
+
+it('shows the next scheduled date after each cancellation', async () => {
+  vi.mocked(api.listSessions).mockResolvedValue([
+    makeSession({ id: 'earlier', session_date: '2026-09-10T00:00:00Z' }),
+    makeSession({ id: 'later', status: 'closed', session_date: '2026-09-20T00:00:00Z' }),
+  ]);
+  vi.mocked(api.listCancelledSessions).mockResolvedValue([makeSession({ id: 'cancelled', status: 'cancelled' })]);
+  renderPage();
+  expect(await screen.findByText('Next scheduled session: Sunday, 20 September 2026')).toBeInTheDocument();
+  expect(screen.getByText('No reason provided.')).toBeInTheDocument();
 });

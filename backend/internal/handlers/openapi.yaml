@@ -640,6 +640,7 @@ paths:
     put:
       tags: ["Admin: Sessions"]
       summary: Update a session
+      description: Cancelled sessions cannot be edited or reopened. Use the cancel action instead of setting status to cancelled.
       operationId: updateSession
       parameters:
         - $ref: "#/components/parameters/SessionId"
@@ -665,6 +666,7 @@ paths:
     delete:
       tags: ["Admin: Sessions"]
       summary: Delete a session
+      description: Only unused sessions can be deleted. Sessions with RSVPs require the cancel action. Cancelled sessions must be retained.
       operationId: deleteSession
       parameters:
         - $ref: "#/components/parameters/SessionId"
@@ -682,6 +684,13 @@ paths:
     post:
       tags: ["Admin: Sessions"]
       summary: Cancel a session
+      description: >-
+        Approved admins only. Retains the session and RSVPs and creates one announcement
+        for all approved members, including those without an RSVP. Includes the Sydney
+        session date, optional reason and next non-cancelled session date (or no next
+        session). Email and push respect announcement preferences and notification
+        stops. Repeated requests return the original cancellation without another
+        announcement. Finished or settled sessions cannot be cancelled.
       operationId: cancelSession
       parameters:
         - $ref: "#/components/parameters/SessionId"
@@ -2156,13 +2165,14 @@ components:
           maximum: 3
         status:
           type: string
-          enum: [open, closed, cancelled]
+          enum: [open, closed]
 
     CancelSessionRequest:
       type: object
       properties:
         reason:
           type: string
+          maxLength: 1000
 
     UpdateClubRequest:
       type: object

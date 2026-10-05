@@ -1,4 +1,4 @@
-import type { TimeFormat } from '../types';
+import type { Session, TimeFormat } from '../types';
 
 // Session times are already Sydney wall-clock times. Do not apply the
 // browser's timezone to them when changing the display format.
@@ -16,4 +16,11 @@ export function formatSessionTimeRange(start: string, end: string, timeFormat?: 
 export function formatSessionVenue(venueName?: string, courtNumber?: number): string {
   return [venueName?.trim(), courtNumber && courtNumber > 0 ? `Court ${courtNumber}` : '']
     .filter(Boolean).join(' - ') || 'Venue to be confirmed';
+}
+
+/** Date and time fields are Sydney wall-clock values, regardless of browser zone. */
+export function nextScheduledSession(sessions: Session[], cancelled: Session): Session | undefined {
+  const key = (session: Session) => `${session.session_date.slice(0, 10)}T${session.start_time}`;
+  return sessions.filter(session => session.id !== cancelled.id && session.status !== 'cancelled' && key(session) > key(cancelled))
+    .sort((a, b) => key(a).localeCompare(key(b)))[0];
 }
