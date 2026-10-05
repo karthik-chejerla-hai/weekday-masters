@@ -5,6 +5,7 @@ import { format, parseISO } from 'date-fns';
 import type { Session, TimeFormat } from '../../types';
 import Badge from '../ui/Badge';
 import Avatar from '../ui/Avatar';
+import PlayerSlotIndicator from './PlayerSlotIndicator';
 import { displayName } from '../../utils/members';
 import { formatSessionTimeRange } from '../../utils/session-display';
 
@@ -32,7 +33,6 @@ export default function SessionCard({ session, venueName, courtNumber, timeForma
   const maybeCount = maybeRsvps.length;
   const declinedCount = declinedRsvps.length;
   const spotsLeft = session.max_players - confirmedCount;
-  const capacityPercent = Math.min(100, Math.max(0, (confirmedCount / session.max_players) * 100));
 
   const handleCardClick = () => {
     navigate(`/sessions/${session.id}`);
@@ -77,7 +77,7 @@ export default function SessionCard({ session, venueName, courtNumber, timeForma
           </div>
         </div>
 
-        <div className="mt-4 rounded-xl bg-slate-100/70 p-3">
+        <div className="mt-4">
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 text-sm">
             <span className="font-medium text-slate-700">{confirmedCount} of {session.max_players} confirmed</span>
             {session.status === 'cancelled' ? (
@@ -92,9 +92,15 @@ export default function SessionCard({ session, venueName, courtNumber, timeForma
               <Badge variant="success">RSVP open</Badge>
             )}
           </div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200" role="progressbar" aria-label={`${confirmedCount} of ${session.max_players} spots confirmed`} aria-valuemin={0} aria-valuemax={session.max_players} aria-valuenow={confirmedCount}>
-            <div className="h-full rounded-full bg-primary-700" style={{ width: `${capacityPercent}%` }} />
-          </div>
+          <PlayerSlotIndicator
+            capacity={session.max_players}
+            reservedCount={confirmedCount}
+            players={confirmedRsvps.map(({ id, user }) => ({
+              id,
+              name: displayName(user),
+              picture: user?.profile_picture,
+            }))}
+          />
         </div>
 
         <div className="mt-3 flex items-center justify-between gap-3">
