@@ -1,16 +1,25 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
-import { CalendarDays, Eye, Home, LogOut, Settings, UsersRound, WalletCards } from 'lucide-react';
+import { CalendarDays, Eye, Home, LogOut, Settings, UsersRound, WalletCards, MessageCircle } from 'lucide-react';
 import { useAuth } from '../../context/useAuth';
 import { api } from '../../services/api';
 import Avatar from '../ui/Avatar';
 import BalanceChip from '../money/BalanceChip';
+import SpendChip from '../money/SpendChip';
+import { formatCents } from '../money/format';
 import type { MyBalance } from '../../types';
 import { displayName } from '../../utils/members';
 
 export default function Header() {
   const { user, logout, isAdmin, isApproved, startMemberPreview } = useAuth();
   const [balance, setBalance] = useState<MyBalance | null>(null);
+
+  const [balanceVersion, setBalanceVersion] = useState(0);
+  useEffect(() => {
+    const refresh = () => setBalanceVersion((version) => version + 1);
+    window.addEventListener('rally:balances-changed', refresh);
+    return () => window.removeEventListener('rally:balances-changed', refresh);
+  }, []);
 
   // The number people check most often, so it lives where they already look.
   // A chip that is red every time you open the app does more than a reminder
@@ -29,12 +38,13 @@ export default function Header() {
     return () => {
       cancelled = true;
     };
-  }, [isApproved]);
+  }, [isApproved, balanceVersion, user?.id]);
 
   const primaryItems = [
     { to: '/dashboard', icon: Home, label: 'Home' },
     { to: '/sessions', icon: CalendarDays, label: 'Sessions' },
     { to: '/money', icon: WalletCards, label: 'Money' },
+    { to: '/assistant', icon: MessageCircle, label: 'Ask Rally' },
   ];
 
   const adminItems = [
@@ -52,22 +62,25 @@ export default function Header() {
 
   return (
     <>
-      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur md:hidden">
-        <div className="flex h-16 items-center justify-between px-4">
-          <Link to="/dashboard" className="flex items-center gap-2" aria-label="Rally home">
+      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
+        <div className="flex min-h-16 items-center justify-between gap-3 px-4 py-2 md:justify-end sm:px-6 lg:px-10">
+          <Link to="/dashboard" className="flex shrink-0 items-center gap-2 md:hidden" aria-label="Rally home">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-50 ring-1 ring-primary-100">
               <img src="/badminton.svg" alt="" className="h-8 w-8" />
             </span>
-            <span className="text-lg font-bold tracking-tight text-slate-950">Rally</span>
+            <span className="hidden text-lg font-bold tracking-tight text-slate-950 min-[400px]:inline">Rally</span>
           </Link>
 
-          <div className="flex items-center gap-2">
-            {balance && (
-              <Link to="/money" aria-label="Your balance" className="rounded-full focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2">
-                <BalanceChip cents={balance.balance_cents} state={balance.state} compact />
-              </Link>
-            )}
-            <Link to="/profile" aria-label={`Open ${displayName(user)}'s profile`} className="rounded-full focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex flex-col items-end sm:flex-row sm:items-center sm:gap-3">
+              {balance && (
+                <Link to="/money" aria-label={`Your balance: ${formatCents(balance.balance_cents)}`} className="inline-flex min-h-11 items-center rounded-md focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2">
+                  <BalanceChip cents={balance.balance_cents} state={balance.state} label="Balance" />
+                </Link>
+              )}
+              <SpendChip />
+            </div>
+            <Link to="/profile" aria-label={`Open ${displayName(user)}'s profile`} className="shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2">
               <Avatar src={user?.profile_picture} name={displayName(user)} size="sm" />
             </Link>
           </div>

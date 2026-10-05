@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
 import { api } from '../services/api';
 import BalancesList from '../components/money/BalancesList';
@@ -8,19 +9,27 @@ import TopupForm from '../components/money/TopupForm';
 import BalanceChip from '../components/money/BalanceChip';
 import PositionPanel from '../components/money/PositionPanel';
 import AssetPurchaseForms from '../components/money/AssetPurchaseForms';
+import SpendAnalytics from '../components/money/SpendAnalytics';
 import type { ClubPosition, MyBalance, PlayerBalance } from '../types';
 
-type Tab = 'balances' | 'ledger' | 'club';
+type Tab = 'balances' | 'ledger' | 'club' | 'analytics';
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'balances', label: 'Balances' },
   { id: 'ledger', label: 'Ledger' },
   { id: 'club', label: 'Club assets' },
+  { id: 'analytics', label: 'Analytics' },
 ];
 
 export default function Money() {
   const { user, isAdmin } = useAuth();
-  const [tab, setTab] = useState<Tab>('balances');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = TABS.find(({ id }) => id === searchParams.get('tab'))?.id ?? 'balances';
+  const setTab = (tab: Tab) => setSearchParams((current) => {
+    const next = new URLSearchParams(current);
+    next.set('tab', tab);
+    return next;
+  });
 
   const [balances, setBalances] = useState<PlayerBalance[]>([]);
   const [myBalance, setMyBalance] = useState<MyBalance | null>(null);
@@ -56,8 +65,6 @@ export default function Money() {
 
   useEffect(() => { void load(); }, [load]);
 
-  const activeTab = tab;
-
   if (isLoading) {
     return (
       <div className="card p-8 flex items-center justify-center">
@@ -88,14 +95,14 @@ export default function Money() {
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1" role="tablist" aria-label="Money views">
+      <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1" role="tablist" aria-label="Money views">
         {TABS.map(({ id, label }) => (
           <button
             key={id}
             role="tab"
             aria-selected={activeTab === id}
             onClick={() => setTab(id)}
-            className={`min-h-11 rounded-lg px-2 py-2 text-sm font-semibold transition-colors ${
+            className={`min-h-11 rounded-lg px-1 py-2 text-xs font-semibold transition-colors sm:px-2 sm:text-sm ${
               activeTab === id
                 ? 'bg-white text-slate-950 shadow-sm'
                 : 'text-slate-500 hover:text-slate-800'
@@ -118,6 +125,8 @@ export default function Money() {
       )}
 
       {activeTab === 'ledger' && <LedgerBrowser userId={user?.id} revision={revision} />}
+
+      {activeTab === 'analytics' && <SpendAnalytics />}
 
       {activeTab === 'club' && (
         <div className="space-y-6">

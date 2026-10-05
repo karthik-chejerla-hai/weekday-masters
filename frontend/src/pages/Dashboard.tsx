@@ -2,14 +2,27 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, CalendarDays, Loader2, AlertTriangle } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
+import { formatInTimeZone } from 'date-fns-tz';
 import { useAuth } from '../context/useAuth';
 import { api } from '../services/api';
-import type { Club, Session } from '../types';
+import type { Club, Session, PastSession } from '../types';
 import SessionCard from '../components/sessions/SessionCard';
 import { displayName } from '../utils/members';
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
+  const [unsettled, setUnsettled] = useState<PastSession[]>([]);
+  const [expenseError, setExpenseError] = useState(false);
+  useEffect(() => {
+    let active = true;
+    const refresh = () => api.listUnsettledSessions().then((data) => {
+      if (active) { setUnsettled(data.items); setExpenseError(false); }
+    }).catch(() => { if (active) setExpenseError(true); });
+    void refresh();
+    window.addEventListener('focus', refresh);
+    const timer = setInterval(refresh, 60_000);
+    return () => { active = false; clearInterval(timer); window.removeEventListener('focus', refresh); };
+  }, []);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [cancelledSessions, setCancelledSessions] = useState<Session[]>([]);
   const [club, setClub] = useState<Club | null>(null);
@@ -46,6 +59,16 @@ export default function Dashboard() {
         <p className="page-kicker">Welcome back, {displayName(user).split(' ')[0]}</p>
         <h1 className="page-title">Ready for your next game?</h1>
       </div>
+
+      {expenseError && <p role="alert" className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">Could not check outstanding expenses. <Link className="underline" to="/sessions">Check session history</Link>.</p>}
+      {unsettled.length > 0 && <section aria-labelledby="unsettled-heading" className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 sm:p-5">
+        <h2 id="unsettled-heading" className="font-semibold text-slate-950">Expenses to record <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-sm">{unsettled.length}</span></h2>
+        <p className="mt-1 text-sm text-slate-600">{isAdmin ? 'These sessions have finished. Record their costs to update club balances.' : 'These sessions are waiting for an admin to record their expenses.'}</p>
+        <ul className="mt-3 divide-y divide-amber-200/60">{unsettled.map((session) => <li key={session.session_id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+          <div><p className="text-sm font-semibold">{session.title}</p><p className="mt-1 text-xs text-slate-600">{session.ends_at && formatInTimeZone(session.ends_at, 'Australia/Sydney', 'EEE, d MMM yyyy')} · {session.player_count} confirmed players</p></div>
+          {isAdmin ? <Link className="btn-primary text-sm" to={`/assistant?session=${session.session_id}`}>Record expense</Link> : <span className="text-xs font-medium text-amber-800">Expense pending</span>}
+        </li>)}</ul>
+      </section>}
 
       {isLoading ? (
         <div className="card flex min-h-48 items-center justify-center" aria-label="Loading upcoming sessions">

@@ -30,6 +30,7 @@ func (h *LedgerHandler) RegisterRoutes(protected *gin.RouterGroup) {
 	approved.Use(middleware.RequireApproved())
 	approved.GET("/accounts", h.ListBalances)
 	approved.GET("/accounts/me", h.GetMyBalance)
+	approved.GET("/accounts/me/spend", h.GetMySpend)
 	approved.GET("/accounts/me/entries", h.GetMyEntries)
 	approved.GET("/accounts/entries", h.GetEntries)
 	approved.GET("/accounts/activity", h.GetActivity)
@@ -119,6 +120,21 @@ func (h *LedgerHandler) GetMyBalance(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"balance_cents": balance, "state": state})
+}
+
+// GetMySpend never accepts a caller-selected member or club-wide scope.
+func (h *LedgerHandler) GetMySpend(c *gin.Context) {
+	user, err := middleware.GetUserFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": "unauthorized", "message": err.Error()})
+		return
+	}
+	spend, err := h.ledgerService.MySpend(user.ID, utils.NowInSydney())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": "internal", "message": "Could not load your spend"})
+		return
+	}
+	c.JSON(http.StatusOK, spend)
 }
 
 // GetMyEntries returns the caller's own itemised history.

@@ -34,6 +34,7 @@ import (
 	"net/url"
 	"os"
 
+	"github.com/google/uuid"
 	"github.com/weekday-masters/backend/internal/config"
 	"github.com/weekday-masters/backend/internal/database"
 	"github.com/weekday-masters/backend/internal/seed"
@@ -187,6 +188,10 @@ func printReport(env string, report *seed.Report) {
 	log.Printf("  ledger:      %d transactions posted, settlement run: %t",
 		report.MoneyPosted, report.SettlementMade)
 
+	if report.ExpenseSessionID != uuid.Nil {
+		log.Printf("  expense fixture: %s (initially four confirmed RSVPs; existing expenses are preserved)", report.ExpenseSessionDate)
+		log.Printf("  open: http://localhost:5173/assistant?session=%s", report.ExpenseSessionID)
+	}
 	log.Println("  closing balances:")
 	for _, line := range report.Balances {
 		log.Printf("    %-22s %-10s %10s",

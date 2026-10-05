@@ -65,17 +65,17 @@ describe('Header', () => {
 describe('Navigation', () => {
   it('offers the member tabs', () => {
     renderAt(<Navigation />);
-    for (const label of ['Home', 'Sessions', 'Profile']) {
+    for (const label of ['Home', 'Sessions', 'Ask Rally', 'Profile']) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
     expect(screen.queryByText('Admin')).not.toBeInTheDocument();
   });
 
-  it('keeps four stable member destinations for admins', () => {
+  it('keeps five stable member destinations for admins', () => {
     mockAuth({ isAdmin: true });
     renderAt(<Navigation />);
     expect(screen.queryByText('Admin')).not.toBeInTheDocument();
-    expect(screen.getAllByRole('link')).toHaveLength(4);
+    expect(screen.getAllByRole('link')).toHaveLength(5);
   });
 
   it('marks the current tab as active', () => {

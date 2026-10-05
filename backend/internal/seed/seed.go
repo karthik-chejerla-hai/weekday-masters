@@ -92,13 +92,15 @@ type AssetSplit struct {
 // Report summarises what a run did, for the caller to log. Counts distinguish
 // created from reused so a second run visibly does nothing.
 type Report struct {
-	UsersCreated   int
-	UsersReused    int
-	SessionsMade   int
-	RSVPsMade      int
-	MoneyPosted    int
-	SettlementMade bool
-	Balances       []BalanceLine
+	ExpenseSessionID   uuid.UUID
+	ExpenseSessionDate string
+	UsersCreated       int
+	UsersReused        int
+	SessionsMade       int
+	RSVPsMade          int
+	MoneyPosted        int
+	SettlementMade     bool
+	Balances           []BalanceLine
 
 	// Source names the export a roster run came from, empty for a synthetic
 	// run. TransactionsRead is how many rows of it reconciled.
@@ -258,6 +260,8 @@ func runSynthetic(opts Options, now time.Time) (*Report, error) {
 	if err != nil {
 		return nil, err
 	}
+	report.ExpenseSessionID = sessions["unsettled"].ID
+	report.ExpenseSessionDate = sessions["unsettled"].SessionDate.In(utils.SydneyLocation).Format("Monday, 2 January 2006")
 	if err := seedRSVPs(sessions, users, report); err != nil {
 		return nil, err
 	}

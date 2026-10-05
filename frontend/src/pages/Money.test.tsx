@@ -12,6 +12,7 @@ vi.mock('../services/api', () => ({
   api: {
     listBalances: vi.fn(),
     getMyBalance: vi.fn(),
+    getMySpend: vi.fn(),
     getLedgerActivity: vi.fn(),
     getClub: vi.fn(),
     getClubPosition: vi.fn(),
@@ -54,9 +55,9 @@ function mockAuth({ isAdmin = false } = {}) {
   } as unknown as ReturnType<typeof useAuth>);
 }
 
-function renderPage() {
+function renderPage(path = '/money') {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[path]}>
       <Money />
     </MemoryRouter>
   );
@@ -66,10 +67,82 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.listBalances).mockResolvedValue(balances);
   vi.mocked(api.getMyBalance).mockResolvedValue({ balance_cents: 4250, state: 'ok' });
+  vi.mocked(api.getMySpend).mockResolvedValue({
+    year: 2026, as_of: '2026-02-10', recorded_from: '2025-12-05',
+    ytd_cents: 12345, all_time_cents: 24567,
+    months: [{ month: 1, amount_cents: 10000, session_count: 4 }, { month: 2, amount_cents: 2345, session_count: 1 }],
+  });
   vi.mocked(api.getLedgerActivity).mockResolvedValue({ items: entries.map((entry) => ({ id: entry.id, occurred_at: entry.occurred_at, entry })), total: 2 });
 });
 
 describe('Money', () => {
+  it('offers Analytics as the fourth tab and shows personal spend', async () => {
+    mockAuth();
+    renderPage();
+    const tabs = await screen.findAllByRole('tab');
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['Balances', 'Ledger', 'Club assets', 'Analytics']);
+    await userEvent.click(screen.getByRole('tab', { name: 'Analytics' }));
+    expect(await screen.findByText('$123.45')).toBeInTheDocument();
+    expect(screen.getByText('$245.67')).toBeInTheDocument();
+    expect(screen.getByText('Monthly spend & sessions · 2026')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Sessions' })).toBeInTheDocument();
+    expect(screen.getByRole('row', { name: 'Jan 4 $100.00' })).toBeInTheDocument();
+    expect(screen.getByRole('row', { name: 'Feb 1 $23.45' })).toBeInTheDocument();
+    expect(screen.getByText(/Guests you pay for do not add to your session count/)).toBeInTheDocument();
+    expect(screen.getByText('$100.00')).toBeInTheDocument();
+    expect(screen.getByText('$23.45')).toBeInTheDocument();
+    expect(screen.getByText('Recorded sessions since 5 Dec 2025')).toBeInTheDocument();
+    expect(api.getMySpend).toHaveBeenCalledWith();
+  });
+
+  it('opens Analytics directly from the chip URL', async () => {
+    mockAuth();
+    renderPage('/money?tab=analytics');
+    expect(await screen.findByText('Your badminton spend')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Analytics' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('keeps an Analytics failure separate from balances and offers retry', async () => {
+    mockAuth();
+    vi.mocked(api.getMySpend).mockRejectedValueOnce(new Error('network'));
+    renderPage('/money?tab=analytics');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load your spend');
+    expect(screen.getByText('$42.50')).toBeInTheDocument();
+    expect(screen.queryByText('$0.00')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('$123.45')).toBeInTheDocument();
+  });
+
+  it('shows a loading state instead of a zero spend', async () => {
+    mockAuth();
+    vi.mocked(api.getMySpend).mockReturnValueOnce(new Promise(() => {}));
+    renderPage('/money?tab=analytics');
+    expect(await screen.findByRole('status')).toHaveTextContent('Loading your spend');
+    expect(screen.queryByText('$0.00')).not.toBeInTheDocument();
+  });
+
+  it('explains empty personal history', async () => {
+    mockAuth();
+    vi.mocked(api.getMySpend).mockResolvedValueOnce({
+      year: 2026, as_of: '2026-01-01', recorded_from: null,
+      ytd_cents: 0, all_time_cents: 0, months: [{ month: 1, amount_cents: 0, session_count: 0 }],
+    });
+    renderPage('/money?tab=analytics');
+    expect(await screen.findByText('No recorded session charges yet')).toBeInTheDocument();
+    expect(screen.getAllByText('$0.00')).toHaveLength(2);
+    expect(screen.getByText(/Deposits do not count as spend/)).toBeInTheDocument();
+  });
+
+  it('shows zero sessions for a month without recorded games', async () => {
+    mockAuth();
+    vi.mocked(api.getMySpend).mockResolvedValueOnce({
+      year: 2026, as_of: '2026-01-10', recorded_from: '2025-12-05',
+      ytd_cents: 0, all_time_cents: 24567, months: [{ month: 1, amount_cents: 0, session_count: 0 }],
+    });
+    renderPage('/money?tab=analytics');
+    expect(await screen.findByRole('row', { name: 'Jan 0 $0.00' })).toBeInTheDocument();
+  });
+
   it('shows every member’s balance, not just the caller’s', async () => {
     mockAuth();
     renderPage();
