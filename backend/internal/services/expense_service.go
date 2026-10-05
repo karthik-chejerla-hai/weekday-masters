@@ -174,10 +174,10 @@ func (s *ExpenseService) Confirm(id uuid.UUID, in ExpenseInput, actor *models.Us
 // cannot hide older outstanding sessions. RSVP count is meaningful before charges exist.
 func (s *ExpenseService) ListUnsettledSessions() ([]PastSessionView, error) {
 	items := []PastSessionView{}
-	err := database.DB.Raw(`SELECT s.id AS session_id,s.title,s.starts_at,s.ends_at,false AS settled,
- 0 AS total_cents,(SELECT COUNT(*) FROM rsvps r WHERE r.session_id=s.id AND r.status='in') AS player_count
- FROM sessions s WHERE s.ends_at < ? AND s.status != ?
- AND NOT EXISTS (SELECT 1 FROM settlements st WHERE st.session_id=s.id AND st.reversed_at IS NULL)
- ORDER BY s.ends_at ASC,s.id ASC`, utils.NowInSydney(), models.SessionStatusCancelled).Scan(&items).Error
+	err := scheduledSessionsWithSettlementStatus(database.DB).
+		Select(`s.id AS session_id,s.title,s.starts_at,s.ends_at,s.settled,
+ 0 AS total_cents,(SELECT COUNT(*) FROM rsvps r WHERE r.session_id=s.id AND r.status='in') AS player_count`).
+		Where("s.ends_at < ? AND s.status != ? AND NOT s.settled", utils.NowInSydney(), models.SessionStatusCancelled).
+		Order("s.ends_at ASC,s.id ASC").Scan(&items).Error
 	return items, err
 }
