@@ -1473,6 +1473,16 @@ components:
           type: string
         venue_address:
           type: string
+        court_number:
+          type: integer
+          minimum: 0
+          maximum: 999
+          description: Physical court number at the venue. Zero means unassigned, not the number of courts booked.
+        time_format:
+          type: string
+          enum: [12h, 24h]
+          default: 24h
+          description: Club-wide session time display format.
         notifications_paused:
           type: boolean
           description: Discards notifications while setup or data review is in progress.
@@ -1896,6 +1906,14 @@ components:
           type: string
         venue_address:
           type: string
+        court_number:
+          type: integer
+          minimum: 0
+          maximum: 999
+          description: Set to zero to clear the assigned court number.
+        time_format:
+          type: string
+          enum: [12h, 24h]
 
     UpdatePreferencesRequest:
       type: object

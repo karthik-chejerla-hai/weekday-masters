@@ -413,3 +413,41 @@ func TestUpdateClub_AppliesOnlyTheFieldsProvided(t *testing.T) {
 		t.Fatalf("expected the club name to be untouched, got %q (was %q)", after.Name, before.Name)
 	}
 }
+
+func TestClubSessionDisplaySettingsPersistAndCanBeCleared(t *testing.T) {
+	h := newHarness(t)
+	admin := makeAdmin(t)
+	var club models.Club
+	h.as(nil).get("/api/club").expect(http.StatusOK).decode(&club)
+	if club.TimeFormat != "24h" || club.CourtNumber != 0 {
+		t.Fatalf("unexpected display defaults: %+v", club)
+	}
+	h.as(admin).put("/api/admin/club", map[string]any{"court_number": 8, "time_format": "12h"}).expect(http.StatusOK)
+	// Saving another setting must retain both display choices.
+	h.as(admin).put("/api/admin/club", map[string]any{"venue_name": "BadmintonWorx Norwest"}).expect(http.StatusOK)
+	h.as(nil).get("/api/club").expect(http.StatusOK).decode(&club)
+	if club.CourtNumber != 8 || club.TimeFormat != "12h" || club.VenueName != "BadmintonWorx Norwest" {
+		t.Fatalf("display settings were not retained: %+v", club)
+	}
+	h.as(admin).put("/api/admin/club", map[string]any{"court_number": 0, "time_format": "24h"}).expect(http.StatusOK)
+	h.as(nil).get("/api/club").expect(http.StatusOK).decode(&club)
+	if club.CourtNumber != 0 || club.TimeFormat != "24h" {
+		t.Fatalf("could not clear court or restore time format: %+v", club)
+	}
+}
+
+func TestClubSessionDisplaySettingsRejectInvalidValues(t *testing.T) {
+	h := newHarness(t)
+	admin := makeAdmin(t)
+	for _, body := range []map[string]any{
+		{"court_number": -1}, {"court_number": 1000}, {"court_number": 8.5},
+		{"time_format": "12"}, {"time_format": ""},
+	} {
+		h.as(admin).put("/api/admin/club", body).expect(http.StatusBadRequest)
+	}
+	var club models.Club
+	h.as(nil).get("/api/club").expect(http.StatusOK).decode(&club)
+	if club.CourtNumber != 0 || club.TimeFormat != "24h" {
+		t.Fatalf("invalid request changed settings: %+v", club)
+	}
+}

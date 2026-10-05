@@ -8,7 +8,7 @@ import { api } from '../services/api';
 import type { RSVP, RSVPSummary, Session } from '../types';
 
 vi.mock('../context/useAuth', () => ({ useAuth: vi.fn() }));
-vi.mock('../services/api', () => ({ api: { getSession: vi.fn(), createRSVP: vi.fn() } }));
+vi.mock('../services/api', () => ({ api: { getSession: vi.fn(), createRSVP: vi.fn(), getClub: vi.fn() } }));
 
 const ME = 'user-me';
 
@@ -84,15 +84,27 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(useAuth).mockReturnValue({ user: { id: ME } } as unknown as ReturnType<typeof useAuth>);
   vi.mocked(api.createRSVP).mockResolvedValue({} as never);
+  vi.mocked(api.getClub).mockResolvedValue({ venue_name: 'BadmintonWorx Norwest', court_number: 8, time_format: '12h' } as never);
 });
 
 describe('SessionDetail page', () => {
+  it('keeps RSVP details available if display settings cannot load', async () => {
+    vi.mocked(api.getClub).mockRejectedValue(new Error('settings unavailable'));
+    loads(makeSession());
+    renderPage();
+    expect(await screen.findByText('Sunday Social')).toBeInTheDocument();
+    expect(screen.getByText('18:00 - 20:00')).toBeInTheDocument();
+    expect(screen.getByText('Your RSVP')).toBeInTheDocument();
+  });
+
   it('shows the session and marks it open for RSVP', async () => {
     loads(makeSession());
     renderPage();
 
     expect(await screen.findByText('Sunday Social')).toBeInTheDocument();
     expect(screen.getByText('Casual games')).toBeInTheDocument();
+    expect(screen.getByText('BadmintonWorx Norwest - Court 8')).toBeInTheDocument();
+    expect(screen.getByText('6:00 PM - 8:00 PM')).toBeInTheDocument();
     expect(screen.getByText('Open for RSVP')).toBeInTheDocument();
   });
 

@@ -51,16 +51,24 @@ beforeEach(() => {
 });
 
 describe('Sessions page', () => {
-  it('lists the sessions it loads', async () => {
+  it('shows only the next two sessions with the club display settings', async () => {
+    vi.mocked(api.getClub).mockResolvedValue({ venue_name: 'BadmintonWorx Norwest', court_number: 8, time_format: '12h' } as never);
     vi.mocked(api.listSessions).mockResolvedValue([
       makeSession({ id: 's1', title: 'Sunday Social' }),
       makeSession({ id: 's2', title: 'Thursday Drills' }),
+      makeSession({ id: 's3', title: 'Later Game' }),
+      makeSession({ id: 's4', title: 'Another Later Game' }),
     ]);
 
     renderPage();
 
     expect(await screen.findByText('Sunday Social')).toBeInTheDocument();
     expect(screen.getByText('Thursday Drills')).toBeInTheDocument();
+    expect(screen.queryByText('Later Game')).not.toBeInTheDocument();
+    expect(screen.queryByText('Another Later Game')).not.toBeInTheDocument();
+    expect(screen.getAllByText('BadmintonWorx Norwest')).toHaveLength(2);
+    expect(screen.getAllByText('Court 8')).toHaveLength(2);
+    expect(screen.getAllByText('6:00 PM - 8:00 PM')).toHaveLength(2);
   });
 
   it('explains the empty state rather than showing a blank page', async () => {

@@ -4,7 +4,7 @@ import { ArrowRight, CalendarDays, Loader2, AlertTriangle } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { useAuth } from '../context/useAuth';
 import { api } from '../services/api';
-import type { Session } from '../types';
+import type { Club, Session } from '../types';
 import SessionCard from '../components/sessions/SessionCard';
 import { displayName } from '../utils/members';
 
@@ -12,7 +12,7 @@ export default function Dashboard() {
   const { user } = useAuth();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [cancelledSessions, setCancelledSessions] = useState<Session[]>([]);
-  const [venueName, setVenueName] = useState<string>('');
+  const [club, setClub] = useState<Club | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -28,7 +28,7 @@ export default function Dashboard() {
       ]);
       setSessions(sessionsData);
       setCancelledSessions(cancelledData);
-      setVenueName(clubData.venue_name || '');
+      setClub(clubData);
     } catch (error) {
       console.error('Failed to load data:', error);
     } finally {
@@ -36,9 +36,9 @@ export default function Dashboard() {
     }
   };
 
-  const upcomingSessions = sessions.slice(0, 3);
+  const upcomingSessions = sessions.slice(0, 2);
   const nextSession = upcomingSessions[0];
-  const laterSessions = upcomingSessions.slice(1);
+  const futureSessions = upcomingSessions.slice(1);
 
   return (
     <div className="space-y-7">
@@ -67,7 +67,7 @@ export default function Dashboard() {
               Details <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
-          <SessionCard session={nextSession} venueName={venueName} featured />
+          <SessionCard session={nextSession} venueName={club?.venue_name} courtNumber={club?.court_number} timeFormat={club?.time_format} featured />
         </section>
       )}
 
@@ -97,16 +97,16 @@ export default function Dashboard() {
         </section>
       )}
 
-      {laterSessions.length > 0 && (
-        <section aria-labelledby="later-sessions-heading">
+      {futureSessions.length > 0 && (
+        <section aria-labelledby="future-sessions-heading">
           <div className="mb-3 flex items-center justify-between">
-            <h2 id="later-sessions-heading" className="text-base font-semibold text-slate-950">Later sessions</h2>
+            <h2 id="future-sessions-heading" className="text-base font-semibold text-slate-950">Future sessions</h2>
             <Link to="/sessions" className="flex min-h-11 items-center gap-1 px-1 text-sm font-semibold text-primary-700 hover:text-primary-800">
-              See all <ArrowRight className="h-4 w-4" />
+              View sessions <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
           <div className="space-y-3">
-            {laterSessions.map((session) => <SessionCard key={session.id} session={session} venueName={venueName} />)}
+            {futureSessions.map((session) => <SessionCard key={session.id} session={session} venueName={club?.venue_name} courtNumber={club?.court_number} timeFormat={club?.time_format} />)}
           </div>
         </section>
       )}

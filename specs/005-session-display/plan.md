@@ -1,0 +1,7 @@
+# Plan
+
+Add court_number (integer, zero means unassigned) and time_format (12h or 24h, default 24h) to Club. The explicit migration command uses AutoMigrate for these additive columns. The existing admin update route validates and persists optional fields without changing omitted settings. GET /club exposes the display settings through the existing model response. No money, account or session data migration is required.
+
+Use the existing chronological session API and limit only the two member lists. Keep the admin list and RSVP endpoints unchanged. Add a shared wall-clock formatter that does not convert stored Sydney HH:MM strings through the browser timezone. Use the club settings on cards, session details and admin session listings. Put time, venue and court on separate lines below the title, beside the date badge. Allow the venue to wrap on mobile, but keep the court label and number together. Keep the RSVP status in the attendance panel beside the confirmed count, so the title length cannot move it to a different position.
+
+Add regression tests for list limits, persisted settings and invalid values, card formatting and admin form saving. Run backend database tests and frontend tests, lint and build. Apply the migration only to the local review database, set the requested review values, and inspect desktop and mobile views. No commit, push or production deployment in this task.

@@ -8,6 +8,7 @@ import type { Session } from '../types';
 
 vi.mock('../services/api', () => ({
   api: {
+    getClub: vi.fn(),
     listSessions: vi.fn(),
     createSession: vi.fn(),
     deleteSession: vi.fn(),
@@ -59,10 +60,27 @@ function deadlineToggle() {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.listSessions).mockResolvedValue([]);
+  vi.mocked(api.getClub).mockResolvedValue({ time_format: '24h' } as never);
   vi.mocked(api.createSession).mockResolvedValue(makeSession());
 });
 
 describe('AdminSessions page', () => {
+  it('keeps the schedule usable if the display settings cannot load', async () => {
+    vi.mocked(api.getClub).mockRejectedValue(new Error('settings unavailable'));
+    vi.mocked(api.listSessions).mockResolvedValue([makeSession()]);
+    renderPage();
+    expect(await screen.findByText('Sunday Social')).toBeInTheDocument();
+    expect(screen.getByText(/20:00 - 22:00/)).toBeInTheDocument();
+  });
+
+  it('keeps all scheduled games visible and uses the club time format', async () => {
+    vi.mocked(api.getClub).mockResolvedValue({ time_format: '12h' } as never);
+    vi.mocked(api.listSessions).mockResolvedValue([1, 2, 3, 4].map(n => makeSession({ id: `s${n}`, title: `Game ${n}` })));
+    renderPage();
+    expect(await screen.findByText('Game 4')).toBeInTheDocument();
+    expect(screen.getAllByText(/8:00 PM - 10:00 PM/)).toHaveLength(4);
+  });
+
   it('lists the sessions it loads', async () => {
     vi.mocked(api.listSessions).mockResolvedValue([
       makeSession({ id: 's1', title: 'Sunday Social' }),

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Settings, Users, Calendar, Check, X, Loader2, MapPin, Save, Building, Megaphone, Send } from 'lucide-react';
 import { api } from '../services/api';
-import type { User } from '../types';
+import type { TimeFormat, User } from '../types';
 import Avatar from '../components/ui/Avatar';
 import { displayName } from '../utils/members';
 
@@ -12,7 +12,7 @@ export default function Admin() {
   const [processingId, setProcessingId] = useState<string | null>(null);
 
   // Club settings state
-  const [clubForm, setClubForm] = useState({ name: '', venue_name: '', venue_address: '' });
+  const [clubForm, setClubForm] = useState({ name: '', venue_name: '', venue_address: '', court_number: '', time_format: '24h' as TimeFormat });
   const [isSavingClub, setIsSavingClub] = useState(false);
   const [notificationsPaused, setNotificationsPaused] = useState(false);
   const [clubMessage, setClubMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -38,6 +38,8 @@ export default function Admin() {
         name: clubData.name || '',
         venue_name: clubData.venue_name || '',
         venue_address: clubData.venue_address || '',
+        court_number: clubData.court_number ? String(clubData.court_number) : '',
+        time_format: clubData.time_format || '24h',
       });
     } catch (error) {
       console.error('Failed to load data:', error);
@@ -71,10 +73,15 @@ export default function Admin() {
   };
 
   const handleSaveClub = async () => {
+    const courtNumber = clubForm.court_number === '' ? 0 : Number(clubForm.court_number);
+    if (!Number.isInteger(courtNumber) || (clubForm.court_number !== '' && courtNumber < 1) || courtNumber > 999) {
+      setClubMessage({ type: 'error', text: 'Enter a whole court number from 1 to 999, or leave it blank.' });
+      return;
+    }
     setIsSavingClub(true);
     setClubMessage(null);
     try {
-      await api.updateClub(clubForm);
+      await api.updateClub({ ...clubForm, court_number: courtNumber });
       setClubMessage({ type: 'success', text: 'Club settings saved!' });
     } catch (error) {
       console.error('Failed to save club:', error);
@@ -191,6 +198,39 @@ export default function Admin() {
             />
           </div>
 
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label htmlFor="club-court-number" className="mb-1 block text-sm font-medium text-slate-700">Court number</label>
+              <input
+                id="club-court-number"
+                type="number"
+                min="1"
+                max="999"
+                step="1"
+                value={clubForm.court_number}
+                onChange={(e) => setClubForm({ ...clubForm, court_number: e.target.value })}
+                placeholder="e.g., 8"
+                aria-describedby="club-court-help"
+                className="w-full rounded-lg border border-slate-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+              <p id="club-court-help" className="mt-1 text-xs text-slate-500">Usual court at this venue. Leave blank if not assigned.</p>
+            </div>
+            <div>
+              <label htmlFor="club-time-format" className="mb-1 block text-sm font-medium text-slate-700">Time display</label>
+              <select
+                id="club-time-format"
+                value={clubForm.time_format}
+                onChange={(e) => setClubForm({ ...clubForm, time_format: e.target.value as TimeFormat })}
+                aria-describedby="club-time-help"
+                className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              >
+                <option value="12h">12-hour (8:00 PM)</option>
+                <option value="24h">24-hour (20:00)</option>
+              </select>
+              <p id="club-time-help" className="mt-1 text-xs text-slate-500">Used for session times across the app.</p>
+            </div>
+          </div>
+
           {clubMessage && (
             <div className={`p-3 rounded-lg text-sm ${
               clubMessage.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
@@ -201,7 +241,7 @@ export default function Admin() {
 
           <button
             onClick={handleSaveClub}
-            disabled={isSavingClub}
+            disabled={isLoading || isSavingClub}
             className="bg-primary-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-primary-700 transition-colors disabled:opacity-50 flex items-center gap-2"
           >
             {isSavingClub ? (

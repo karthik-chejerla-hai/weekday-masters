@@ -1,19 +1,22 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, Clock, Check, HelpCircle, X, ChevronDown, ChevronUp, MapPin, Timer, Hourglass } from 'lucide-react';
+import { Clock, Check, HelpCircle, X, ChevronDown, ChevronUp, MapPin, Timer, Hourglass } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
-import type { Session } from '../../types';
+import type { Session, TimeFormat } from '../../types';
 import Badge from '../ui/Badge';
 import Avatar from '../ui/Avatar';
 import { displayName } from '../../utils/members';
+import { formatSessionTimeRange } from '../../utils/session-display';
 
 interface SessionCardProps {
   session: Session;
   venueName?: string;
+  courtNumber?: number;
+  timeFormat?: TimeFormat;
   featured?: boolean;
 }
 
-export default function SessionCard({ session, venueName, featured = false }: SessionCardProps) {
+export default function SessionCard({ session, venueName, courtNumber, timeFormat, featured = false }: SessionCardProps) {
   const navigate = useNavigate();
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -45,54 +48,49 @@ export default function SessionCard({ session, venueName, featured = false }: Se
       {/* Main Card Content - Clickable */}
       <div
         onClick={handleCardClick}
-        className={`${featured ? 'p-5' : 'p-4'} cursor-pointer transition-colors hover:bg-slate-50`}
+        className="cursor-pointer p-4 transition-colors hover:bg-slate-50 sm:p-5"
       >
         <div className="flex gap-4">
-          <div className={`flex shrink-0 flex-col items-center justify-center rounded-xl bg-primary-50 text-primary-800 ${featured ? 'h-[76px] w-16' : 'h-14 w-14'}`}>
+          <div className={`flex w-14 shrink-0 flex-col items-center justify-center rounded-xl bg-primary-50 text-primary-800 sm:w-16 ${featured ? 'h-[76px]' : 'h-14'}`}>
             <span className="text-[11px] font-semibold uppercase tracking-wide">{format(sessionDate, 'EEE')}</span>
             <span className={`${featured ? 'text-2xl' : 'text-xl'} font-semibold leading-6 tabular-nums`}>{format(sessionDate, 'd')}</span>
             {featured && <span className="text-[11px]">{format(sessionDate, 'MMM')}</span>}
           </div>
 
           <div className="min-w-0 flex-1">
-            <div className="flex items-start justify-between gap-2">
-              <h3 className="font-semibold text-slate-950">{session.title}</h3>
-              {session.status === 'cancelled' ? (
-                <Badge variant="danger">Cancelled</Badge>
-              ) : isDeadlinePassed ? (
-                <Badge variant="warning">RSVP Closed</Badge>
-              ) : spotsLeft <= 2 && spotsLeft > 0 ? (
-                <Badge variant="danger">{spotsLeft} spots left</Badge>
-              ) : spotsLeft <= 0 ? (
-                <Badge variant="danger">{waitlistedRsvps.length > 0 ? `Full · ${waitlistedRsvps.length} waiting` : 'Full'}</Badge>
-              ) : (
-                <Badge variant="success">RSVP open</Badge>
-              )}
-            </div>
-
-            <div className="mt-2 space-y-1.5 text-sm text-slate-600">
-              <div className="flex items-center gap-2">
-                <Clock className="h-4 w-4 shrink-0 text-slate-400" />
-                <span>{session.start_time} - {session.end_time}</span>
+            <h3 className="font-semibold text-slate-950">{session.title}</h3>
+            <div className="mt-2 space-y-2 text-sm text-slate-600">
+              <div className="flex items-start gap-2">
+                <Clock className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+                <span className="font-medium tabular-nums">{formatSessionTimeRange(session.start_time, session.end_time, timeFormat)}</span>
               </div>
-              {venueName && (
-                <div className="flex items-center gap-2">
-                  <MapPin className="h-4 w-4 shrink-0 text-slate-400" />
-                  <span className="truncate">{venueName}</span>
+              <div className="flex min-w-0 items-start gap-2">
+                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+                <div className="min-w-0 space-y-1">
+                  <span className="block break-words [text-wrap:pretty]">{venueName?.trim() || 'Venue to be confirmed'}</span>
+                  {courtNumber !== undefined && courtNumber > 0 && (
+                    <span className="block whitespace-nowrap font-medium">Court {courtNumber}</span>
+                  )}
                 </div>
-              )}
-              <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 shrink-0 text-slate-400" />
-                <span>{session.courts} court{session.courts === 1 ? '' : 's'}</span>
               </div>
             </div>
           </div>
         </div>
 
         <div className="mt-4 rounded-xl bg-slate-100/70 p-3">
-          <div className="flex items-center justify-between gap-3 text-sm">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 text-sm">
             <span className="font-medium text-slate-700">{confirmedCount} of {session.max_players} confirmed</span>
-            <span className="text-xs tabular-nums text-slate-500">{spotsLeft > 0 ? `${spotsLeft} left` : 'At capacity'}</span>
+            {session.status === 'cancelled' ? (
+              <Badge variant="danger">Cancelled</Badge>
+            ) : isDeadlinePassed ? (
+              <Badge variant="warning">RSVP Closed</Badge>
+            ) : spotsLeft <= 2 && spotsLeft > 0 ? (
+              <Badge variant="danger">{spotsLeft} spots left</Badge>
+            ) : spotsLeft <= 0 ? (
+              <Badge variant="danger">{waitlistedRsvps.length > 0 ? `Full · ${waitlistedRsvps.length} waiting` : 'Full'}</Badge>
+            ) : (
+              <Badge variant="success">RSVP open</Badge>
+            )}
           </div>
           <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200" role="progressbar" aria-label={`${confirmedCount} of ${session.max_players} spots confirmed`} aria-valuemin={0} aria-valuemax={session.max_players} aria-valuenow={confirmedCount}>
             <div className="h-full rounded-full bg-primary-700" style={{ width: `${capacityPercent}%` }} />
