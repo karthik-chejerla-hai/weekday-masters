@@ -10,6 +10,7 @@ vi.mock('../services/api', () => ({
   api: {
     getClub: vi.fn(),
     listSessions: vi.fn(),
+    listCancelledSessions: vi.fn(),
     createSession: vi.fn(),
     deleteSession: vi.fn(),
     cancelSession: vi.fn(),
@@ -60,6 +61,7 @@ function deadlineToggle() {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.listSessions).mockResolvedValue([]);
+  vi.mocked(api.listCancelledSessions).mockResolvedValue([]);
   vi.mocked(api.getClub).mockResolvedValue({ time_format: '24h' } as never);
   vi.mocked(api.createSession).mockResolvedValue(makeSession());
 });
@@ -222,5 +224,74 @@ describe('AdminSessions page', () => {
 
       expect(screen.queryByText(/cannot be in the past/i)).not.toBeInTheDocument();
     });
+  });
+});
+
+
+describe('Session cancellation', () => {
+  it.each(['Court flooded', ''])('confirms cancellation with optional reason %j', async (reason) => {
+    const user = userEvent.setup();
+    vi.mocked(api.listSessions).mockResolvedValue([makeSession({ is_recurring: true })]);
+    vi.mocked(api.cancelSession).mockResolvedValue(makeSession({ status: 'cancelled', cancellation_reason: reason }));
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Cancel Session' }));
+    const dialog = screen.getByRole('dialog', { name: 'Cancel Session' });
+    const input = within(dialog).getByLabelText('Reason for cancellation (optional)');
+    expect(input).toHaveFocus();
+    expect(within(dialog).getByText(/all approved members/i)).toHaveTextContent('Only this date will be cancelled.');
+    expect(api.cancelSession).not.toHaveBeenCalled();
+    if (reason) await user.type(input, reason);
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel Session' }));
+    expect(api.cancelSession).toHaveBeenCalledWith('session-1', reason);
+    expect(await screen.findByText('Cancelled')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Delete')).not.toBeInTheDocument();
+  });
+
+  it('keeps cancelled sessions and reasons visible after loading', async () => {
+    vi.mocked(api.listCancelledSessions).mockResolvedValue([makeSession({ status: 'cancelled', cancellation_reason: 'Court flooded' })]);
+    renderPage();
+    expect(await screen.findByText('Cancelled')).toBeInTheDocument();
+    expect(screen.getByText('Reason: Court flooded')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancel Session' })).not.toBeInTheDocument();
+  });
+
+  it('shows failures and preserves the reason for retry', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.listSessions).mockResolvedValue([makeSession()]);
+    vi.mocked(api.cancelSession).mockRejectedValueOnce({ response: { data: { error: 'Session changed. Try again.' } } });
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Cancel Session' }));
+    const dialog = screen.getByRole('dialog');
+    await user.type(within(dialog).getByLabelText('Reason for cancellation (optional)'), 'Rain');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel Session' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Session changed. Try again.');
+    expect(within(dialog).getByLabelText('Reason for cancellation (optional)')).toHaveValue('Rain');
+    expect(within(dialog).getByRole('button', { name: 'Cancel Session' })).toBeEnabled();
+  });
+
+  it('keeps the session when dismissed and restores focus', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.listSessions).mockResolvedValue([makeSession()]);
+    renderPage();
+    const trigger = await screen.findByRole('button', { name: 'Cancel Session' });
+    await user.click(trigger);
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    expect(api.cancelSession).not.toHaveBeenCalled();
+  });
+
+  it('prevents duplicate submission and dismissal while cancellation is pending', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.listSessions).mockResolvedValue([makeSession()]);
+    vi.mocked(api.cancelSession).mockReturnValue(new Promise(() => {}));
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Cancel Session' }));
+    const dialog = screen.getByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel Session' }));
+    for (const button of within(dialog).getAllByRole('button')) expect(button).toBeDisabled();
+    expect(within(dialog).getByRole('textbox')).toBeDisabled();
+    expect(api.cancelSession).toHaveBeenCalledTimes(1);
   });
 });

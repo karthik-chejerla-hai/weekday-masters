@@ -1,17 +1,31 @@
 package services
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"log"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/weekday-masters/backend/internal/database"
 	"github.com/weekday-masters/backend/internal/models"
 	"github.com/weekday-masters/backend/internal/utils"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-type SessionService struct{}
+type SessionService struct {
+	notifier *NotificationService
+}
+
+func (s *SessionService) WithNotifier(notifier *NotificationService) *SessionService {
+	s.notifier = notifier
+	return s
+}
 
 func NewSessionService() *SessionService {
 	return &SessionService{}
@@ -202,6 +216,7 @@ func (s *SessionService) ListCancelledUpcomingSessions() ([]models.Session, erro
 	today := utils.StartOfDay(now)
 
 	if err := database.DB.Where("(ends_at IS NULL OR ends_at >= ?) AND session_date >= ? AND status = ?", time.Now(), today, models.SessionStatusCancelled).
+		Preload("RSVPs").
 		Order("session_date ASC, start_time ASC").
 		Find(&sessions).Error; err != nil {
 		return nil, err
@@ -224,90 +239,175 @@ type UpdateSessionInput struct {
 // UpdateSession updates a session
 func (s *SessionService) UpdateSession(id uuid.UUID, input UpdateSessionInput) (*models.Session, error) {
 	var session models.Session
-	if err := database.DB.First(&session, "id = ?", id).Error; err != nil {
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&session, "id = ?", id).Error; err != nil {
+			return err
+		}
+		if session.Status == models.SessionStatusCancelled {
+			return errors.New("cancelled sessions cannot be edited")
+		}
+		if input.Status != nil && *input.Status != models.SessionStatusOpen && *input.Status != models.SessionStatusClosed {
+			return errors.New("use the cancel action to cancel a session")
+		}
+
+		if input.Title != nil {
+			session.Title = *input.Title
+		}
+		if input.Description != nil {
+			session.Description = *input.Description
+		}
+		if input.SessionDate != nil {
+			session.SessionDate = *input.SessionDate
+			// Only auto-recalculate deadline if no explicit deadline is provided
+			if input.RSVPDeadline == nil {
+				session.RSVPDeadline = utils.CalculateRSVPDeadline(*input.SessionDate)
+			}
+		}
+		if input.RSVPDeadline != nil {
+			if input.RSVPDeadline.Before(utils.NowInSydney()) {
+				return errors.New("RSVP deadline cannot be in the past")
+			}
+			session.RSVPDeadline = *input.RSVPDeadline
+		}
+		if input.StartTime != nil {
+			session.StartTime = *input.StartTime
+		}
+		if input.EndTime != nil {
+			session.EndTime = *input.EndTime
+		}
+		if input.Courts != nil {
+			if *input.Courts < 1 || *input.Courts > 3 {
+				return errors.New("courts must be between 1 and 3")
+			}
+			session.Courts = *input.Courts
+			session.MaxPlayers = models.MaxPlayersForCourts(*input.Courts)
+		}
+		if input.Status != nil {
+			session.Status = *input.Status
+		}
+
+		session.UpdatedAt = time.Now()
+
+		return tx.Save(&session).Error
+	})
+	if err != nil {
 		return nil, err
 	}
-
-	if input.Title != nil {
-		session.Title = *input.Title
-	}
-	if input.Description != nil {
-		session.Description = *input.Description
-	}
-	if input.SessionDate != nil {
-		session.SessionDate = *input.SessionDate
-		// Only auto-recalculate deadline if no explicit deadline is provided
-		if input.RSVPDeadline == nil {
-			session.RSVPDeadline = utils.CalculateRSVPDeadline(*input.SessionDate)
-		}
-	}
-	if input.RSVPDeadline != nil {
-		if input.RSVPDeadline.Before(utils.NowInSydney()) {
-			return nil, errors.New("RSVP deadline cannot be in the past")
-		}
-		session.RSVPDeadline = *input.RSVPDeadline
-	}
-	if input.StartTime != nil {
-		session.StartTime = *input.StartTime
-	}
-	if input.EndTime != nil {
-		session.EndTime = *input.EndTime
-	}
-	if input.Courts != nil {
-		if *input.Courts < 1 || *input.Courts > 3 {
-			return nil, errors.New("courts must be between 1 and 3")
-		}
-		session.Courts = *input.Courts
-		session.MaxPlayers = models.MaxPlayersForCourts(*input.Courts)
-	}
-	if input.Status != nil {
-		session.Status = *input.Status
-	}
-
-	session.UpdatedAt = time.Now()
-
-	if err := database.DB.Save(&session).Error; err != nil {
-		return nil, err
-	}
-
 	return &session, nil
 }
 
-// DeleteSession deletes or cancels a session
+// DeleteSession only removes unused sessions. Cancellation must go through the
+// explicit action so members are told, even when a session has no RSVPs.
 func (s *SessionService) DeleteSession(id uuid.UUID) error {
-	var session models.Session
-	if err := database.DB.First(&session, "id = ?", id).Error; err != nil {
-		return err
-	}
-
-	// If session has RSVPs, just mark as cancelled
-	var rsvpCount int64
-	database.DB.Model(&models.RSVP{}).Where("session_id = ?", id).Count(&rsvpCount)
-
-	if rsvpCount > 0 {
-		session.Status = models.SessionStatusCancelled
-		session.UpdatedAt = time.Now()
-		return database.DB.Save(&session).Error
-	}
-
-	// Otherwise, delete it
-	return database.DB.Delete(&session).Error
+	return database.DB.Transaction(func(tx *gorm.DB) error {
+		var session models.Session
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&session, "id = ?", id).Error; err != nil {
+			return err
+		}
+		if session.Status == models.SessionStatusCancelled {
+			return errors.New("cancelled sessions must be retained")
+		}
+		var rsvpCount int64
+		if err := tx.Model(&models.RSVP{}).Where("session_id = ?", id).Count(&rsvpCount).Error; err != nil {
+			return err
+		}
+		if rsvpCount > 0 {
+			return errors.New("this session has RSVPs; use the cancel action to notify members")
+		}
+		return tx.Delete(&session).Error
+	})
 }
 
-// CancelSession cancels a session with an optional reason
-func (s *SessionService) CancelSession(id uuid.UUID, reason string) (*models.Session, error) {
+const MaxCancellationReasonLength = 1000
+
+// CancelSession retains the schedule and attendance history. The session lock
+// serializes cancellation with RSVP, editing and settlement. Notifications are
+// persisted in the same transaction, then delivered only by the winning request.
+func (s *SessionService) CancelSession(id uuid.UUID, reason string, actorID uuid.UUID) (*models.Session, error) {
+	reason = strings.TrimSpace(reason)
+	if utf8.RuneCountInString(reason) > MaxCancellationReasonLength {
+		return nil, errors.New("cancellation reason must be at most 1000 characters")
+	}
 	var session models.Session
-	if err := database.DB.First(&session, "id = ?", id).Error; err != nil {
+	var notifications []models.Notification
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&session, "id = ?", id).Error; err != nil {
+			return err
+		}
+		if session.Status == models.SessionStatusCancelled {
+			return nil
+		}
+		now := time.Now()
+		if session.StartsAt == nil || session.EndsAt == nil || !session.EndsAt.After(now) {
+			return errors.New("finished sessions cannot be cancelled")
+		}
+		var settlements int64
+		if err := tx.Model(&models.Settlement{}).Where("session_id = ?", id).Count(&settlements).Error; err != nil {
+			return err
+		}
+		if settlements > 0 {
+			return errors.New("settled sessions cannot be cancelled")
+		}
+
+		var next models.Session
+		err := tx.Where("id <> ? AND status <> ? AND starts_at > ? AND starts_at > ?", id, models.SessionStatusCancelled, session.StartsAt, now).
+			Order("starts_at ASC, id ASC").First(&next).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		nextText := "No next session is scheduled."
+		if err == nil {
+			nextText = "Next scheduled session: " + next.StartsAt.In(utils.SydneyLocation).Format("Monday, 2 January 2006 at 15:04 MST") + "."
+		}
+		reasonText := reason
+		if reasonText == "" {
+			reasonText = "No reason provided."
+		}
+		announcement := models.Announcement{
+			Title:     "Session cancelled",
+			Body:      fmt.Sprintf("Cancelled session: %s.\nReason: %s\n%s", session.StartsAt.In(utils.SydneyLocation).Format("Monday, 2 January 2006 at 15:04 MST"), reasonText, nextText),
+			CreatedBy: actorID,
+		}
+		session.Status = models.SessionStatusCancelled
+		session.CancellationReason = reason
+		if err := tx.Save(&session).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&announcement).Error; err != nil {
+			return err
+		}
+		var members []models.User
+		if err := tx.Select("id").Where("membership_status = ?", models.MembershipApproved).Find(&members).Error; err != nil {
+			return err
+		}
+		data, _ := json.Marshal(map[string]string{
+			"type":            string(models.NotificationAdminAnnouncement),
+			"announcement_id": announcement.ID.String(),
+			"session_id":      id.String(),
+		})
+		for _, member := range members {
+			notifications = append(notifications, models.Notification{
+				UserID: member.ID, NotificationType: models.NotificationAdminAnnouncement,
+				Title: announcement.Title, Body: announcement.Body, Data: string(data),
+			})
+		}
+		if len(notifications) > 0 {
+			return tx.Create(&notifications).Error
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
-
-	session.Status = models.SessionStatusCancelled
-	session.CancellationReason = reason
-	session.UpdatedAt = time.Now()
-
-	if err := database.DB.Save(&session).Error; err != nil {
-		return nil, err
+	if s.notifier != nil && len(notifications) > 0 {
+		// A disconnected client must not cancel delivery after the write commits.
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		for i := range notifications {
+			if err := s.notifier.deliverNotification(ctx, &notifications[i]); err != nil {
+				log.Printf("Failed to deliver cancellation notification %s: %v", notifications[i].ID, err)
+			}
+		}
 	}
-
 	return &session, nil
 }

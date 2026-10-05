@@ -162,7 +162,13 @@ handler chain at registration time, so using the wrong group silently skips the 
 
 **Key business rules in services:**
 - `RSVPService`: enforces 3-day deadline, prevents IN→OUT after deadline (unless admin), tracks `is_late_rsvp` and `added_by_admin` flags. Enforces session capacity inside a transaction that locks the session row (`SELECT ... FOR UPDATE`): an "in" request for a full session is stored as `waitlisted` instead, and freeing a confirmed spot auto-promotes the longest-waiting player and notifies them. Admins bypass the cap.
-- `SessionService`: calculates `max_players` from courts (1→6, 2→10, 3→16), generates recurring sessions, sets RSVP deadline at sessionDate - 3 days 23:59:59 Sydney time
+- `SessionService`: calculates `max_players` from courts (1→6, 2→10, 3→16), generates recurring sessions, sets RSVP deadline at sessionDate - 3 days 23:59:59 Sydney time.
+  Cancellation locks the session and atomically stores its status, optional reason, an
+  announcement and notification history for every approved member. Only the first request
+  sends email/push through existing preferences and notification stops. Finished or settled
+  sessions cannot be cancelled. Cancellation retains RSVPs and blocks edits, deletion and
+  waitlist promotion. Other recurring dates stay intact. Announcements include Sydney dates
+  and the next non-cancelled session, or an explicit no-next-session message.
 - `UserService`: auto-promotes user matching `ADMIN_EMAIL` env var on first login — only when
   the email is **verified and sourced from Auth0**, never from the request body. Also owns admin
   member management: an invited member is a real, chargeable row created before their first

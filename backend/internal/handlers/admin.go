@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"time"
@@ -413,11 +414,20 @@ func (h *AdminHandler) DeleteSession(c *gin.Context) {
 }
 
 type CancelSessionRequest struct {
-	Reason string `json:"reason"`
+	Reason string `json:"reason" binding:"max=1000"`
 }
 
 // CancelSession cancels a session with an optional reason
 func (h *AdminHandler) CancelSession(c *gin.Context) {
+	user, err := middleware.GetUserFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
+		return
+	}
+	if user.Role != models.RoleAdmin || user.MembershipStatus != models.MembershipApproved {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Approved admin access required"})
+		return
+	}
 	idStr := c.Param("id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
@@ -426,12 +436,12 @@ func (h *AdminHandler) CancelSession(c *gin.Context) {
 	}
 
 	var req CancelSessionRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		// Reason is optional, so we don't error if body is empty
-		req.Reason = ""
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Provide an optional reason of at most 1000 characters"})
+		return
 	}
 
-	session, err := h.sessionService.CancelSession(id, req.Reason)
+	session, err := h.sessionService.CancelSession(id, req.Reason, user.ID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

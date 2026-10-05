@@ -131,6 +131,9 @@ func (s *RSVPService) CreateOrUpdateRSVP(input RSVPInput, byAdmin bool) (*models
 // DeleteRSVP removes an RSVP, promoting from the waitlist if a spot is freed.
 func (s *RSVPService) DeleteRSVP(sessionID, userID uuid.UUID, byAdmin bool) error {
 	return s.withSessionLock(sessionID, func(tx *gorm.DB, session models.Session) ([]uuid.UUID, error) {
+		if session.Status == models.SessionStatusCancelled {
+			return nil, errors.New("cancelled session RSVPs must be retained")
+		}
 		var rsvp models.RSVP
 		if err := tx.Where("session_id = ? AND user_id = ?", sessionID, userID).First(&rsvp).Error; err != nil {
 			return nil, errors.New("RSVP not found")
@@ -204,6 +207,9 @@ func countConfirmed(db *gorm.DB, sessionID uuid.UUID) (int, error) {
 // promoteWithinTx moves the longest-waiting players into any free spots. The caller
 // must already hold the session row lock.
 func promoteWithinTx(tx *gorm.DB, session models.Session) ([]uuid.UUID, error) {
+	if session.Status == models.SessionStatusCancelled {
+		return nil, nil
+	}
 	confirmed, err := countConfirmed(tx, session.ID)
 	if err != nil {
 		return nil, err

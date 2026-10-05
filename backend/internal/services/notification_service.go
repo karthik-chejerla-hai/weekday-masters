@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"log"
+	"strings"
 	"time"
 
 	firebase "firebase.google.com/go/v4"
@@ -17,6 +19,7 @@ import (
 	"github.com/weekday-masters/backend/internal/models"
 	"google.golang.org/api/option"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type NotificationService struct {
@@ -108,23 +111,6 @@ func (s *NotificationService) SendNotification(
 	if club.NotificationsPaused {
 		return nil
 	}
-	// Get user
-	var user models.User
-	if err := database.DB.First(&user, "id = ?", userID).Error; err != nil {
-		return fmt.Errorf("failed to get user: %w", err)
-	}
-
-	// Get or create notification preferences
-	var prefs models.UserNotificationPreferences
-	result := database.DB.Where("user_id = ?", userID).First(&prefs)
-	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-		// Create default preferences
-		prefs = models.UserNotificationPreferences{UserID: userID}
-		database.DB.Create(&prefs)
-	} else if result.Error != nil {
-		return fmt.Errorf("failed to get preferences: %w", result.Error)
-	}
-
 	// Create notification record
 	dataJSON, _ := json.Marshal(data)
 	notification := models.Notification{
@@ -139,13 +125,44 @@ func (s *NotificationService) SendNotification(
 		return fmt.Errorf("failed to create notification record: %w", err)
 	}
 
-	// Check if push is enabled for this notification type
-	pushEnabled := prefs.IsPushEnabledForType(notifType) && s.fcmEnabled
-	emailEnabled := prefs.IsEmailEnabledForType(notifType) && s.emailEnabled
+	return s.deliverNotification(ctx, &notification)
+}
 
-	// Send push notification
-	if pushEnabled {
-		if err := s.sendPushNotification(ctx, userID, title, body, data); err != nil {
+// deliverNotification sends an already committed history record. Cancellation
+// uses this to keep the session, announcement and audience atomic without
+// holding database locks during provider requests.
+func (s *NotificationService) deliverNotification(ctx context.Context, notification *models.Notification) error {
+	if s.disabled {
+		return nil
+	}
+	var club models.Club
+	if err := database.DB.Select("notifications_paused").First(&club).Error; err != nil {
+		return err
+	}
+	if club.NotificationsPaused {
+		return nil
+	}
+	userID := notification.UserID
+	// Get user
+	var user models.User
+	if err := database.DB.First(&user, "id = ?", userID).Error; err != nil {
+		return fmt.Errorf("failed to get user: %w", err)
+	}
+
+	prefs, err := s.GetUserPreferences(userID)
+	if err != nil {
+		return fmt.Errorf("failed to get preferences: %w", err)
+	}
+
+	if user.MembershipStatus != models.MembershipApproved {
+		return nil
+	}
+	var data map[string]string
+	if err := json.Unmarshal([]byte(notification.Data), &data); err != nil {
+		return err
+	}
+	if prefs.IsPushEnabledForType(notification.NotificationType) && s.fcmEnabled && !notification.PushSent {
+		if err := s.sendPushNotification(ctx, userID, notification.Title, notification.Body, data); err != nil {
 			log.Printf("Failed to send push to user %s: %v", userID, err)
 		} else {
 			now := time.Now()
@@ -153,10 +170,8 @@ func (s *NotificationService) SendNotification(
 			notification.PushSentAt = &now
 		}
 	}
-
-	// Send email notification
-	if emailEnabled && user.Email != "" {
-		if err := s.sendEmailNotification(user.Email, user.Name, title, body, notifType); err != nil {
+	if prefs.IsEmailEnabledForType(notification.NotificationType) && s.emailEnabled && user.Email != "" && !notification.EmailSent {
+		if err := s.sendEmailNotification(ctx, user.Email, user.Name, notification.Title, notification.Body, notification.NotificationType); err != nil {
 			log.Printf("Failed to send email to user %s: %v", userID, err)
 		} else {
 			now := time.Now()
@@ -164,11 +179,8 @@ func (s *NotificationService) SendNotification(
 			notification.EmailSentAt = &now
 		}
 	}
-
-	// Update notification record
-	database.DB.Save(&notification)
-
-	return nil
+	// Preserve read_at if the member opens the notification while delivery runs.
+	return database.DB.Model(notification).Select("push_sent", "push_sent_at", "email_sent", "email_sent_at").Updates(notification).Error
 }
 
 // sendPushNotification sends a push notification to all user devices
@@ -234,7 +246,7 @@ func (s *NotificationService) sendPushNotification(
 }
 
 // sendEmailNotification sends an email notification
-func (s *NotificationService) sendEmailNotification(toEmail, toName, subject, body string, notifType models.NotificationType) error {
+func (s *NotificationService) sendEmailNotification(ctx context.Context, toEmail, toName, subject, body string, notifType models.NotificationType) error {
 	if !s.emailEnabled {
 		return errors.New("email not enabled")
 	}
@@ -247,7 +259,10 @@ func (s *NotificationService) sendEmailNotification(toEmail, toName, subject, bo
 
 	message := mail.NewSingleEmail(from, subject, to, body, htmlContent)
 
-	response, err := s.sendGridClient.Send(message)
+	// SendWithContext mutates Client.Body. Each send needs its own request
+	// so simultaneous notifications cannot overwrite another email's payload.
+	client := *s.sendGridClient
+	response, err := client.SendWithContext(ctx, message)
 	if err != nil {
 		return err
 	}
@@ -300,7 +315,7 @@ func (s *NotificationService) buildEmailHTML(subject, body string, notifType mod
     </div>
 </body>
 </html>
-`, iconEmoji, subject, body, s.frontendURL, s.frontendURL)
+`, iconEmoji, html.EscapeString(subject), strings.ReplaceAll(html.EscapeString(body), "\n", "<br>"), html.EscapeString(s.frontendURL), html.EscapeString(s.frontendURL))
 }
 
 // SendBulkNotification sends notifications to multiple users
@@ -326,9 +341,17 @@ func (s *NotificationService) GetUserPreferences(userID uuid.UUID) (*models.User
 	var prefs models.UserNotificationPreferences
 	result := database.DB.Where("user_id = ?", userID).First(&prefs)
 	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-		// Create default preferences
-		prefs = models.UserNotificationPreferences{UserID: userID}
-		if err := database.DB.Create(&prefs).Error; err != nil {
+		// Concurrent first notifications can both observe no preferences. Keep
+		// whichever row was saved first, including any member opt-outs.
+		defaults := models.UserNotificationPreferences{UserID: userID}
+		if err := database.DB.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "user_id"}}, DoNothing: true,
+		}).Create(&defaults).Error; err != nil {
+			return nil, err
+		}
+		// Reload by user ID, not the generated ID of an insert that may have
+		// lost the race. Delivery must use the persisted preferences.
+		if err := database.DB.Where("user_id = ?", userID).First(&prefs).Error; err != nil {
 			return nil, err
 		}
 	} else if result.Error != nil {
