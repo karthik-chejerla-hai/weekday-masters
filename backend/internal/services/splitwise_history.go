@@ -51,6 +51,17 @@ const importedSessionsQuery = `WITH imported AS (
  WHERE NOT EXISTS (SELECT 1 FROM settlements st WHERE st.session_id = s.id)
 )`
 
+// scheduledSessionsWithSettlementStatus keeps scheduled-session lookups in step
+// with history. Imported play dates count as settled only when the schedule has
+// no native settlement history; a reversed native settlement remains unpaid.
+func scheduledSessionsWithSettlementStatus(db *gorm.DB) *gorm.DB {
+	return db.Table("(?) AS s", db.Raw(importedSessionsQuery+`
+ SELECT s.*,
+   (EXISTS (SELECT 1 FROM settlements st WHERE st.session_id = s.id AND st.reversed_at IS NULL)
+    OR EXISTS (SELECT 1 FROM imported_schedule i WHERE i.session_id = s.id)) AS settled
+ FROM sessions s`))
+}
+
 // importedSessionRecordID accepts either an imported source ID or an old
 // schedule ID. A zero UUID means that the session belongs to the native flow.
 func importedSessionRecordID(db *gorm.DB, id uuid.UUID) (uuid.UUID, error) {

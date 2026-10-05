@@ -216,10 +216,11 @@ func (s *AssistantService) findAssistantSessions(ctx context.Context, raw json.R
 	if err := toolArgs(raw, &in); err != nil {
 		return nil, err
 	}
-	q := database.DB.WithContext(ctx).Table("sessions s").Select("s.id,s.title,s.starts_at,s.ends_at,(st.id IS NOT NULL) AS settled").Joins("LEFT JOIN settlements st ON st.session_id=s.id AND st.reversed_at IS NULL").Where("s.status != ?", models.SessionStatusCancelled)
+	q := scheduledSessionsWithSettlementStatus(database.DB.WithContext(ctx)).
+		Select("s.id,s.title,s.starts_at,s.ends_at,s.settled").Where("s.status != ?", models.SessionStatusCancelled)
 	switch in.Period {
 	case "unsettled":
-		q = q.Where("s.ends_at < ? AND st.id IS NULL", utils.NowInSydney())
+		q = q.Where("s.ends_at < ? AND NOT s.settled", utils.NowInSydney())
 	case "upcoming":
 		q = q.Where("s.ends_at >= ?", utils.NowInSydney())
 	case "past":
@@ -267,8 +268,10 @@ func (s *AssistantService) getAssistantSession(ctx context.Context, raw json.Raw
 			players = append(players, map[string]any{"user_id": r.UserID, "name": r.User.DisplayName(), "full_name": r.User.Name, "status": r.Status})
 		}
 	}
-	live, err := s.expenses.settlement.LiveSettlementForSession(session.ID)
-	return map[string]any{"id": session.ID, "title": session.Title, "starts_at": session.StartsAt, "ends_at": session.EndsAt, "status": session.Status, "settled": live != nil, "rsvps": players}, err
+	var status struct{ Settled bool }
+	err := scheduledSessionsWithSettlementStatus(database.DB.WithContext(ctx)).
+		Select("s.settled").Where("s.id = ?", session.ID).Scan(&status).Error
+	return map[string]any{"id": session.ID, "title": session.Title, "starts_at": session.StartsAt, "ends_at": session.EndsAt, "status": session.Status, "settled": status.Settled, "rsvps": players}, err
 }
 func (s *AssistantService) findAssistantMembers(ctx context.Context, raw json.RawMessage) (any, error) {
 	var in struct {
