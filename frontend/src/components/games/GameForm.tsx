@@ -12,8 +12,9 @@ interface Props {
   editing?: GameResult;
   onSaved: () => void;
   onCancel?: () => void;
+  onSavingChange?: (saving: boolean) => void;
 }
-export default function GameForm({ sessionId, initial, editing, onSaved, onCancel }: Props) {
+export default function GameForm({ sessionId, initial, editing, onSaved, onCancel, onSavingChange }: Props) {
   const start = editing ?? initial;
   const prefix = useId();
   const [players, setPlayers] = useState<GamePlayer[]>(() => [...(start?.team_a ?? []), ...(start?.team_b ?? [])]);
@@ -50,12 +51,13 @@ export default function GameForm({ sessionId, initial, editing, onSaved, onCance
     const requestId = request.current.id;
     lock.current = true;
     try {
+      onSavingChange?.(true);
       await mutate(() => editing ? api.updateGame(editing.id, { ...input, version: editing.version }) : api.createGame(sessionId, { ...input, request_id: requestId }));
       request.current = null; setSaved(true);
       if (!editing) setScores(['', '']);
       onSaved();
     } catch (err) { setError(assistantError(err, 'Could not save the game. Your entry is still here. Try again.')); }
-    finally { lock.current = false; }
+    finally { lock.current = false; onSavingChange?.(false); }
   };
 
   return <form onSubmit={(event) => { event.preventDefault(); void save(); }} className="space-y-4" aria-label={editing ? 'Correct game' : 'Game result'}>

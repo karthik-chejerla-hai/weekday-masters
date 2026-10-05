@@ -15,11 +15,13 @@ export default function AssistantPanel({ sessionId, mode, onGameSaved }: { sessi
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [savingGame, setSavingGame] = useState(false);
   const [error, setError] = useState('');
   const [expense, setExpense] = useState<ExpensePreview | null>(null);
   const [game, setGame] = useState<GamePreview | null>(null);
   const request = useRef<AbortController | null>(null);
   const locked = useRef(false);
+  const gameSaving = useRef(false);
   const gameReview = useRef<HTMLElement | null>(null);
   useEffect(() => { if (game) gameReview.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }); }, [game]);
 
@@ -31,8 +33,13 @@ export default function AssistantPanel({ sessionId, mode, onGameSaved }: { sessi
     return () => { cancelled = true; request.current?.abort(); };
   }, []);
 
+  const handleGameSaving = (saving: boolean) => {
+    gameSaving.current = saving;
+    setSavingGame(saving);
+  };
+
   const send = async (value = text) => {
-    if (!value.trim() || locked.current || !enabled) return;
+    if (!value.trim() || locked.current || gameSaving.current || !enabled) return;
     locked.current = true;
     const controller = new AbortController(); request.current = controller;
     const next: AssistantMessage[] = [...messages.slice(-14), { role: 'user', content: value.trim() }];
@@ -57,18 +64,25 @@ export default function AssistantPanel({ sessionId, mode, onGameSaved }: { sessi
       {messages.length > 0 && <div role="log" aria-label="Conversation" className="max-h-96 space-y-3 overflow-y-auto">
         {messages.map((message, index) => <div key={index} className={`rounded-xl p-3 text-sm whitespace-pre-wrap ${message.role === 'user' ? 'ml-6 bg-primary-50 text-primary-950' : 'mr-6 bg-slate-50 text-slate-800'}`}><p className="mb-1 text-xs font-semibold text-slate-500">{message.role === 'user' ? 'You' : 'Rally'}</p>{message.content}</div>)}
       </div>}
-      <VoiceRecorder disabled={!enabled || busy} onTranscript={(value) => { setText(value); setExpense(null); setGame(null); if (mode === 'games') void send(value); }} />
+      <VoiceRecorder disabled={!enabled || busy || savingGame} onTranscript={(value) => {
+        setText(value);
+        // An earlier recording can finish while Save is pending. Keep its text
+        // without replacing the saving form or losing its retry request ID.
+        if (gameSaving.current) return;
+        setExpense(null); setGame(null);
+        if (mode === 'games') void send(value);
+      }} />
       <form onSubmit={(event) => { event.preventDefault(); void send(); }} className="space-y-3">
         <div><label htmlFor="assistant-message" className="label">Your message</label>
-          <textarea id="assistant-message" className="input min-h-28 resize-y" maxLength={4000} value={text} disabled={busy} onChange={(event) => { setText(event.target.value); setExpense(null); setGame(null); }} placeholder={mode === 'games' ? 'Alice and Bob beat Cara and Dan, 21 to 17.' : sessionId && isAdmin ? 'We played three hours and used eight shuttles.' : 'How much court credit do we have?'} />
+          <textarea id="assistant-message" className="input min-h-28 resize-y" maxLength={4000} value={text} disabled={busy || savingGame} onChange={(event) => { setText(event.target.value); setExpense(null); setGame(null); }} placeholder={mode === 'games' ? 'Alice and Bob beat Cara and Dan, 21 to 17.' : sessionId && isAdmin ? 'We played three hours and used eight shuttles.' : 'How much court credit do we have?'} />
           <p className="mt-2 text-xs text-slate-500">{mode === 'games' ? 'Review the teams and score before saving.' : 'Review the words before sending.'} Recordings are processed for this request and are not saved by Rally.</p>
         </div>
         {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
-        <button type="submit" className="btn-primary w-full gap-2" disabled={!enabled || busy || !text.trim()}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{busy ? 'Working on your request…' : 'Send message'}</button>
+        <button type="submit" className="btn-primary w-full gap-2" disabled={!enabled || busy || savingGame || !text.trim()}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{busy ? 'Working on your request…' : 'Send message'}</button>
       </form>
       {isAdmin && mode !== 'games' && <Link className="btn-outline w-full" to={sessionId ? `/admin/sessions/${sessionId}/expense` : '/sessions'}>{sessionId ? 'Use the expense form' : 'Choose a session to expense'}</Link>}
     </section>
-    {game && <section ref={gameReview} className="card scroll-mt-4 p-5 space-y-4" aria-label="Review game"><div><h2 className="text-lg font-semibold">Review game</h2><p className="text-sm text-slate-600">{game.session.title}</p></div><GameForm key={JSON.stringify(game)} sessionId={game.session.id} initial={game} onSaved={() => { setGame(null); setMessages((old) => [...old, { role: 'assistant', content: 'Game saved.' }]); onGameSaved?.(); }} onCancel={() => setGame(null)} /></section>}
+    {game && <section ref={gameReview} className="card scroll-mt-4 p-5 space-y-4" aria-label="Review game"><div><h2 className="text-lg font-semibold">Review game</h2><p className="text-sm text-slate-600">{game.session.title}</p></div><GameForm key={JSON.stringify(game)} sessionId={game.session.id} initial={game} onSavingChange={handleGameSaving} onSaved={() => { setGame(null); setMessages((old) => [...old, { role: 'assistant', content: 'Game saved.' }]); onGameSaved?.(); }} onCancel={() => setGame(null)} /></section>}
     {expense && isAdmin && <ExpenseReview key={expense.session.id} preview={expense} onRefresh={setExpense} />}
   </div>;
 }
