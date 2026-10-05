@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Calendar, Clock, Users, MapPin, AlertCircle, Loader2 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
+import { formatInTimeZone } from 'date-fns-tz';
 import { useAuth } from '../context/useAuth';
 import { api } from '../services/api';
-import type { Session, RSVPSummary, SelectableRSVPStatus, RSVP } from '../types';
+import type { Club, Session, RSVPSummary, SelectableRSVPStatus, RSVP } from '../types';
+import { formatSessionTimeRange, formatSessionVenue } from '../utils/session-display';
 import RSVPButton from '../components/rsvp/RSVPButton';
 import PlayerList from '../components/rsvp/PlayerList';
 import Badge from '../components/ui/Badge';
@@ -15,6 +17,7 @@ export default function SessionDetail() {
   const { user } = useAuth();
 
   const [session, setSession] = useState<Session | null>(null);
+  const [club, setClub] = useState<Club | null>(null);
   const [summary, setSummary] = useState<RSVPSummary | null>(null);
   const [myRsvp, setMyRsvp] = useState<RSVP | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -26,8 +29,9 @@ export default function SessionDetail() {
   const loadSession = async () => {
     if (!id) return;
     try {
-      const data = await api.getSession(id);
+      const [data, clubData] = await Promise.all([api.getSession(id), api.getClub().catch(() => null)]);
       setSession(data.session);
+      setClub(clubData);
       setSummary(data.rsvp_summary);
       const userRsvp = data.session.rsvps?.find(r => r.user_id === user?.id);
       setMyRsvp(userRsvp || null);
@@ -129,7 +133,7 @@ export default function SessionDetail() {
               <Clock className="w-5 h-5 text-primary-600" />
             </div>
             <div>
-              <p className="font-medium">{session.start_time} - {session.end_time}</p>
+              <p className="font-medium">{formatSessionTimeRange(session.start_time, session.end_time, club?.time_format)}</p>
               <p className="text-slate-500">Time</p>
             </div>
           </div>
@@ -154,7 +158,7 @@ export default function SessionDetail() {
               <MapPin className="w-5 h-5 text-primary-600" />
             </div>
             <div>
-              <p className="font-medium">Club Venue</p>
+              <p className="font-medium">{formatSessionVenue(club?.venue_name, club?.court_number)}</p>
               <p className="text-slate-500">Location</p>
             </div>
           </div>
@@ -164,7 +168,7 @@ export default function SessionDetail() {
           <div className="mt-4 p-3 bg-amber-50 rounded-lg">
             <p className="text-sm text-amber-800">
               <span className="font-medium">RSVP Deadline:</span>{' '}
-              {format(new Date(session.rsvp_deadline), "EEEE, d MMMM yyyy 'at' h:mm a")}
+              {formatInTimeZone(session.rsvp_deadline, 'Australia/Sydney', `EEEE, d MMMM yyyy 'at' ${club?.time_format === '12h' ? 'h:mm a' : 'HH:mm'}`)}
             </p>
           </div>
         )}

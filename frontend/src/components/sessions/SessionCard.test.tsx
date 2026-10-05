@@ -79,6 +79,15 @@ describe('SessionCard Component', () => {
     expect(screen.getByText('Cancelled')).toBeInTheDocument();
   });
 
+  it('uses the physical court number while preserving booked capacity', () => {
+    render(<MemoryRouter><SessionCard session={baseSession} venueName="BadmintonWorx Norwest" courtNumber={8} timeFormat="12h" /></MemoryRouter>);
+    expect(screen.getByText('BadmintonWorx Norwest')).toBeInTheDocument();
+    expect(screen.getByText('Court 8')).toBeInTheDocument();
+    expect(screen.getByText('6:00 PM - 8:00 PM')).toBeInTheDocument();
+    expect(screen.getByText('1 of 10 confirmed')).toBeInTheDocument();
+    expect(screen.queryByText('2 courts')).not.toBeInTheDocument();
+  });
+
   describe('RSVP deadline', () => {
     afterEach(() => {
       vi.useRealTimers();

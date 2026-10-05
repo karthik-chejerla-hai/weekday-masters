@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { CalendarDays, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/useAuth';
 import { api } from '../services/api';
-import type { PastSession, Session } from '../types';
+import type { Club, PastSession, Session } from '../types';
 import SessionCard from '../components/sessions/SessionCard';
 import PastSessionCard from '../components/sessions/PastSessionCard';
 
@@ -19,7 +19,7 @@ export default function Sessions() {
 
   const [sessions, setSessions] = useState<Session[]>([]);
   const [past, setPast] = useState<PastSession[]>([]);
-  const [venueName, setVenueName] = useState<string>('');
+  const [club, setClub] = useState<Club | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
@@ -27,8 +27,8 @@ export default function Sessions() {
     (async () => {
       try {
         const [sessionsData, clubData] = await Promise.all([api.listSessions(), api.getClub()]);
-        setSessions(sessionsData);
-        setVenueName(clubData.venue_name || '');
+        setSessions(sessionsData.slice(0, 2));
+        setClub(clubData);
       } catch (error) {
         console.error('Failed to load data:', error);
       } finally {
@@ -98,7 +98,7 @@ export default function Sessions() {
           ) : (
             <div className="space-y-3">
               {sessions.map((session) => (
-                <SessionCard key={session.id} session={session} venueName={venueName} />
+                <SessionCard key={session.id} session={session} venueName={club?.venue_name} courtNumber={club?.court_number} timeFormat={club?.time_format} />
               ))}
             </div>
           )}

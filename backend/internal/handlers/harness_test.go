@@ -80,6 +80,7 @@ func newHarness(t *testing.T) *harness {
 	NewInvitationHandler(services.NewInvitationService(services.NotificationConfig{FrontendURL: "https://rally.test"}, false)).RegisterRoutes(api)
 	{
 		api.POST("/auth/callback", authHandler.Callback)
+		api.GET("/club", adminHandler.GetClub)
 
 		api.GET("/openapi", RedirectOpenAPI)
 		api.GET("/openapi/index.html", ServeOpenAPIIndex)
@@ -132,9 +133,6 @@ func newHarness(t *testing.T) *harness {
 		admin.POST("/sessions/:id/settlement/preview", settlementHandler.PreviewSettlement)
 		admin.POST("/sessions/:id/settle", settlementHandler.SettleSession)
 		admin.POST("/settlements/:id/reverse", settlementHandler.ReverseSettlement)
-		// NOTE: AdminHandler.GetClub is deliberately absent — main.go registers
-		// only PUT /admin/club, so the GET handler is unreachable in the running
-		// server. Mounting it here would manufacture coverage for dead code.
 	}
 
 	h.router = r

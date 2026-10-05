@@ -4,12 +4,14 @@ import { ArrowLeft, Plus, Calendar, Trash2, Loader2, XCircle, X } from 'lucide-r
 import { format, parseISO, subDays } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import { api } from '../services/api';
-import type { Session, CreateSessionInput } from '../types';
+import type { Session, CreateSessionInput, TimeFormat } from '../types';
+import { formatSessionTimeRange } from '../utils/session-display';
 import Badge from '../components/ui/Badge';
 
 export default function AdminSessions() {
   const navigate = useNavigate();
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [timeFormat, setTimeFormat] = useState<TimeFormat>('24h');
   const [isLoading, setIsLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -51,8 +53,9 @@ export default function AdminSessions() {
 
   const loadSessions = async () => {
     try {
-      const data = await api.listSessions();
+      const [data, club] = await Promise.all([api.listSessions(), api.getClub().catch(() => null)]);
       setSessions(data);
+      setTimeFormat(club?.time_format || '24h');
     } catch (error) {
       console.error('Failed to load sessions:', error);
     } finally {
@@ -392,7 +395,7 @@ export default function AdminSessions() {
                   {session.is_recurring && <Badge variant="info">Recurring</Badge>}
                 </div>
                 <p className="text-sm text-slate-600">
-                  {format(parseISO(session.session_date), 'EEE, d MMM yyyy')} | {session.start_time} - {session.end_time}
+                  {format(parseISO(session.session_date), 'EEE, d MMM yyyy')} | {formatSessionTimeRange(session.start_time, session.end_time, timeFormat)}
                 </p>
                 <p className="text-sm text-slate-500">
                   {getRsvpCount(session)} / {session.max_players} players | {session.courts} court{session.courts > 1 ? 's' : ''}

@@ -78,12 +78,16 @@ export interface UpdateProfileInput {
   nickname?: string;
 }
 
+export type TimeFormat = '12h' | '24h';
+
 export interface Club {
 	 notifications_paused?: boolean;
   id: string;
   name: string;
   venue_name: string;
   venue_address: string;
+  court_number?: number;
+  time_format?: TimeFormat;
   created_at: string;
   updated_at: string;
   // Settlement defaults. Present on the admin view of the club; the public

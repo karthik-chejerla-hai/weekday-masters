@@ -496,6 +496,8 @@ type UpdateClubRequest struct {
 	Name                *string `json:"name"`
 	VenueName           *string `json:"venue_name"`
 	VenueAddress        *string `json:"venue_address"`
+	CourtNumber         *int    `json:"court_number" binding:"omitempty,gte=0,lte=999"`
+	TimeFormat          *string `json:"time_format" binding:"omitempty,oneof=12h 24h"`
 }
 
 // UpdateClub updates club information
@@ -523,6 +525,12 @@ func (h *AdminHandler) UpdateClub(c *gin.Context) {
 	}
 	if req.VenueAddress != nil {
 		club.VenueAddress = *req.VenueAddress
+	}
+	if req.CourtNumber != nil {
+		club.CourtNumber = *req.CourtNumber
+	}
+	if req.TimeFormat != nil {
+		club.TimeFormat = *req.TimeFormat
 	}
 
 	if err := database.DB.Save(&club).Error; err != nil {

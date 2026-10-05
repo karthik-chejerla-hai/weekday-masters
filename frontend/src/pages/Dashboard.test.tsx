@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import Dashboard from './Dashboard';
 import { useAuth } from '../context/useAuth';
@@ -58,7 +58,7 @@ describe('Dashboard page', () => {
     expect(await screen.findByText(/Welcome back, Jane/)).toBeInTheDocument();
   });
 
-  it('shows at most three upcoming sessions', async () => {
+  it('shows the next game and only one future session', async () => {
     vi.mocked(api.listSessions).mockResolvedValue([
       makeSession({ id: 's1', title: 'Session One' }),
       makeSession({ id: 's2', title: 'Session Two' }),
@@ -69,9 +69,13 @@ describe('Dashboard page', () => {
     renderPage();
 
     expect(await screen.findByText('Session One')).toBeInTheDocument();
-    expect(screen.getByText('Session Three')).toBeInTheDocument();
-    // The dashboard is a preview; the fourth belongs on the sessions page.
+    expect(screen.getByText('Session Two')).toBeInTheDocument();
+    expect(screen.queryByText('Session Three')).not.toBeInTheDocument();
     expect(screen.queryByText('Session Four')).not.toBeInTheDocument();
+    expect(screen.queryByText('Later sessions')).not.toBeInTheDocument();
+    const future = screen.getByRole('region', { name: 'Future sessions' });
+    expect(within(future).getAllByRole('article')).toHaveLength(1);
+    expect(within(future).getByText('Session Two')).toBeInTheDocument();
   });
 
   it('surfaces cancelled sessions so members are not left waiting', async () => {

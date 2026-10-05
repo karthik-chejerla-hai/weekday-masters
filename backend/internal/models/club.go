@@ -20,6 +20,8 @@ type Club struct {
 	Name                string    `gorm:"size:255;not null" json:"name"`
 	VenueName           string    `gorm:"size:255" json:"venue_name"`
 	VenueAddress        string    `gorm:"type:text" json:"venue_address"`
+	CourtNumber         int       `gorm:"not null;default:0" json:"court_number"` // Zero means not assigned.
+	TimeFormat          string    `gorm:"size:3;not null;default:24h" json:"time_format"`
 
 	// Settlement defaults. The club plays a standing two-hour booking on one
 	// court, sometimes extending by an hour at the cheaper off-peak rate.
