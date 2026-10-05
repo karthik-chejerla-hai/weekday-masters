@@ -76,6 +76,8 @@ jobs:
         run: go run ./cmd/migrate
 
       - name: Deploy to Cloud Run
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
           # A preview deploy on an open PR writes to this same service, so this
           # can lose an optimistic-concurrency race. See the script.
@@ -95,6 +97,7 @@ jobs:
             --set-env-vars="AUTH0_AUDIENCE=${{ secrets.AUTH0_AUDIENCE }}" \
             --set-env-vars="ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }}" \
             --set-env-vars="DATABASE_URL=${{ secrets.DATABASE_URL }}" \
+            --set-env-vars="GROQ_API_KEY=${GROQ_API_KEY}" \
             --set-env-vars="FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}" \
             --set-env-vars="SENDGRID_API_KEY=${{ secrets.SENDGRID_API_KEY }}" \
             --set-env-vars="SENDGRID_FROM_EMAIL=${{ secrets.SENDGRID_FROM_EMAIL }}" \
