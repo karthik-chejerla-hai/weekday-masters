@@ -43,19 +43,37 @@ export default function SpendAnalytics() {
         <div className="card p-6 text-sm text-slate-600">Your spend will appear here after a session is settled. Deposits do not count as spend.</div>
       ) : (
         <div className="card p-5">
-          <h3 className="font-semibold text-slate-900">Monthly spend · {data.year}</h3>
+          <h3 className="font-semibold text-slate-900">Monthly spend & sessions · {data.year}</h3>
           <p className="mt-1 text-xs text-slate-500">By session date in Sydney. The current month is shown to date.</p>
-          <dl className="mt-5 space-y-3">
-            {data.months.map(({ month, amount_cents }) => (
-              <div key={month} className="flex items-center gap-3 text-sm">
-                <dt className="w-8 shrink-0 text-slate-500">{MONTHS[month - 1]}</dt>
-                <div aria-hidden="true" className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-100">
-                  <div className="h-full rounded-full bg-primary-500" style={{ width: `${(amount_cents / maxMonth) * 100}%` }} />
-                </div>
-                <dd className="w-24 shrink-0 text-right font-medium text-slate-900 tabular-nums">{formatCents(amount_cents)}</dd>
-              </div>
-            ))}
-          </dl>
+          <div className="mt-5 overflow-x-auto">
+            <table className="w-full text-sm tabular-nums">
+              <caption className="sr-only">Your monthly spend and sessions played in {data.year}</caption>
+              <thead className="text-xs text-slate-500">
+                <tr>
+                  <th scope="col" className="pb-2 text-left font-medium">Month</th>
+                  <th scope="col" className="pb-2 pl-4 text-right font-medium">Sessions</th>
+                  <th scope="col" className="pb-2 pl-4 text-right font-medium">Spend</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {data.months.map(({ month, amount_cents, session_count }) => (
+                  <tr key={month}>
+                    <th scope="row" className="w-full py-3 text-left font-medium text-slate-600">
+                      <div className="flex items-center gap-4">
+                        <span className="w-8 shrink-0">{MONTHS[month - 1]}</span>
+                        <div aria-hidden="true" className="hidden h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-100 sm:block">
+                          <div className="h-full rounded-full bg-primary-500" style={{ width: `${(amount_cents / maxMonth) * 100}%` }} />
+                        </div>
+                      </div>
+                    </th>
+                    <td className="py-3 pl-4 text-right text-slate-600">{session_count}</td>
+                    <td className="whitespace-nowrap py-3 pl-4 text-right font-medium text-slate-900">{formatCents(amount_cents)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-4 text-xs leading-relaxed text-slate-500">Sessions count your own recorded games once. Guests you pay for do not add to your session count.</p>
         </div>
       )}
 

@@ -228,7 +228,7 @@ export interface PersonalSpend {
   recorded_from: string | null;
   ytd_cents: number;
   all_time_cents: number;
-  months: Array<{ month: number; amount_cents: number }>;
+  months: Array<{ month: number; amount_cents: number; session_count: number }>;
 }
 
 export interface Transaction {

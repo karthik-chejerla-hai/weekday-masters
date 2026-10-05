@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { usePersonalSpend } from '../../hooks/usePersonalSpend';
 import { formatCents } from './format';
+import ValueBadge from '../ui/ValueBadge';
 
 export default function SpendChip() {
   const { data, error, isLoading } = usePersonalSpend();
@@ -10,12 +11,14 @@ export default function SpendChip() {
     <Link
       to="/money?tab=analytics"
       aria-label={data ? `Your year-to-date spend: ${formatCents(data.ytd_cents)}. Open Analytics` : 'Your spend. Open Analytics'}
-      className="inline-flex min-h-10 flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2"
+      className="inline-flex min-h-11 items-center rounded-md focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2"
     >
-      <span className="text-[10px] font-medium leading-tight">{data ? `${data.year} spend` : 'Your spend'}</span>
-      <span className="whitespace-nowrap text-xs font-semibold tabular-nums">
-        {data ? formatCents(data.ytd_cents) : error ? 'View details' : 'Loading…'}
-      </span>
+      <ValueBadge
+        label="YTD spend"
+        value={data ? formatCents(data.ytd_cents) : error ? 'View details' : 'Loading…'}
+        tone={data ? 'primary' : 'neutral'}
+        title={data ? `Your ${data.year} year-to-date session charges` : 'Your year-to-date session charges'}
+      />
     </Link>
   );
 }

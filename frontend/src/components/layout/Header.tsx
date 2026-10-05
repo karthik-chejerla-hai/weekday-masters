@@ -6,6 +6,7 @@ import { api } from '../../services/api';
 import Avatar from '../ui/Avatar';
 import BalanceChip from '../money/BalanceChip';
 import SpendChip from '../money/SpendChip';
+import { formatCents } from '../money/format';
 import type { MyBalance } from '../../types';
 import { displayName } from '../../utils/members';
 
@@ -70,14 +71,16 @@ export default function Header() {
             <span className="hidden text-lg font-bold tracking-tight text-slate-950 min-[400px]:inline">Rally</span>
           </Link>
 
-          <div className="flex items-center gap-2">
-            {balance && (
-              <Link to="/money" aria-label="Your balance" className="rounded-full focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2">
-                <BalanceChip cents={balance.balance_cents} state={balance.state} compact />
-              </Link>
-            )}
-            <SpendChip />
-            <Link to="/profile" aria-label={`Open ${displayName(user)}'s profile`} className="rounded-full focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex flex-col items-end sm:flex-row sm:items-center sm:gap-3">
+              {balance && (
+                <Link to="/money" aria-label={`Your balance: ${formatCents(balance.balance_cents)}`} className="inline-flex min-h-11 items-center rounded-md focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2">
+                  <BalanceChip cents={balance.balance_cents} state={balance.state} label="Balance" />
+                </Link>
+              )}
+              <SpendChip />
+            </div>
+            <Link to="/profile" aria-label={`Open ${displayName(user)}'s profile`} className="shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2">
               <Avatar src={user?.profile_picture} name={displayName(user)} size="sm" />
             </Link>
           </div>

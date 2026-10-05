@@ -18,8 +18,16 @@ A chip beside the header balance opens a fourth Money tab, Analytics.
   play dates, including the import's recorded-date fallback when applicable.
 - Year to date includes January 1 through today. All time covers available
   recorded history through today. Future play dates do not count.
-- Analytics shows both totals, the current year's monthly spend and the first
-  recorded session date. All amounts are integer cents until display formatting.
+- Analytics shows both totals, the current year's monthly spend and session
+  counts, and the first recorded session date. All amounts are integer cents
+  until display formatting.
+- Each monthly session count includes the member's own attendance once per
+  native session, including comped attendance. Guest-only payments do not count
+  as attendance. Guest charges still contribute to spend.
+- Imported positive gross shares count once per import and play date, combining
+  regular and extra-hour records. A zero share does not establish attendance.
+- Header balance and YTD spend use joined label/value badges. Labels stay visible
+  on narrow screens; the badges stack when needed.
 - The endpoint always uses the signed-in approved member. No query parameter
   can select another member or the whole club.
 - Loading and failures never appear as zero spend. Empty history shows zero
@@ -32,6 +40,9 @@ A chip beside the header balance opens a fourth Money tab, Analytics.
 3. Reversals remove charges and a replacement appears once.
 4. Sydney year boundaries and play dates determine the totals.
 5. Analytics and the chip work for members and admins on narrow and wide screens.
+6. Paying for a guest does not increase the member's monthly session count.
+7. Imported extra-hour records do not count as another session. Separate native
+   sessions on the same date each count once.
 
 ## Clarifications
 

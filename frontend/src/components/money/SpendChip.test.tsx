@@ -34,7 +34,7 @@ describe('Spend chip', () => {
   it('shows personal YTD spend and links to Analytics', async () => {
     render(<View />);
     const chip = await screen.findByRole('link', { name: /Your year-to-date spend: \$123.45/ });
-    expect(chip).toHaveTextContent('2026 spend');
+    expect(chip).toHaveTextContent('YTD spend');
     expect(chip).not.toHaveTextContent('$223.45');
     await userEvent.click(chip);
     expect(screen.getByText('/money?tab=analytics')).toBeInTheDocument();
