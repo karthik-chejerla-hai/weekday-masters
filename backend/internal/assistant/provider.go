@@ -47,5 +47,5 @@ type Error struct {
 
 func (e *Error) Error() string { return e.Message }
 func Unavailable() *Error {
-	return &Error{Code: "assistant_unavailable", Message: "The assistant is not configured. You can use the expense form.", Status: 503}
+	return &Error{Code: "assistant_unavailable", Message: "The assistant is not configured. You can use the form.", Status: 503}
 }

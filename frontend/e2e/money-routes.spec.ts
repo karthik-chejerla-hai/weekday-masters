@@ -13,7 +13,7 @@ import { test, expect } from '@playwright/test';
  * level. What is missing here is only the browser rendering on top of it.
  */
 test.describe('Money routes are closed to visitors', () => {
-  for (const path of ['/money', '/sessions', '/sessions/some-id/settlement', '/assistant', '/admin/sessions/some-id/expense']) {
+  for (const path of ['/games', '/sessions/some-id/games', '/money', '/sessions', '/sessions/some-id/settlement', '/assistant', '/admin/sessions/some-id/expense']) {
     test(`redirects ${path} to the landing page`, async ({ page }) => {
       await page.goto(path);
 

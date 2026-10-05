@@ -9,6 +9,7 @@ import (
 	"github.com/weekday-masters/backend/internal/models"
 	"github.com/weekday-masters/backend/internal/utils"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type SessionService struct{}
@@ -275,23 +276,27 @@ func (s *SessionService) UpdateSession(id uuid.UUID, input UpdateSessionInput) (
 
 // DeleteSession deletes or cancels a session
 func (s *SessionService) DeleteSession(id uuid.UUID) error {
-	var session models.Session
-	if err := database.DB.First(&session, "id = ?", id).Error; err != nil {
-		return err
-	}
-
-	// If session has RSVPs, just mark as cancelled
-	var rsvpCount int64
-	database.DB.Model(&models.RSVP{}).Where("session_id = ?", id).Count(&rsvpCount)
-
-	if rsvpCount > 0 {
-		session.Status = models.SessionStatusCancelled
-		session.UpdatedAt = time.Now()
-		return database.DB.Save(&session).Error
-	}
-
-	// Otherwise, delete it
-	return database.DB.Delete(&session).Error
+	return database.DB.Transaction(func(tx *gorm.DB) error {
+		var session models.Session
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&session, "id = ?", id).Error; err != nil {
+			return err
+		}
+		var games int64
+		if err := tx.Model(&models.GameResult{}).Where("session_id = ?", id).Count(&games).Error; err != nil {
+			return err
+		}
+		if games > 0 {
+			return gameConflict("This session has recorded games and cannot be deleted.")
+		}
+		var rsvps int64
+		if err := tx.Model(&models.RSVP{}).Where("session_id = ?", id).Count(&rsvps).Error; err != nil {
+			return err
+		}
+		if rsvps > 0 {
+			return tx.Model(&session).Update("status", models.SessionStatusCancelled).Error
+		}
+		return tx.Delete(&session).Error
+	})
 }
 
 // CancelSession cancels a session with an optional reason

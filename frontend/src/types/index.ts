@@ -417,4 +417,45 @@ export interface ExpensePreview {
   court_topup_needed: boolean;
 }
 export interface AssistantMessage { role: 'user' | 'assistant'; content: string }
-export interface AssistantReply { message: string; expense?: ExpensePreview }
+export interface AssistantReply { message: string; expense?: ExpensePreview; game?: GamePreview }
+
+
+export interface GamePlayer { id: string; name: string; full_name?: string }
+export interface GameDraft {
+  team_a: GamePlayer[];
+  team_b: GamePlayer[];
+  score_a: number;
+  score_b: number;
+}
+export interface GameInput {
+  team_a: string[];
+  team_b: string[];
+  score_a: number;
+  score_b: number;
+  request_id?: string;
+  version?: number;
+}
+export interface GamePreview extends GameDraft {
+  session: { id: string; title: string; starts_at: string; ends_at: string };
+}
+export interface GameResult extends GameDraft {
+  id: string;
+  session_id: string;
+  session_title: string;
+  session_date: string;
+  version: number;
+  created_by: string;
+  updated_by: string;
+  recorder_name: string;
+  editor_name: string;
+  created_at: string;
+  updated_at: string;
+  voided_at: string | null;
+}
+export interface GameList { items: GameResult[]; total: number }
+export interface GameComparison extends GameList {
+  wins_a: number;
+  wins_b: number;
+  points_a: number;
+  points_b: number;
+}

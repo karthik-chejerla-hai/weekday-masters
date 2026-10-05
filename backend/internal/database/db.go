@@ -33,6 +33,8 @@ func Migrate() error {
 		&models.InvitationDelivery{},
 		&models.Session{},
 		&models.RSVP{},
+		&models.GameResult{},
+		&models.GameRevision{},
 		// Notification models
 		&models.UserNotificationPreferences{},
 		&models.UserPushToken{},

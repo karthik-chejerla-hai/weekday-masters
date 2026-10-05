@@ -173,7 +173,7 @@ func (g *Groq) request(ctx context.Context, path, contentType string, body io.Re
 		return &Error{Code: "assistant_rate_limited", Message: "The assistant has reached its usage limit. Try again later or use the form.", Status: 429, RetryAfter: retry}
 	}
 	if res.StatusCode == 401 || res.StatusCode == 403 {
-		return &Error{Code: "assistant_configuration", Message: "The assistant key needs attention. You can use the expense form.", Status: 503}
+		return &Error{Code: "assistant_configuration", Message: "The assistant key needs attention. You can use the form.", Status: 503}
 	}
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		return providerFailure()

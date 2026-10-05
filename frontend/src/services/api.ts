@@ -1,5 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 import type {
+  GameInput, GameResult, GameList, GameComparison, GamePlayer,
   AssistantMessage,
   AssistantReply,
   ExpenseInput,
@@ -108,6 +109,28 @@ class ApiService {
   async getSession(id: string): Promise<SessionWithSummary> {
     const response = await this.client.get<SessionWithSummary>(`/sessions/${id}`);
     return response.data;
+  }
+
+  async listGames(sessionId: string, offset = 0, signal?: AbortSignal): Promise<GameList> {
+    return (await this.client.get<GameList>(`/sessions/${sessionId}/games`, { params: { offset }, signal })).data;
+  }
+  async createGame(sessionId: string, input: GameInput): Promise<GameResult> {
+    return (await this.client.post<GameResult>(`/sessions/${sessionId}/games`, input)).data;
+  }
+  async updateGame(id: string, input: GameInput): Promise<GameResult> {
+    return (await this.client.put<GameResult>(`/games/${id}`, input)).data;
+  }
+  async voidGame(id: string, version: number): Promise<GameResult> {
+    return (await this.client.delete<GameResult>(`/games/${id}`, { data: { version } })).data;
+  }
+  async gameRevisions(id: string): Promise<GameResult[]> {
+    return (await this.client.get<GameResult[]>(`/games/${id}/revisions`)).data;
+  }
+  async gamePlayers(): Promise<GamePlayer[]> {
+    return (await this.client.get<GamePlayer[]>('/games/players')).data;
+  }
+  async headToHead(a: string[], b: string[], offset = 0, signal?: AbortSignal): Promise<GameComparison> {
+    return (await this.client.get<GameComparison>('/games/head-to-head', { params: { team_a: a.join(','), team_b: b.join(','), offset }, signal })).data;
   }
 
   // RSVPs

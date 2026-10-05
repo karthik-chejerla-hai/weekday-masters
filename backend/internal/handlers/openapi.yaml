@@ -17,6 +17,8 @@ tags:
     description: Session listing and details
   - name: RSVP
     description: RSVP management
+  - name: Games
+    description: Approved-member doubles results, corrections and head-to-head records
   - name: Assistant
     description: Voice transcription and bounded club-data tools for approved members
   - name: Settlement
@@ -1260,10 +1262,11 @@ paths:
   /assistant/messages:
     post:
       tags: [Assistant]
-      summary: Ask about club data or prepare an expense
+      summary: Ask about club data or prepare an expense or doubles result
       description: >
         Approved members can query club data. Only admins can prepare expense
-        previews. No tool writes money. The caller must confirm through the expense
+        previews. Approved members can prepare doubles results. No tool writes money
+        or game results. The caller must confirm through the explicit expense or games
         endpoint. Conversation history is bounded and is not stored by Rally.
       requestBody:
         required: true
@@ -1289,7 +1292,7 @@ paths:
                       content: { type: string, minLength: 1, maxLength: 4000 }
       responses:
         "200":
-          description: Answer, follow-up question, or an expense preview
+          description: Answer, follow-up question, expense preview, or game preview
           content:
             application/json:
               schema:
@@ -1298,6 +1301,7 @@ paths:
                 properties:
                   message: { type: string }
                   expense: { $ref: "#/components/schemas/ExpensePreview" }
+                  game: { $ref: "#/components/schemas/GamePreview" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -1591,6 +1595,273 @@ paths:
         "429":
           description: Wait one minute between tests
 
+  /sessions/{id}/games:
+    get:
+      tags:
+      - Games
+      operationId: listGames
+      summary: List session games, including voided results
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: offset
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+        description: Zero-based offset. Pages contain at most 50 games.
+      responses:
+        '200':
+          description: List session games, including voided results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameList'
+        '400':
+          description: Malformed request
+        '401':
+          description: Sign in required
+        '403':
+          description: Approved membership or correction rights required
+        '404':
+          description: Game or session not found
+        '409':
+          description: Stale version or reused request ID
+        '422':
+          description: Invalid players, scores or session state
+    post:
+      tags:
+      - Games
+      operationId: createGame
+      summary: Save one reviewed doubles game; retries reuse request_id
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GameCreateInput'
+      responses:
+        '201':
+          description: Save one reviewed doubles game; retries reuse request_id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameResult'
+        '400':
+          description: Malformed request
+        '401':
+          description: Sign in required
+        '403':
+          description: Approved membership or correction rights required
+        '404':
+          description: Game or session not found
+        '409':
+          description: Stale version or reused request ID
+        '422':
+          description: Invalid players, scores or session state
+  /games/{gameId}:
+    put:
+      tags:
+      - Games
+      operationId: correctGame
+      summary: Recorder or admin corrects the current version
+      parameters:
+      - name: gameId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GameCorrectionInput'
+      responses:
+        '200':
+          description: Recorder or admin corrects the current version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameResult'
+        '400':
+          description: Malformed request
+        '401':
+          description: Sign in required
+        '403':
+          description: Approved membership or correction rights required
+        '404':
+          description: Game or session not found
+        '409':
+          description: Stale version or reused request ID
+        '422':
+          description: Invalid players, scores or session state
+    delete:
+      tags:
+      - Games
+      operationId: voidGame
+      summary: Recorder or admin voids the current version
+      parameters:
+      - name: gameId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - version
+              properties:
+                version:
+                  type: integer
+                  minimum: 1
+      responses:
+        '200':
+          description: Recorder or admin voids the current version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameResult'
+        '400':
+          description: Malformed request
+        '401':
+          description: Sign in required
+        '403':
+          description: Approved membership or correction rights required
+        '404':
+          description: Game or session not found
+        '409':
+          description: Stale version or reused request ID
+        '422':
+          description: Invalid players, scores or session state
+  /games/{gameId}/revisions:
+    get:
+      tags:
+      - Games
+      operationId: gameRevisions
+      summary: Read complete saved versions in version order
+      parameters:
+      - name: gameId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Read complete saved versions in version order
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GameResult'
+        '400':
+          description: Malformed request
+        '401':
+          description: Sign in required
+        '403':
+          description: Approved membership or correction rights required
+        '404':
+          description: Game or session not found
+        '409':
+          description: Stale version or reused request ID
+        '422':
+          description: Invalid players, scores or session state
+  /games/players:
+    get:
+      tags:
+      - Games
+      operationId: gamePlayers
+      summary: Approved and historical players for comparison
+      responses:
+        '200':
+          description: Approved and historical players for comparison
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GamePlayer'
+        '400':
+          description: Malformed request
+        '401':
+          description: Sign in required
+        '403':
+          description: Approved membership or correction rights required
+        '404':
+          description: Game or session not found
+        '409':
+          description: Stale version or reused request ID
+        '422':
+          description: Invalid players, scores or session state
+  /games/head-to-head:
+    get:
+      tags:
+      - Games
+      operationId: headToHead
+      summary: Compare players on opposite sides or exact doubles pairs
+      parameters:
+      - name: team_a
+        in: query
+        required: true
+        schema:
+          type: string
+        description: One player UUID, or two comma-separated UUIDs for an exact team.
+          Both sides must have equal size and all players must differ.
+      - name: team_b
+        in: query
+        required: true
+        schema:
+          type: string
+        description: One player UUID, or two comma-separated UUIDs for an exact team.
+          Both sides must have equal size and all players must differ.
+      - name: offset
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+        description: Zero-based offset. Pages contain at most 50 games.
+      responses:
+        '200':
+          description: Compare players on opposite sides or exact doubles pairs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameComparison'
+        '400':
+          description: Malformed request
+        '401':
+          description: Sign in required
+        '403':
+          description: Approved membership or correction rights required
+        '404':
+          description: Game or session not found
+        '409':
+          description: Stale version or reused request ID
+        '422':
+          description: Invalid players, scores or session state
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1691,6 +1962,230 @@ components:
                 type: string
 
   schemas:
+    GamePlayer:
+      type: object
+      required:
+      - id
+      - name
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          description: Member display name
+        full_name:
+          type: string
+          description: Full name for disambiguating selection lists
+    GameInput:
+      type: object
+      required:
+      - team_a
+      - team_b
+      - score_a
+      - score_b
+      description: Four distinct players and unequal whole-number scores. A session must
+        have started and must not be cancelled for creation.
+      properties:
+        team_a:
+          type: array
+          minItems: 2
+          maxItems: 2
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        team_b:
+          type: array
+          minItems: 2
+          maxItems: 2
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        score_a:
+          type: integer
+          minimum: 0
+          maximum: 99
+        score_b:
+          type: integer
+          minimum: 0
+          maximum: 99
+    GameCreateInput:
+      allOf:
+      - $ref: '#/components/schemas/GameInput'
+      - type: object
+        required:
+        - request_id
+        properties:
+          request_id:
+            type: string
+            format: uuid
+    GameCorrectionInput:
+      allOf:
+      - $ref: '#/components/schemas/GameInput'
+      - type: object
+        required:
+        - version
+        properties:
+          version:
+            type: integer
+            minimum: 1
+    GameResult:
+      type: object
+      required:
+      - id
+      - session_id
+      - session_title
+      - session_date
+      - team_a
+      - team_b
+      - score_a
+      - score_b
+      - version
+      - created_by
+      - updated_by
+      - recorder_name
+      - editor_name
+      - created_at
+      - updated_at
+      - voided_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        session_title:
+          type: string
+        session_date:
+          type: string
+          format: date
+          description: Sydney play date
+        team_a:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            $ref: '#/components/schemas/GamePlayer'
+        team_b:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            $ref: '#/components/schemas/GamePlayer'
+        score_a:
+          type: integer
+          minimum: 0
+          maximum: 99
+        score_b:
+          type: integer
+          minimum: 0
+          maximum: 99
+        version:
+          type: integer
+          minimum: 1
+        created_by:
+          type: string
+          format: uuid
+        updated_by:
+          type: string
+          format: uuid
+        recorder_name:
+          type: string
+        editor_name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        voided_at:
+          type: string
+          format: date-time
+          nullable: true
+    GameList:
+      type: object
+      required:
+      - items
+      - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/GameResult'
+        total:
+          type: integer
+          format: int64
+    GameComparison:
+      allOf:
+      - $ref: '#/components/schemas/GameList'
+      - type: object
+        required:
+        - wins_a
+        - wins_b
+        - points_a
+        - points_b
+        properties:
+          wins_a:
+            type: integer
+            format: int64
+            minimum: 0
+          wins_b:
+            type: integer
+            format: int64
+            minimum: 0
+          points_a:
+            type: integer
+            format: int64
+            minimum: 0
+          points_b:
+            type: integer
+            format: int64
+            minimum: 0
+    GamePreview:
+      type: object
+      required:
+      - session
+      - team_a
+      - team_b
+      - score_a
+      - score_b
+      description: Read-only. Only the explicit games endpoint saves a result.
+      properties:
+        session:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            title:
+              type: string
+            starts_at:
+              type: string
+              format: date-time
+            ends_at:
+              type: string
+              format: date-time
+        team_a:
+          type: array
+          items:
+            $ref: '#/components/schemas/GamePlayer'
+        team_b:
+          type: array
+          items:
+            $ref: '#/components/schemas/GamePlayer'
+        score_a:
+          type: integer
+          minimum: 0
+          maximum: 99
+        score_b:
+          type: integer
+          minimum: 0
+          maximum: 99
+
     InvitationSendRequest:
       type: object
       required: [request_id, expected_email]

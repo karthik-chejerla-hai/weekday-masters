@@ -8,6 +8,8 @@ import Dashboard from './pages/Dashboard';
 import Assistant from './pages/Assistant';
 import AdminExpense from './pages/AdminExpense';
 import Sessions from './pages/Sessions';
+import SessionGames from './pages/SessionGames';
+import HeadToHead from './pages/HeadToHead';
 import Money from './pages/Money';
 import SessionSettlement from './pages/SessionSettlement';
 import AdminSettlement from './pages/AdminSettlement';
@@ -64,6 +66,8 @@ function AppRoutes() {
       } />
 
       <Route element={<Layout />}>
+        <Route path="/games" element={<ProtectedRoute><HeadToHead /></ProtectedRoute>} />
+        <Route path="/sessions/:id/games" element={<ProtectedRoute><SessionGames /></ProtectedRoute>} />
         <Route path="/assistant" element={<ProtectedRoute><Assistant /></ProtectedRoute>} />
         <Route path="/admin/sessions/:id/expense" element={<ProtectedRoute requireAdmin><AdminExpense /></ProtectedRoute>} />
         <Route path="/dashboard" element={
