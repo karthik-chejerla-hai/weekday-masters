@@ -117,6 +117,39 @@ jobs:
           path: frontend/coverage/
           retention-days: 7
 
+  browser-tests:
+    name: "Browser Tests (desktop and mobile)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Install Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Type-check browser tests
+        working-directory: frontend
+        run: npm run test:e2e:typecheck
+      - name: Run browser tests
+        working-directory: frontend
+        run: npm run test:e2e
+      - name: Upload browser reports and failure traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-results
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          retention-days: 7
+
   coverage-report:
     name: "Aggregate Coverage & Decorate PR"
     needs: [backend-tests, frontend-tests]

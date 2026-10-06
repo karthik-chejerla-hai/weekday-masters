@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e:typecheck": "tsc --project e2e/tsconfig.json"
   },
   "dependencies": {
     "@auth0/auth0-react": "^2.2.4",

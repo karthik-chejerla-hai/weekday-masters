@@ -423,3 +423,10 @@ rally/
 [Go](https://go.dev) · [React](https://react.dev) · [Tailwind CSS](https://tailwindcss.com) · [Auth0](https://auth0.com) · [Google Cloud](https://cloud.google.com) · [Firebase](https://firebase.google.com) · [Neon](https://neon.tech)
 
 </div>
+
+## Browser tests
+
+See [the browser test strategy](specs/009-browser-testing/strategy.md) for scenarios,
+coverage boundaries and setup. Run `npm run test:e2e` from `frontend` after
+`npm ci` and `npx playwright install chromium`. The suite runs desktop and mobile
+Chromium with isolated API fixtures. It needs no backend or sign-in credentials.
