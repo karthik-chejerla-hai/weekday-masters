@@ -71,7 +71,9 @@ export const notificationService = {
   async updatePreferences(
     updates: Partial<Omit<NotificationPreferences, 'id' | 'user_id' | 'created_at' | 'updated_at'>>
   ): Promise<NotificationPreferences> {
-    return api.updateNotificationPreferences(updates);
+    const saved = await api.updateNotificationPreferences(updates);
+    window.dispatchEvent(new Event('notification-settings-changed'));
+    return saved;
   },
 
   // Get notification history

@@ -22,8 +22,8 @@ func TestGetPreferences_CreatesDefaultsOnFirstRead(t *testing.T) {
 		t.Fatalf("expected preferences for %s, got %s", player.ID, prefs.UserID)
 	}
 	// A new member should be opted in, otherwise reminders silently never arrive.
-	if !prefs.PushEnabled || !prefs.EmailEnabled {
-		t.Fatalf("expected push and email on by default, got push=%v email=%v",
+	if !prefs.PushEnabled || prefs.EmailEnabled {
+		t.Fatalf("expected push on and email off by default, got push=%v email=%v",
 			prefs.PushEnabled, prefs.EmailEnabled)
 	}
 }
@@ -49,7 +49,7 @@ func TestUpdatePreferences_TogglesOnlyTheFieldsProvided(t *testing.T) {
 		t.Fatal("expected push to be switched off")
 	}
 	// Omitted fields are pointers on the request, so they must be left alone.
-	if after.EmailEnabled != before.EmailEnabled {
+	if after.PushSessionReminders != before.PushSessionReminders {
 		t.Fatal("expected an omitted preference to keep its previous value")
 	}
 }
@@ -234,4 +234,20 @@ func TestSendAnnouncement_RequiresATitleAndBody(t *testing.T) {
 
 	h.as(admin).post("/api/admin/announcements",
 		map[string]string{"title": "Only a title"}).expect(http.StatusBadRequest)
+}
+
+func TestEmailPreferencesRemovedAndBalancePushPreferenceSaved(t *testing.T) {
+	h := newHarness(t)
+	player := makePlayer(t)
+	var prefs map[string]any
+	h.as(player).get("/api/users/me/notifications").expect(http.StatusOK).decode(&prefs)
+	if _, exists := prefs["email_enabled"]; exists {
+		t.Fatal("email preferences remain exposed")
+	}
+	h.as(player).put("/api/users/me/notifications", map[string]any{"email_enabled": true}).expect(http.StatusBadRequest)
+	var updated models.UserNotificationPreferences
+	h.as(player).put("/api/users/me/notifications", map[string]any{"push_balance_alerts": false}).expect(http.StatusOK).decode(&updated)
+	if updated.PushBalanceAlerts {
+		t.Fatal("balance preference not saved")
+	}
 }

@@ -84,12 +84,6 @@ func TestUserNotificationPreferences_Toggles(t *testing.T) {
 		PushRSVPDeadlines:      false,
 		PushWaitlistUpdates:    true,
 		PushAdminAnnouncements: false,
-
-		EmailEnabled:            true,
-		EmailSessionReminders:   false,
-		EmailRSVPDeadlines:      true,
-		EmailWaitlistUpdates:    false,
-		EmailAdminAnnouncements: true,
 	}
 
 	// Push checks
@@ -106,36 +100,14 @@ func TestUserNotificationPreferences_Toggles(t *testing.T) {
 		t.Error("push admin announcements should be disabled")
 	}
 
-	// Email checks
-	if prefs.IsEmailEnabledForType(NotificationSessionReminder) {
-		t.Error("email session reminders should be disabled")
-	}
-	if !prefs.IsEmailEnabledForType(NotificationRSVPDeadline) {
-		t.Error("email rsvp deadlines should be enabled")
-	}
-	if prefs.IsEmailEnabledForType(NotificationWaitlistUpdate) {
-		t.Error("email waitlist updates should be disabled")
-	}
-	if !prefs.IsEmailEnabledForType(NotificationAdminAnnouncement) {
-		t.Error("email admin announcements should be enabled")
-	}
-
 	// Master switches
 	prefs.PushEnabled = false
 	if prefs.IsPushEnabledForType(NotificationSessionReminder) {
 		t.Error("when PushEnabled is false, all push types should return false")
 	}
 
-	prefs.EmailEnabled = false
-	if prefs.IsEmailEnabledForType(NotificationRSVPDeadline) {
-		t.Error("when EmailEnabled is false, all email types should return false")
-	}
-
 	// Unknown type
 	if prefs.IsPushEnabledForType("unknown_type") {
-		t.Error("unknown type should return false")
-	}
-	if prefs.IsEmailEnabledForType("unknown_type") {
 		t.Error("unknown type should return false")
 	}
 }

@@ -31,13 +31,13 @@ type UserNotificationPreferences struct {
 	PushAdminAnnouncements bool `gorm:"default:true" json:"push_admin_announcements"`
 	PushBalanceAlerts      bool `gorm:"default:true" json:"push_balance_alerts"`
 
-	// Email notification preferences
-	EmailEnabled            bool `gorm:"default:true" json:"email_enabled"`
-	EmailSessionReminders   bool `gorm:"default:true" json:"email_session_reminders"`
-	EmailRSVPDeadlines      bool `gorm:"default:true" json:"email_rsvp_deadlines"`
-	EmailWaitlistUpdates    bool `gorm:"default:true" json:"email_waitlist_updates"`
-	EmailAdminAnnouncements bool `gorm:"default:true" json:"email_admin_announcements"`
-	EmailBalanceAlerts      bool `gorm:"default:true" json:"email_balance_alerts"`
+	// Retained database columns for old clients/history. Email alerts are removed.
+	EmailEnabled            bool `gorm:"default:false" json:"-"`
+	EmailSessionReminders   bool `gorm:"default:false" json:"-"`
+	EmailRSVPDeadlines      bool `gorm:"default:false" json:"-"`
+	EmailWaitlistUpdates    bool `gorm:"default:false" json:"-"`
+	EmailAdminAnnouncements bool `gorm:"default:false" json:"-"`
+	EmailBalanceAlerts      bool `gorm:"default:false" json:"-"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -143,27 +143,6 @@ func (p *UserNotificationPreferences) IsPushEnabledForType(t NotificationType) b
 		return p.PushAdminAnnouncements
 	case NotificationBalanceLow, NotificationBalanceNegative:
 		return p.PushBalanceAlerts
-	default:
-		return false
-	}
-}
-
-// IsEmailEnabledForType checks if email notifications are enabled for a specific notification type
-func (p *UserNotificationPreferences) IsEmailEnabledForType(t NotificationType) bool {
-	if !p.EmailEnabled {
-		return false
-	}
-	switch t {
-	case NotificationSessionReminder:
-		return p.EmailSessionReminders
-	case NotificationRSVPDeadline:
-		return p.EmailRSVPDeadlines
-	case NotificationWaitlistUpdate:
-		return p.EmailWaitlistUpdates
-	case NotificationAdminAnnouncement:
-		return p.EmailAdminAnnouncements
-	case NotificationBalanceLow, NotificationBalanceNegative:
-		return p.EmailBalanceAlerts
 	default:
 		return false
 	}

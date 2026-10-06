@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Bell, Mail, Loader2, BellOff, BellRing, Smartphone } from 'lucide-react';
+import { Bell, Loader2, BellOff, BellRing, Smartphone } from 'lucide-react';
 import { notificationService, NotificationPreferences } from '../../services/notifications';
 
 interface ToggleSwitchProps {
@@ -33,22 +33,16 @@ interface NotificationRowProps {
   label: string;
   description: string;
   pushEnabled: boolean;
-  emailEnabled: boolean;
   onPushChange: (enabled: boolean) => void;
-  onEmailChange: (enabled: boolean) => void;
   pushDisabled?: boolean;
-  emailDisabled?: boolean;
 }
 
 function NotificationRow({
   label,
   description,
   pushEnabled,
-  emailEnabled,
   onPushChange,
-  onEmailChange,
   pushDisabled,
-  emailDisabled
 }: NotificationRowProps) {
   return (
     <div className="flex items-center justify-between py-4 border-b border-slate-100 last:border-0">
@@ -65,14 +59,6 @@ function NotificationRow({
             disabled={pushDisabled}
           />
         </div>
-        <div className="flex items-center gap-2">
-          <Mail className="w-4 h-4 text-slate-400" />
-          <ToggleSwitch
-            enabled={emailEnabled}
-            onChange={onEmailChange}
-            disabled={emailDisabled}
-          />
-        </div>
       </div>
     </div>
   );
@@ -82,6 +68,7 @@ export default function NotificationSettings() {
   const [preferences, setPreferences] = useState<NotificationPreferences | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [deviceRegistered, setDeviceRegistered] = useState(false);
   const [pushSupported] = useState(() => notificationService.isPushSupported());
   const [pushPermission, setPushPermission] = useState<NotificationPermission | 'unsupported'>(
     () => notificationService.getPermissionStatus()
@@ -96,6 +83,9 @@ export default function NotificationSettings() {
     try {
       const prefs = await notificationService.getPreferences();
       setPreferences(prefs);
+      if (prefs.push_enabled && notificationService.getPermissionStatus() === 'granted') {
+        setDeviceRegistered(await notificationService.enablePushNotifications());
+      }
     } catch (error) {
       console.error('Failed to load notification preferences:', error);
       setMessage({ type: 'error', text: 'Failed to load notification settings' });
@@ -111,7 +101,9 @@ export default function NotificationSettings() {
       const success = await notificationService.enablePushNotifications();
       if (success) {
         setPushPermission('granted');
-        await updatePreference('push_enabled', true);
+        const updated = await notificationService.updatePreferences({ push_enabled: true });
+        setPreferences(updated);
+        setDeviceRegistered(true);
         setMessage({ type: 'success', text: 'Push notifications enabled!' });
       } else {
         setMessage({ type: 'error', text: 'Failed to enable push notifications. Please check your browser settings.' });
@@ -147,8 +139,7 @@ export default function NotificationSettings() {
     );
   }
 
-  const pushGlobalEnabled = pushSupported && pushPermission === 'granted' && preferences?.push_enabled;
-  const emailGlobalEnabled = preferences?.email_enabled ?? true;
+  const pushGlobalEnabled = pushSupported && pushPermission === 'granted' && deviceRegistered && preferences?.push_enabled;
 
   return (
     <div className="space-y-6">
@@ -173,7 +164,7 @@ export default function NotificationSettings() {
               Push notifications are blocked. Please enable them in your browser settings to receive notifications.
             </p>
           </div>
-        ) : pushPermission !== 'granted' ? (
+        ) : pushPermission !== 'granted' || !deviceRegistered ? (
           <div className="mb-4">
             <p className="text-sm text-slate-600 mb-3">
               Enable push notifications to receive instant updates about sessions and RSVPs.
@@ -199,7 +190,7 @@ export default function NotificationSettings() {
             </div>
             <ToggleSwitch
               enabled={preferences?.push_enabled ?? false}
-              onChange={(enabled) => updatePreference('push_enabled', enabled)}
+              onChange={(enabled) => enabled ? handleEnablePush() : updatePreference('push_enabled', false)}
               disabled={isSaving}
             />
           </div>
@@ -214,100 +205,40 @@ export default function NotificationSettings() {
               label="Session Reminders"
               description="Get reminded before sessions you've RSVP'd to"
               pushEnabled={preferences.push_session_reminders}
-              emailEnabled={preferences.email_session_reminders}
               onPushChange={(enabled) => updatePreference('push_session_reminders', enabled)}
-              onEmailChange={(enabled) => updatePreference('email_session_reminders', enabled)}
               pushDisabled={isSaving || !pushGlobalEnabled}
-              emailDisabled={isSaving || !emailGlobalEnabled}
             />
             <NotificationRow
               label="RSVP Deadlines"
               description="Get alerted when RSVP deadlines are approaching"
               pushEnabled={preferences.push_rsvp_deadlines}
-              emailEnabled={preferences.email_rsvp_deadlines}
               onPushChange={(enabled) => updatePreference('push_rsvp_deadlines', enabled)}
-              onEmailChange={(enabled) => updatePreference('email_rsvp_deadlines', enabled)}
               pushDisabled={isSaving || !pushGlobalEnabled}
-              emailDisabled={isSaving || !emailGlobalEnabled}
             />
             <NotificationRow
               label="Waitlist Updates"
               description="Get notified when spots open up"
               pushEnabled={preferences.push_waitlist_updates}
-              emailEnabled={preferences.email_waitlist_updates}
               onPushChange={(enabled) => updatePreference('push_waitlist_updates', enabled)}
-              onEmailChange={(enabled) => updatePreference('email_waitlist_updates', enabled)}
               pushDisabled={isSaving || !pushGlobalEnabled}
-              emailDisabled={isSaving || !emailGlobalEnabled}
             />
             <NotificationRow
               label="Club Announcements"
               description="Receive important updates from club admins"
               pushEnabled={preferences.push_admin_announcements}
-              emailEnabled={preferences.email_admin_announcements}
               onPushChange={(enabled) => updatePreference('push_admin_announcements', enabled)}
-              onEmailChange={(enabled) => updatePreference('email_admin_announcements', enabled)}
               pushDisabled={isSaving || !pushGlobalEnabled}
-              emailDisabled={isSaving || !emailGlobalEnabled}
             />
             <NotificationRow
               label="Balance Alerts"
               description="Hear about it when a session leaves you running low"
               pushEnabled={preferences.push_balance_alerts}
-              emailEnabled={preferences.email_balance_alerts}
               onPushChange={(enabled) => updatePreference('push_balance_alerts', enabled)}
-              onEmailChange={(enabled) => updatePreference('email_balance_alerts', enabled)}
               pushDisabled={isSaving || !pushGlobalEnabled}
-              emailDisabled={isSaving || !emailGlobalEnabled}
             />
           </div>
         )}
       </div>
-
-      {/* Email Notifications Section (shown when push not enabled) */}
-      {(!pushSupported || pushPermission !== 'granted' || !preferences?.push_enabled) && preferences && (
-        <div className="bg-white rounded-xl border border-slate-200 p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <Mail className="w-5 h-5 text-primary-600" />
-            <h3 className="text-lg font-semibold text-slate-900">Email Notifications</h3>
-          </div>
-
-          <div className="flex items-center justify-between mb-4 pb-4 border-b border-slate-200">
-            <div>
-              <p className="text-sm font-medium text-slate-700">Email Notifications</p>
-              <p className="text-xs text-slate-500">Receive notifications via email</p>
-            </div>
-            <ToggleSwitch
-              enabled={preferences.email_enabled}
-              onChange={(enabled) => updatePreference('email_enabled', enabled)}
-              disabled={isSaving}
-            />
-          </div>
-
-          {preferences.email_enabled && (
-            <div className="space-y-3">
-              {[
-                { key: 'email_session_reminders' as const, label: 'Session Reminders', desc: 'Get reminded before sessions' },
-                { key: 'email_rsvp_deadlines' as const, label: 'RSVP Deadlines', desc: 'Get deadline alerts' },
-                { key: 'email_waitlist_updates' as const, label: 'Waitlist Updates', desc: 'Get notified when spots open' },
-                { key: 'email_admin_announcements' as const, label: 'Club Announcements', desc: 'Receive club updates' }
-              ].map(({ key, label, desc }) => (
-                <div key={key} className="flex items-center justify-between py-2">
-                  <div>
-                    <p className="text-sm font-medium text-slate-700">{label}</p>
-                    <p className="text-xs text-slate-500">{desc}</p>
-                  </div>
-                  <ToggleSwitch
-                    enabled={preferences[key]}
-                    onChange={(enabled) => updatePreference(key, enabled)}
-                    disabled={isSaving}
-                  />
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Message */}
       {message && (

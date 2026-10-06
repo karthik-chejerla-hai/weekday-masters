@@ -291,3 +291,40 @@ Ensure your Neon database allows connections from Cloud Run (it should by defaul
 gcloud builds list --limit=5
 gcloud builds log BUILD_ID
 ```
+## Push notifications (issue #49)
+
+Production sets `FIREBASE_PROJECT_ID`, while the old notification service only
+initialized FCM when `FIREBASE_CREDENTIALS` contained a private key. Production
+logs confirmed `Firebase credentials not configured, push notifications disabled`
+with `NOTIFICATIONS_DISABLED=false` on `rally-club-app/rally-club-api`.
+The FCM API was enabled, and the runtime account had the existing Editor role.
+The service now uses Application Default
+Credentials from the Cloud Run runtime account when a Firebase project is set.
+A JSON credentials override remains available for local use.
+
+Before deployment, verify that the Firebase project's `fcm.googleapis.com` API is
+enabled and the **runtime** service account has `cloudmessaging.messages.create`
+(for example through `roles.firebasecloudmessaging.admin`). The GitHub deployer
+identity is not the runtime identity. Keep both notification pause controls in
+place; preview deployments must retain `NOTIFICATIONS_DISABLED=true`.
+
+Frontend builds embed only the public Firebase web configuration in
+`firebase-messaging-sw.js`. The worker initializes on every start, including when
+no page is open. It has a separate scope from the PWA worker, and `getToken` uses
+that exact registration. The worker is served with `Cache-Control: no-cache`.
+FCM displays notification payloads once; the worker handles clicks and data-only
+messages. Signed-in members with existing permission refresh their device token.
+The profile page can retry registration when permission exists but registration
+failed. Foreground messages appear as a link in the app.
+
+Automatic email alerts and their preference controls are removed. Historical
+email delivery fields and old preference columns are retained. Explicit admin
+invitation emails use their separate service and existing sending controls.
+
+After deployment, verify startup reports FCM initialization, then use a test
+member/device to check foreground, background, and closed-page delivery. Open a
+session notification and confirm it navigates to that session. Browser permission
+alone does not prove a token is registered or a notification reached the device.
+`push_sent` means FCM accepted at least one device delivery; it remains false when
+there are no tokens or all devices fail. No live notifications were sent during
+local verification.

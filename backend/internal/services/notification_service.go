@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"log"
 	"strings"
 	"time"
@@ -13,8 +12,6 @@ import (
 	firebase "firebase.google.com/go/v4"
 	"firebase.google.com/go/v4/messaging"
 	"github.com/google/uuid"
-	"github.com/sendgrid/sendgrid-go"
-	"github.com/sendgrid/sendgrid-go/helpers/mail"
 	"github.com/weekday-masters/backend/internal/database"
 	"github.com/weekday-masters/backend/internal/models"
 	"google.golang.org/api/option"
@@ -22,20 +19,21 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+type pushClient interface {
+	SendEachForMulticast(context.Context, *messaging.MulticastMessage) (*messaging.BatchResponse, error)
+}
+
 type NotificationService struct {
-	disabled       bool
-	fcmClient      *messaging.Client
-	sendGridClient *sendgrid.Client
-	fromEmail      string
-	fromName       string
-	frontendURL    string
-	fcmEnabled     bool
-	emailEnabled   bool
+	disabled    bool
+	fcmClient   pushClient
+	frontendURL string
+	fcmEnabled  bool
 }
 
 type NotificationConfig struct {
 	Disabled            bool
 	FirebaseCredentials string
+	FirebaseProjectID   string
 	SendGridAPIKey      string
 	SendGridFromEmail   string
 	SendGridFromName    string
@@ -43,21 +41,22 @@ type NotificationConfig struct {
 }
 
 // NewNotificationService creates a new notification service
-// It gracefully handles missing credentials (FCM or SendGrid can be disabled independently)
+// Cloud Run uses Application Default Credentials; local callers may supply JSON.
 func NewNotificationService(cfg NotificationConfig) *NotificationService {
 	if cfg.Disabled {
 		return &NotificationService{disabled: true}
 	}
 	service := &NotificationService{
-		fromEmail:   cfg.SendGridFromEmail,
-		fromName:    cfg.SendGridFromName,
 		frontendURL: cfg.FrontendURL,
 	}
 
-	// Initialize Firebase FCM if credentials provided
-	if cfg.FirebaseCredentials != "" {
-		opt := option.WithCredentialsJSON([]byte(cfg.FirebaseCredentials))
-		app, err := firebase.NewApp(context.Background(), nil, opt)
+	// An explicit project enables ADC without requiring a private key in Cloud Run.
+	if cfg.FirebaseCredentials != "" || cfg.FirebaseProjectID != "" {
+		var opts []option.ClientOption
+		if cfg.FirebaseCredentials != "" {
+			opts = append(opts, option.WithCredentialsJSON([]byte(cfg.FirebaseCredentials)))
+		}
+		app, err := firebase.NewApp(context.Background(), &firebase.Config{ProjectID: cfg.FirebaseProjectID}, opts...)
 		if err != nil {
 			log.Printf("Warning: Failed to initialize Firebase: %v", err)
 		} else {
@@ -74,24 +73,15 @@ func NewNotificationService(cfg NotificationConfig) *NotificationService {
 		log.Println("Firebase credentials not configured, push notifications disabled")
 	}
 
-	// Initialize SendGrid if API key provided
-	if cfg.SendGridAPIKey != "" {
-		service.sendGridClient = sendgrid.NewSendClient(cfg.SendGridAPIKey)
-		service.emailEnabled = true
-		log.Println("SendGrid initialized successfully")
-	} else {
-		log.Println("SendGrid API key not configured, email notifications disabled")
-	}
-
 	return service
 }
 
-// IsEnabled returns true if at least one notification channel is enabled
+// IsEnabled returns true when push delivery is enabled
 func (s *NotificationService) IsEnabled() bool {
-	return !s.disabled && (s.fcmEnabled || s.emailEnabled)
+	return !s.disabled && s.fcmEnabled
 }
 
-// SendNotification sends a notification to a single user via configured channels
+// SendNotification records a notification and attempts push delivery
 func (s *NotificationService) SendNotification(
 	ctx context.Context,
 	userID uuid.UUID,
@@ -170,17 +160,8 @@ func (s *NotificationService) deliverNotification(ctx context.Context, notificat
 			notification.PushSentAt = &now
 		}
 	}
-	if prefs.IsEmailEnabledForType(notification.NotificationType) && s.emailEnabled && user.Email != "" && !notification.EmailSent {
-		if err := s.sendEmailNotification(ctx, user.Email, user.Name, notification.Title, notification.Body, notification.NotificationType); err != nil {
-			log.Printf("Failed to send email to user %s: %v", userID, err)
-		} else {
-			now := time.Now()
-			notification.EmailSent = true
-			notification.EmailSentAt = &now
-		}
-	}
 	// Preserve read_at if the member opens the notification while delivery runs.
-	return database.DB.Model(notification).Select("push_sent", "push_sent_at", "email_sent", "email_sent_at").Updates(notification).Error
+	return database.DB.Model(notification).Select("push_sent", "push_sent_at").Updates(notification).Error
 }
 
 // sendPushNotification sends a push notification to all user devices
@@ -201,7 +182,7 @@ func (s *NotificationService) sendPushNotification(
 	}
 
 	if len(tokens) == 0 {
-		return nil // No tokens, nothing to send
+		return errors.New("no registered push devices")
 	}
 
 	// Build token strings
@@ -219,8 +200,9 @@ func (s *NotificationService) sendPushNotification(
 		},
 		Data: data,
 		Webpush: &messaging.WebpushConfig{
+			FCMOptions: &messaging.WebpushFCMOptions{Link: s.notificationURL(data)},
 			Notification: &messaging.WebpushNotification{
-				Icon: "/icons/icon-192x192.png",
+				Icon: "/icons/icon-192x192.svg",
 			},
 		},
 	}
@@ -241,81 +223,21 @@ func (s *NotificationService) sendPushNotification(
 		}
 	}
 
+	if response.SuccessCount == 0 {
+		return errors.New("FCM rejected all device deliveries")
+	}
 	log.Printf("Push notification sent to %d/%d devices for user %s", response.SuccessCount, len(tokens), userID)
 	return nil
 }
 
-// sendEmailNotification sends an email notification
-func (s *NotificationService) sendEmailNotification(ctx context.Context, toEmail, toName, subject, body string, notifType models.NotificationType) error {
-	if !s.emailEnabled {
-		return errors.New("email not enabled")
+func (s *NotificationService) notificationURL(data map[string]string) string {
+	path := "/dashboard"
+	if id, err := uuid.Parse(data["session_id"]); err == nil {
+		path = "/sessions/" + id.String()
+	} else if strings.HasPrefix(data["type"], "balance_") {
+		path = "/money"
 	}
-
-	from := mail.NewEmail(s.fromName, s.fromEmail)
-	to := mail.NewEmail(toName, toEmail)
-
-	// Build HTML email
-	htmlContent := s.buildEmailHTML(subject, body, notifType)
-
-	message := mail.NewSingleEmail(from, subject, to, body, htmlContent)
-
-	// SendWithContext mutates Client.Body. Each send needs its own request
-	// so simultaneous notifications cannot overwrite another email's payload.
-	client := *s.sendGridClient
-	response, err := client.SendWithContext(ctx, message)
-	if err != nil {
-		return err
-	}
-
-	if response.StatusCode >= 400 {
-		return fmt.Errorf("SendGrid returned status %d: %s", response.StatusCode, response.Body)
-	}
-
-	log.Printf("Email sent to %s: %s", toEmail, subject)
-	return nil
-}
-
-// buildEmailHTML creates a styled HTML email
-func (s *NotificationService) buildEmailHTML(subject, body string, notifType models.NotificationType) string {
-	// Icon based on notification type
-	iconEmoji := "🏸"
-	switch notifType {
-	case models.NotificationSessionReminder:
-		iconEmoji = "⏰"
-	case models.NotificationRSVPDeadline:
-		iconEmoji = "📅"
-	case models.NotificationWaitlistUpdate:
-		iconEmoji = "🎉"
-	case models.NotificationAdminAnnouncement:
-		iconEmoji = "📢"
-	}
-
-	return fmt.Sprintf(`
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 0; background-color: #f8fafc;">
-    <div style="background-color: #0891b2; color: white; padding: 24px; text-align: center;">
-        <h1 style="margin: 0; font-size: 24px;">🏸 Rally</h1>
-    </div>
-    <div style="padding: 24px; background-color: white;">
-        <div style="font-size: 32px; text-align: center; margin-bottom: 16px;">%s</div>
-        <h2 style="color: #1e293b; margin-top: 0;">%s</h2>
-        <p style="color: #475569; font-size: 16px; line-height: 1.6;">%s</p>
-        <div style="text-align: center; margin-top: 24px;">
-            <a href="%s/dashboard" style="display: inline-block; background-color: #0891b2; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">View Dashboard</a>
-        </div>
-    </div>
-    <div style="background-color: #f1f5f9; padding: 16px; text-align: center; font-size: 12px; color: #64748b;">
-        <p style="margin: 0 0 8px 0;">You received this email because you have notifications enabled for Rally.</p>
-        <p style="margin: 0;"><a href="%s/profile" style="color: #0891b2;">Manage your notification preferences</a></p>
-    </div>
-</body>
-</html>
-`, iconEmoji, html.EscapeString(subject), strings.ReplaceAll(html.EscapeString(body), "\n", "<br>"), html.EscapeString(s.frontendURL), html.EscapeString(s.frontendURL))
+	return strings.TrimRight(s.frontendURL, "/") + path
 }
 
 // SendBulkNotification sends notifications to multiple users
@@ -378,29 +300,12 @@ func (s *NotificationService) UpdateUserPreferences(userID uuid.UUID, updates ma
 
 // RegisterPushToken registers a new FCM push token for a user
 func (s *NotificationService) RegisterPushToken(userID uuid.UUID, token, deviceName string) error {
-	// Check if token already exists
-	var existing models.UserPushToken
-	result := database.DB.Where("token = ?", token).First(&existing)
-
-	if result.Error == nil {
-		// Token exists, update user and last used
-		existing.UserID = userID
-		existing.DeviceName = deviceName
-		existing.LastUsedAt = time.Now()
-		return database.DB.Save(&existing).Error
-	}
-
-	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-		// Create new token
-		newToken := models.UserPushToken{
-			UserID:     userID,
-			Token:      token,
-			DeviceName: deviceName,
-		}
-		return database.DB.Create(&newToken).Error
-	}
-
-	return result.Error
+	tokenRow := models.UserPushToken{UserID: userID, Token: token, DeviceName: deviceName, LastUsedAt: time.Now()}
+	// Settings and app startup can register the same device concurrently.
+	return database.DB.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "token"}},
+		DoUpdates: clause.AssignmentColumns([]string{"user_id", "device_name", "last_used_at"}),
+	}).Create(&tokenRow).Error
 }
 
 // UnregisterPushToken removes a push token

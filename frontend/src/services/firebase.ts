@@ -1,5 +1,5 @@
 import { initializeApp, FirebaseApp } from 'firebase/app';
-import { getMessaging, getToken, onMessage, Messaging } from 'firebase/messaging';
+import { getMessaging, getToken, onMessage, isSupported, Messaging } from 'firebase/messaging';
 
 // Firebase configuration from environment variables
 const firebaseConfig = {
@@ -13,13 +13,17 @@ const firebaseConfig = {
 
 let app: FirebaseApp | null = null;
 let messaging: Messaging | null = null;
+let workerRegistration: ServiceWorkerRegistration | null = null;
+let initialization: Promise<Messaging | null> | null = null;
 
 // Check if Firebase is configured
 export const isFirebaseConfigured = (): boolean => {
   return !!(
     firebaseConfig.apiKey &&
     firebaseConfig.projectId &&
-    firebaseConfig.messagingSenderId
+    firebaseConfig.messagingSenderId &&
+    firebaseConfig.appId &&
+    import.meta.env.VITE_FIREBASE_VAPID_KEY
   );
 };
 
@@ -43,61 +47,60 @@ export const initializeFirebase = (): FirebaseApp | null => {
   return app;
 };
 
-// Initialize Firebase Messaging
-export const initializeMessaging = async (): Promise<Messaging | null> => {
-  if (!isFirebaseConfigured()) {
-    return null;
-  }
-
-  // Check if browser supports notifications
-  if (!('Notification' in window)) {
-    console.log('This browser does not support notifications');
-    return null;
-  }
-
-  if (!('serviceWorker' in navigator)) {
-    console.log('This browser does not support service workers');
-    return null;
-  }
-
-  if (!app) {
-    app = initializeFirebase();
-    if (!app) return null;
-  }
-
-  if (!messaging) {
+// Use a separate scope so FCM cannot replace the PWA's root worker.
+export const initializeMessaging = (): Promise<Messaging | null> => {
+  if (initialization) return initialization;
+  initialization = (async () => {
     try {
-      messaging = getMessaging(app);
-
-      // Register the service worker and send Firebase config to it
-      const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-
-      // Wait for service worker to be ready
-      await navigator.serviceWorker.ready;
-
-      // Send Firebase config to service worker
-      if (registration.active) {
-        registration.active.postMessage({
-          type: 'FIREBASE_CONFIG',
-          config: firebaseConfig
-        });
-      }
-
-      console.log('Firebase Messaging initialized');
+      if (!isFirebaseConfigured() || !(await isSupported())) return null;
+      const firebaseApp = initializeFirebase();
+      if (!firebaseApp) return null;
+      const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
+        scope: '/firebase-cloud-messaging-push-scope',
+        updateViaCache: 'none',
+      });
+      // navigator.serviceWorker.ready may refer to the unrelated PWA worker.
+      await waitForActiveWorker(registration);
+      workerRegistration = registration;
+      messaging = getMessaging(firebaseApp);
+      return messaging;
     } catch (error) {
       console.error('Failed to initialize Firebase Messaging:', error);
       return null;
     }
-  }
-
-  return messaging;
+  })().then((result) => {
+    if (!result) initialization = null;
+    return result;
+  });
+  return initialization;
 };
+
+function waitForActiveWorker(registration: ServiceWorkerRegistration): Promise<void> {
+  if (registration.active) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const worker = registration.installing || registration.waiting;
+    if (!worker) return reject(new Error('Push worker is unavailable'));
+    const finish = (error?: Error) => {
+      clearTimeout(timer);
+      worker.removeEventListener('statechange', check);
+      if (error) reject(error); else resolve();
+    };
+    const check = () => {
+      if (worker.state === 'activated') finish();
+      else if (worker.state === 'redundant') finish(new Error('Push worker installation failed'));
+    };
+    const timer = setTimeout(() => finish(new Error('Push worker activation timed out')), 15000);
+    worker.addEventListener('statechange', check);
+    check();
+  });
+}
 
 // Request notification permission and get FCM token
 export const requestNotificationPermission = async (): Promise<string | null> => {
   try {
     // Request permission
-    const permission = await Notification.requestPermission();
+    const permission = Notification.permission === 'granted'
+      ? 'granted' : await Notification.requestPermission();
     if (permission !== 'granted') {
       console.log('Notification permission denied');
       return null;
@@ -105,7 +108,7 @@ export const requestNotificationPermission = async (): Promise<string | null> =>
 
     // Initialize messaging if needed
     const msg = await initializeMessaging();
-    if (!msg) return null;
+    if (!msg || !workerRegistration) return null;
 
     // Get VAPID key from environment
     const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
@@ -115,7 +118,7 @@ export const requestNotificationPermission = async (): Promise<string | null> =>
     }
 
     // Get FCM token
-    const token = await getToken(msg, { vapidKey });
+    const token = await getToken(msg, { vapidKey, serviceWorkerRegistration: workerRegistration });
     console.log('FCM token obtained');
 
     return token;
@@ -129,30 +132,17 @@ export const requestNotificationPermission = async (): Promise<string | null> =>
 export const onForegroundMessage = (
   callback: (payload: { title?: string; body?: string; data?: Record<string, string> }) => void
 ): (() => void) => {
-  if (!messaging) {
-    initializeMessaging().then((msg) => {
-      if (msg) {
-        onMessage(msg, (payload) => {
-          callback({
-            title: payload.notification?.title,
-            body: payload.notification?.body,
-            data: payload.data
-          });
-        });
-      }
-    });
-    return () => {};
-  }
-
-  const unsubscribe = onMessage(messaging, (payload) => {
-    callback({
+  let cancelled = false;
+  let unsubscribe: (() => void) | undefined;
+  initializeMessaging().then((msg) => {
+    if (!msg || cancelled) return;
+    unsubscribe = onMessage(msg, (payload) => callback({
       title: payload.notification?.title,
       body: payload.notification?.body,
-      data: payload.data
-    });
+      data: payload.data,
+    }));
   });
-
-  return unsubscribe;
+  return () => { cancelled = true; unsubscribe?.(); };
 };
 
 // Check current notification permission status

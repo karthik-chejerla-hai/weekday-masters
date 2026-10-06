@@ -1,12 +1,14 @@
 /// <reference types="vitest" />
 import { defineConfig } from 'vite'
 import { configDefaults } from 'vitest/config'
+import { firebaseWorker } from './firebase-worker.config'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
   plugins: [
     react(),
+    firebaseWorker(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['badminton.svg', 'icons/*.svg'],

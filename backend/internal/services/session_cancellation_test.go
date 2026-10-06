@@ -1,18 +1,17 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"firebase.google.com/go/v4/messaging"
 	"github.com/google/uuid"
-	"github.com/sendgrid/sendgrid-go"
 	"github.com/weekday-masters/backend/internal/database"
 	"github.com/weekday-masters/backend/internal/models"
 	"github.com/weekday-masters/backend/internal/utils"
@@ -238,37 +237,27 @@ func TestCancellationRejectsFinishedAndSettledSessions(t *testing.T) {
 	}
 }
 
-func TestCancellationOutboundSettingsAndSafeEmail(t *testing.T) {
+func TestCancellationOutboundSettings(t *testing.T) {
 	for _, mode := range []string{"enabled", "disabled", "paused", "opted_out", "provider_failure"} {
 		t.Run(mode, func(t *testing.T) {
 			_, ss, _ := newTestServices(t)
 			admin := newUser(t, "admin")
 			session := newSession(t, ss, admin.ID, 1)
 			var requests atomic.Int32
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ns := &NotificationService{fcmEnabled: true, fcmClient: stubPushClient(func(_ context.Context, message *messaging.MulticastMessage) (*messaging.BatchResponse, error) {
 				requests.Add(1)
-				var payload struct {
-					Content []struct{ Type, Value string }
-				}
-				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-					t.Error(err)
-				}
-				for _, part := range payload.Content {
-					if part.Type == "text/html" && (strings.Contains(part.Value, "<img") || !strings.Contains(part.Value, "&lt;img") || !strings.Contains(part.Value, "<br>")) {
-						t.Error("reason was not escaped or line breaks were lost")
-					}
+				if !strings.Contains(message.Notification.Body, "<img") {
+					t.Error("push body lost reason")
 				}
 				if mode == "provider_failure" {
-					w.WriteHeader(503)
-				} else {
-					w.WriteHeader(202)
+					return nil, errors.New("provider failure")
 				}
-			}))
-			defer server.Close()
-			ns := NewNotificationService(NotificationConfig{})
-			ns.emailEnabled = true
-			ns.sendGridClient = sendgrid.NewSendClient("test-key")
-			ns.sendGridClient.BaseURL = server.URL
+				return &messaging.BatchResponse{SuccessCount: 1, Responses: []*messaging.SendResponse{{Success: true}}}, nil
+			})}
+			if err := ns.RegisterPushToken(admin.ID, "test-token", "test"); err != nil {
+				t.Fatal(err)
+			}
+
 			ns.disabled = mode == "disabled"
 			ss.WithNotifier(ns)
 			if mode == "paused" {
@@ -301,7 +290,7 @@ func TestCancellationOutboundSettingsAndSafeEmail(t *testing.T) {
 			if err := database.DB.First(&notice).Error; err != nil {
 				t.Fatal(err)
 			}
-			if notice.EmailSent != (mode == "enabled") {
+			if notice.PushSent != (mode == "enabled") || notice.EmailSent {
 				t.Fatalf("incorrect delivery result: %+v", notice)
 			}
 		})
@@ -365,28 +354,15 @@ func TestConcurrentCancellationsDeliverWithNewPreferences(t *testing.T) {
 	}
 	var requests atomic.Int32
 	bodies := make(chan string, 2)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ns := &NotificationService{fcmEnabled: true, fcmClient: stubPushClient(func(_ context.Context, message *messaging.MulticastMessage) (*messaging.BatchResponse, error) {
 		requests.Add(1)
-		var payload struct {
-			Content []struct{ Type, Value string }
-		}
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Error(err)
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		for _, part := range payload.Content {
-			if part.Type == "text/plain" {
-				bodies <- part.Value
-			}
-		}
-		w.WriteHeader(http.StatusAccepted)
-	}))
-	defer server.Close()
-	ns := NewNotificationService(NotificationConfig{})
-	ns.emailEnabled = true
-	ns.sendGridClient = sendgrid.NewSendClient("test-key")
-	ns.sendGridClient.BaseURL = server.URL
+		bodies <- message.Notification.Body
+		return &messaging.BatchResponse{SuccessCount: 1, Responses: []*messaging.SendResponse{{Success: true}}}, nil
+	})}
+	if err := ns.RegisterPushToken(member.ID, "test-token", "test"); err != nil {
+		t.Fatal(err)
+	}
+
 	ss.WithNotifier(ns)
 
 	// Both cancellations must read missing preferences before either can insert.
@@ -444,7 +420,7 @@ func TestConcurrentCancellationsDeliverWithNewPreferences(t *testing.T) {
 	}
 	cancellationCounts(t, 2, 2)
 	var sent, preferences int64
-	if err := database.DB.Model(&models.Notification{}).Where("email_sent = ?", true).Count(&sent).Error; err != nil || sent != 2 {
+	if err := database.DB.Model(&models.Notification{}).Where("push_sent = ?", true).Count(&sent).Error; err != nil || sent != 2 {
 		t.Fatalf("sent notifications = %d, want 2: %v", sent, err)
 	}
 	if err := database.DB.Model(&models.UserNotificationPreferences{}).Where("user_id = ?", member.ID).Count(&preferences).Error; err != nil || preferences != 1 {

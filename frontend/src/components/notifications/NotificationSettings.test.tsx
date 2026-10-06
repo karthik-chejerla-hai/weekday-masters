@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import NotificationSettings from './NotificationSettings';
 
 vi.mock('../../services/notifications', () => ({
@@ -54,4 +54,24 @@ describe('NotificationSettings Component', () => {
       expect(screen.getByText('Club Announcements')).toBeInTheDocument();
     });
   });
+});
+
+it('repairs registration even when browser permission is already granted', async () => {
+  const { notificationService } = await import('../../services/notifications');
+  vi.mocked(notificationService.enablePushNotifications).mockResolvedValueOnce(false);
+  render(<NotificationSettings />);
+  await screen.findByText('Enable Push Notifications');
+  expect(notificationService.enablePushNotifications).toHaveBeenCalled();
+  expect(screen.queryByText('Email Notifications')).not.toBeInTheDocument();
+});
+
+it('reports a settings save failure without claiming push is enabled', async () => {
+  const { notificationService } = await import('../../services/notifications');
+  vi.mocked(notificationService.enablePushNotifications).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+  vi.mocked(notificationService.updatePreferences).mockRejectedValueOnce(new Error('offline'));
+  render(<NotificationSettings />);
+  const button = await screen.findByText('Enable Push Notifications');
+  fireEvent.click(button);
+  await screen.findByText('Failed to enable push notifications');
+  expect(screen.queryByText('Push notifications enabled!')).not.toBeInTheDocument();
 });

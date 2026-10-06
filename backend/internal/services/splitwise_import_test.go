@@ -107,7 +107,7 @@ func TestSplitwiseImportReconcilesHistoryAndInactiveParticipants(t *testing.T) {
 		}
 	}
 	// The persistent pause blocks even a service with provider delivery enabled.
-	ns := &NotificationService{emailEnabled: true}
+	ns := &NotificationService{fcmEnabled: true}
 	if err := ns.SendNotification(context.Background(), users[0].ID, models.NotificationBalanceLow, "test", "test", nil); err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +279,7 @@ func TestSplitwiseImportRejectsTamperingAndConcurrentDuplicates(t *testing.T) {
 
 func TestNotificationsDisabledSkipsProvidersAndDatabase(t *testing.T) {
 	ns := NewNotificationService(NotificationConfig{Disabled: true, FirebaseCredentials: "invalid", SendGridAPIKey: "unused"})
-	if ns.IsEnabled() || ns.fcmClient != nil || ns.sendGridClient != nil {
+	if ns.IsEnabled() || ns.fcmClient != nil {
 		t.Fatal("disabled service initialized providers")
 	}
 	if err := ns.SendNotification(context.Background(), uuid.New(), models.NotificationBalanceLow, "ignored", "ignored", nil); err != nil {

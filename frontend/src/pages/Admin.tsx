@@ -261,7 +261,7 @@ export default function Admin() {
           Send Announcement
         </h2>
         <p className="text-sm text-slate-600 mb-4">
-          Send a notification to all club members via push notification and email.
+          Send a notification to all club members via push notification.
         </p>
 
         <div className="space-y-4">

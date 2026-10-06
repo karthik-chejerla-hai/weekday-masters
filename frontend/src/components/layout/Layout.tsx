@@ -1,3 +1,4 @@
+import PushNotifications from '../notifications/PushNotifications';
 import { Outlet } from 'react-router-dom';
 import Navigation from './Navigation';
 import Header from './Header';
@@ -10,6 +11,7 @@ export default function Layout() {
   return (
     <div className="min-h-screen bg-slate-50 pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-0 md:pl-64">
       <Header />
+      <PushNotifications />
       {isViewingAsMember && (
         <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5 sm:px-6 lg:px-10" role="status">
           <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3">
