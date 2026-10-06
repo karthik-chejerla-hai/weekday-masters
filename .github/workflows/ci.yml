@@ -1,6 +1,6 @@
 name: "CI & Test Coverage"
 
-# The only CI workflow: lint, build and both test suites, with coverage floors.
+# CI: lint, build, coverage floors, browser tests and README coverage badges.
 #
 # No paths filter, deliberately. Branch protection requires these checks by name,
 # and a path-filtered workflow creates no check runs on a PR that misses its
@@ -98,6 +98,9 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Test coverage badge publication
+        run: node --test .github/scripts/coverage-badges.test.js
+
       - name: Run Linter
         working-directory: frontend
         run: npm run lint
@@ -117,9 +120,42 @@ jobs:
           path: frontend/coverage/
           retention-days: 7
 
+  browser-tests:
+    name: "Browser Tests (desktop and mobile)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Install Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Type-check browser tests
+        working-directory: frontend
+        run: npm run test:e2e:typecheck
+      - name: Run browser tests
+        working-directory: frontend
+        run: npm run test:e2e
+      - name: Upload browser reports and failure traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-results
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          retention-days: 7
+
   coverage-report:
     name: "Aggregate Coverage & Decorate PR"
-    needs: [backend-tests, frontend-tests]
+    needs: [backend-tests, frontend-tests, browser-tests]
     runs-on: ubuntu-latest
     if: always()
 
@@ -146,11 +182,39 @@ jobs:
         env:
           BACKEND_RESULT: ${{ needs.backend-tests.result }}
           FRONTEND_RESULT: ${{ needs.frontend-tests.result }}
+          BROWSER_RESULT: ${{ needs.browser-tests.result }}
           # Kept in step with the floors enforced in the two test jobs.
-          BACKEND_MIN: '54'
-          FRONTEND_MIN: '55'
+          BACKEND_MIN: '60'
+          FRONTEND_MIN: '67'
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const report = require('./.github/scripts/coverage-report.js')
             await report({ github, context, core })
+
+  coverage-badges:
+    name: "Publish README coverage badges"
+    needs: [coverage-report]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: coverage-badges
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v7
+        with:
+          name: backend-coverage
+          path: backend-coverage
+      - uses: actions/download-artifact@v7
+        with:
+          name: frontend-coverage
+          path: frontend-coverage
+      - name: Publish measured coverage to the badge branch
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { readCoverage, publish } = require('./.github/scripts/coverage-badges.js')
+            await publish({ github, context, core }, readCoverage())

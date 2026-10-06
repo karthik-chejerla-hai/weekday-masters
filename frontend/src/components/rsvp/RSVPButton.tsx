@@ -86,6 +86,7 @@ export default function RSVPButton({
         return (
           <button
             key={status}
+            aria-label={label}
             onClick={() => handleClick(status)}
             disabled={disabled || isLoading}
             className={`

@@ -63,6 +63,7 @@ module.exports = async ({ github, context, core }) => {
   // script stays valid JS that can be linted and run outside Actions.
   const beJobPassed = process.env.BACKEND_RESULT === 'success';
   const feJobPassed = process.env.FRONTEND_RESULT === 'success';
+  const browserJobPassed = process.env.BROWSER_RESULT === 'success';
 
   const detail = feSummary && feSummary.total
     ? [
@@ -88,6 +89,8 @@ module.exports = async ({ github, context, core }) => {
     '|---|:---:|:---:|:---:|',
     `| 🐹 **Backend (Go)** | ${getBadge(backendPct, backendMin)} | ${floor(backendPct, backendMin)} | ${beJobPassed ? '✅ Passing' : '❌ Failed'} |`,
     `| ⚛️ **Frontend (React)** | ${getBadge(frontendPct, frontendMin)} | ${floor(frontendPct, frontendMin)} | ${feJobPassed ? '✅ Passing' : '❌ Failed'} |`,
+    '',
+    `Browser tests (desktop and mobile): ${browserJobPassed ? 'Passing' : 'Failed'}.`,
     '',
     detail,
     '',
@@ -133,7 +136,7 @@ module.exports = async ({ github, context, core }) => {
 
   // The report job is what branch protection watches, so it must fail when
   // either suite failed.
-  if (!beJobPassed || !feJobPassed) {
+  if (!beJobPassed || !feJobPassed || !browserJobPassed) {
     core.setFailed('One or more test suites failed.');
   }
 };
