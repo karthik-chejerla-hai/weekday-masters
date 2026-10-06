@@ -9,6 +9,8 @@
 
 [![deploy](https://img.shields.io/github/actions/workflow/status/karthik-chejerla-hai/weekday-masters/deploy.yml?branch=main&style=flat-square&label=deploy&logo=googlecloud&logoColor=white)](https://github.com/karthik-chejerla-hai/weekday-masters/actions/workflows/deploy.yml?query=branch%3Amain)
 [![CI](https://img.shields.io/github/actions/workflow/status/karthik-chejerla-hai/weekday-masters/ci.yml?branch=main&style=flat-square&label=tests&logo=githubactions&logoColor=white)](https://github.com/karthik-chejerla-hai/weekday-masters/actions/workflows/ci.yml?query=branch%3Amain)
+[![Backend statement coverage](https://raw.githubusercontent.com/karthik-chejerla-hai/weekday-masters/coverage-badges/backend.svg)](https://github.com/karthik-chejerla-hai/weekday-masters/actions/workflows/ci.yml?query=branch%3Amain)
+[![Frontend line coverage](https://raw.githubusercontent.com/karthik-chejerla-hai/weekday-masters/coverage-badges/frontend.svg)](https://github.com/karthik-chejerla-hai/weekday-masters/actions/workflows/ci.yml?query=branch%3Amain)
 
 [![Go](https://img.shields.io/badge/Go-1.22-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev)
@@ -430,3 +432,17 @@ See [the browser test strategy](specs/009-browser-testing/strategy.md) for scena
 coverage boundaries and setup. Run `npm run test:e2e` from `frontend` after
 `npm ci` and `npx playwright install chromium`. The suite runs desktop and mobile
 Chromium with isolated API fixtures. It needs no backend or sign-in credentials.
+
+### Coverage badges
+
+Go measures backend statement coverage. Vitest measures frontend line, statement,
+branch and function coverage. The README badges show backend statements and
+frontend lines from the latest successful CI run on `main`. Browser scenarios
+are reported separately and do not contribute to these percentages.
+
+CI publishes SVG badges and the source commit/run in
+[`coverage.json`](https://github.com/karthik-chejerla-hai/weekday-masters/blob/coverage-badges/coverage.json)
+on the `coverage-badges` branch. No external coverage service or extra secret is
+needed. Pull requests cannot publish badges, and failed runs leave the last
+successful measurement in place. The badges appear after the first successful
+main run with this workflow.
