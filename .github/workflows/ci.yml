@@ -41,6 +41,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
+      - name: Test registry retention filters
+        run: bash .github/scripts/registry-retention.test.sh
+
       - name: Set up Go
         uses: actions/setup-go@v6
         with:

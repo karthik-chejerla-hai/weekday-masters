@@ -40,9 +40,11 @@ PR-close time:
 - **Artifact Registry images.** Every production and preview deploy pushes a
   commit-tagged image. An Artifact Registry cleanup policy, defined in
   `.github/artifact-registry-cleanup-policy.json` and applied by that workflow,
-  deletes images older than one day while keeping the five most recent versions
-  whatever their age. Keep rules win over delete rules, so that count is a floor
-  the policy cannot cut through. Cloud Run imports an image when it creates an
+  retains the existing preview behavior: `pr-`-tagged images become eligible
+  after 7 days while the policy keeps the 20 most recent versions whatever their
+  age. A separate sweep identifies production images by their plain commit-SHA
+  tags and keeps only the five newest production builds; preview-only images do
+  not count toward that five. Cloud Run imports an image when it creates an
   immutable revision, so deleting the registry copy does not interrupt a deployed
   revision; an older commit can be rebuilt if it ever needs to be redeployed.
 - **Cloud Run revisions.** `--remove-tags` takes the `pr-N` URL out of service

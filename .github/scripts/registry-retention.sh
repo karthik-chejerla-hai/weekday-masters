@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Helpers for pruning preview build artefacts.
+# Helpers for pruning build artefacts.
 #
 # Sourced by infra-retention.yml. The filtering lives here rather than inline in
 # the workflow so it can be exercised against captured `gcloud ... --format=json`
@@ -41,6 +41,36 @@ stale_pr_digests() {
     | select($tags | all(startswith("pr-")))
     | select($image.createTime < $cutoff)
     | "\($image.package)@\($image.version)"
+  '
+}
+
+# stale_main_digests reads `gcloud artifacts docker images list --include-tags
+# --format=json` on stdin and prints production image digests after the newest
+# $keep versions. Preview-only versions and other packages are excluded.
+#
+# A digest carrying both a full commit SHA and a pr-* tag is a production build:
+# the commit tag is authoritative, just as it is in stale_pr_digests. Matching
+# the exact 40-character SHA shape avoids treating a manual tag as a main build.
+stale_main_digests() {
+  local keep="$1" package_name="$2"
+  jq -r --argjson keep "$keep" --arg package_name "$package_name" '
+    def tag_list:
+      if (.tags | type) == "array" then .tags
+      elif (.tags | type) == "string" then (.tags | split(","))
+      else [] end
+      | map(select(length > 0));
+
+    [ .[]
+      | . as $image
+      | tag_list as $tags
+      | select(($image.package | split("/") | last) == $package_name)
+      | select($tags | map(select(test("^[0-9a-f]{40}$"))) | length > 0)
+      | { created: $image.createTime,
+          digest: "\($image.package)@\($image.version)" }
+    ]
+    | sort_by(.created) | reverse
+    | .[$keep:]
+    | .[].digest
   '
 }
 

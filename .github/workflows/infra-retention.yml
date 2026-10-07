@@ -5,10 +5,11 @@ name: Infra Retention
 # does not touch accumulate quietly behind it, and this is where they are dealt
 # with.
 #
-#   Artifact Registry images. Every production and preview deploy pushes a new
-#   commit-tagged image. Cloud Run imports it into the immutable revision, so
-#   keeping every source image only adds storage cost. The server-side policy
-#   retains the five newest versions and expires everything older than one day.
+#   Artifact Registry images. Every push to a PR builds and pushes a
+#   pr-<number>-<sha> image. Nothing removed them, so the registry held one for
+#   every commit ever pushed to a PR. This costs storage, monthly, forever.
+#   Production images use plain commit-SHA tags; a separate sweep retains only
+#   the five newest production builds without counting preview-only images.
 #
 #   Cloud Run revisions. `--remove-tags` takes the pr-N URL out of service but
 #   leaves the revision behind, untagged and serving nothing. They are free, but
@@ -34,6 +35,10 @@ on:
         description: 'Number of most recent Cloud Run revisions to keep'
         type: string
         default: '20'
+      keep_main_images:
+        description: 'Number of most recent main-branch images to keep'
+        type: string
+        default: '5'
   schedule:
     # 02:00 Monday in Sydney, comfortably away from a deploy.
     - cron: '0 15 * * 0'
@@ -47,10 +52,11 @@ env:
   DRY_RUN: ${{ inputs.dry_run || 'false' }}
   OLDER_THAN_DAYS: ${{ inputs.older_than_days || '7' }}
   KEEP_REVISIONS: ${{ inputs.keep_revisions || '20' }}
+  KEEP_MAIN_IMAGES: ${{ inputs.keep_main_images || '5' }}
 
 jobs:
   retention:
-    name: Prune Preview Build Artefacts
+    name: Prune Build Artefacts
     runs-on: ubuntu-latest
 
     permissions:
@@ -168,6 +174,62 @@ jobs:
           [ "$(cat "$RUNNER_TEMP/images.outcome")" = "failed" ] || echo "ok" > "$RUNNER_TEMP/images.outcome"
           echo "Preview images matched: ${count} (of ${total} versions), dry run: ${DRY_RUN}" >> "$GITHUB_STEP_SUMMARY"
 
+      # Production builds use plain commit-SHA tags. Keep their retention
+      # independent from previews so a burst of PR builds cannot displace the
+      # five production rollback images.
+      - name: Prune old production images
+        if: always()
+        run: |
+          echo "not-run" > "$RUNNER_TEMP/main-images.outcome"
+          source .github/scripts/registry-retention.sh
+
+          REPO_PATH="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO }}"
+
+          if ! images=$(gcloud artifacts docker images list "$REPO_PATH" \
+                          --project ${{ env.GCP_PROJECT_ID }} \
+                          --include-tags --format=json 2>"$RUNNER_TEMP/main-images.err"); then
+            echo "failed" > "$RUNNER_TEMP/main-images.outcome"
+            echo "::error::could not list production images in ${REPO_PATH} - needs artifactregistry.versions.list"
+            cat "$RUNNER_TEMP/main-images.err"
+            exit 0
+          fi
+
+          if ! total=$(printf '%s' "$images" | jq 'length' 2>&1); then
+            echo "failed" > "$RUNNER_TEMP/main-images.outcome"
+            echo "::error::production image list was not valid JSON"
+            printf '%s' "$images" | head -c 2000
+            exit 0
+          fi
+
+          digests=$(printf '%s' "$images" | stale_main_digests "$KEEP_MAIN_IMAGES" "$BACKEND_SERVICE_NAME")
+          if [ -z "$digests" ]; then
+            echo "No production images exceed the newest ${KEEP_MAIN_IMAGES}."
+            echo "Production images deleted: 0 (of ${total} repository versions)" >> "$GITHUB_STEP_SUMMARY"
+            echo "ok" > "$RUNNER_TEMP/main-images.outcome"
+            exit 0
+          fi
+
+          count=$(printf '%s\n' "$digests" | wc -l | tr -d ' ')
+          echo "${count} old production image(s) exceed the newest ${KEEP_MAIN_IMAGES}."
+
+          for digest in $digests; do
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "[dry run] would delete production image ${digest}"
+            else
+              echo "Deleting production image ${digest}"
+              if ! gcloud artifacts docker images delete "$digest" \
+                     --project ${{ env.GCP_PROJECT_ID }} \
+                     --delete-tags --quiet; then
+                echo "failed" > "$RUNNER_TEMP/main-images.outcome"
+                echo "::error::could not delete ${digest} - needs artifactregistry.versions.delete and artifactregistry.tags.delete (roles/artifactregistry.repoAdmin)"
+                break
+              fi
+            fi
+          done
+
+          [ "$(cat "$RUNNER_TEMP/main-images.outcome")" = "failed" ] || echo "ok" > "$RUNNER_TEMP/main-images.outcome"
+          echo "Production images matched: ${count}, kept: ${KEEP_MAIN_IMAGES}, dry run: ${DRY_RUN}" >> "$GITHUB_STEP_SUMMARY"
+
       # Only revisions that serve no traffic and carry no tag are ever
       # candidates, and the newest KEEP_REVISIONS are held back on top of that,
       # so there is always somewhere to roll back to.
@@ -237,7 +299,7 @@ jobs:
             echo "|---|---|"
           } >> "$GITHUB_STEP_SUMMARY"
 
-          for part in policy images revisions; do
+          for part in policy images main-images revisions; do
             outcome=$(cat "$RUNNER_TEMP/${part}.outcome" 2>/dev/null || echo "not-run")
             echo "${part}: ${outcome}"
             echo "| ${part} | ${outcome} |" >> "$GITHUB_STEP_SUMMARY"

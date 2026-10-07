@@ -1,15 +1,16 @@
 [
   {
-    "name": "delete-old-images",
+    "name": "delete-preview-images",
     "action": { "type": "Delete" },
     "condition": {
-      "tagState": "ANY",
-      "olderThan": "1d"
+      "tagState": "TAGGED",
+      "tagPrefixes": ["pr-"],
+      "olderThan": "7d"
     }
   },
   {
     "name": "keep-recent-versions",
     "action": { "type": "Keep" },
-    "mostRecentVersions": { "keepCount": 5 }
+    "mostRecentVersions": { "keepCount": 20 }
   }
 ]
