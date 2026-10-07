@@ -46,3 +46,15 @@ it('opens the session in an existing window for an FCM notification', async () =
   expect(worker.client.navigate).toHaveBeenCalledWith('https://rally.test/sessions/session-1');
   expect(worker.client.focus).toHaveBeenCalled();
 });
+
+it.each(['balance_low', 'balance_negative'])('opens Money for a %s background alert', async (type) => {
+  const worker = startWorker();
+  let completion: Promise<unknown> | undefined;
+  worker.handlers.notificationclick({
+    stopImmediatePropagation: vi.fn(),
+    notification: { close: vi.fn(), data: { FCM_MSG: { data: { type, balance_cents: '100' } } } },
+    waitUntil: (promise: Promise<unknown>) => { completion = promise; },
+  });
+  await completion;
+  expect(worker.client.navigate).toHaveBeenCalledWith('https://rally.test/money');
+});

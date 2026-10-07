@@ -41,3 +41,11 @@ it('removes the foreground listener when preferences are disabled', async () => 
   await waitFor(() => expect(unsubscribe).toHaveBeenCalled());
   expect(notificationService.enablePushNotifications).toHaveBeenCalledOnce();
 });
+
+it.each(['balance_low', 'balance_negative'])('opens Money for a %s foreground alert', async (type) => {
+  render(<MemoryRouter><PushNotifications /></MemoryRouter>);
+  await waitFor(() => expect(notificationService.setupForegroundHandler).toHaveBeenCalled());
+  const callback = vi.mocked(notificationService.setupForegroundHandler).mock.calls[0][0];
+  act(() => callback('Balance alert', 'Check your balance', { type, balance_cents: '100' }));
+  expect(screen.getByRole('link')).toHaveAttribute('href', '/money');
+});

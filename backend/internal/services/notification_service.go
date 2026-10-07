@@ -151,6 +151,12 @@ func (s *NotificationService) deliverNotification(ctx context.Context, notificat
 	if err := json.Unmarshal([]byte(notification.Data), &data); err != nil {
 		return err
 	}
+	// All delivery paths, including records created by cancellation, carry the
+	// authoritative type for foreground and background click routing.
+	if data == nil {
+		data = make(map[string]string)
+	}
+	data["type"] = string(notification.NotificationType)
 	if prefs.IsPushEnabledForType(notification.NotificationType) && s.fcmEnabled && !notification.PushSent {
 		if err := s.sendPushNotification(ctx, userID, notification.Title, notification.Body, data); err != nil {
 			log.Printf("Failed to send push to user %s: %v", userID, err)

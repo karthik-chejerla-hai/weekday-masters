@@ -239,3 +239,38 @@ func TestConcurrentPushTokenRegistration(t *testing.T) {
 		t.Fatalf("tokens=%d, error=%v", count, err)
 	}
 }
+
+func TestSettlementBalancePushRoutesToMoney(t *testing.T) {
+	for _, balanceType := range []models.NotificationType{models.NotificationBalanceLow, models.NotificationBalanceNegative} {
+		t.Run(string(balanceType), func(t *testing.T) {
+			f := newSettlementFixture(t, 24, 10000)
+			player := f.member(t, "player")
+			if balanceType == models.NotificationBalanceLow {
+				if _, err := f.ledger.RecordTopup(CashInput{UserID: player.ID, AmountCents: 11000, CreatedBy: f.admin.ID}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			calls := 0
+			notifier := &NotificationService{fcmEnabled: true, frontendURL: "https://rally.test", fcmClient: stubPushClient(func(_ context.Context, message *messaging.MulticastMessage) (*messaging.BatchResponse, error) {
+				calls++
+				if message.Data["type"] != string(balanceType) || message.Data["balance_cents"] == "" {
+					t.Errorf("incomplete balance payload: %+v", message.Data)
+				}
+				if message.Webpush.FCMOptions.Link != "https://rally.test/money" {
+					t.Errorf("wrong balance link: %s", message.Webpush.FCMOptions.Link)
+				}
+				return &messaging.BatchResponse{SuccessCount: 1, Responses: []*messaging.SendResponse{{Success: true}}}, nil
+			})}
+			if err := notifier.RegisterPushToken(player.ID, "balance-token", "test"); err != nil {
+				t.Fatal(err)
+			}
+			f.settlement.WithNotifier(notifier)
+			if _, _, err := f.settlement.Settle(SettleInput{SessionID: f.session.ID, Lines: []LineInput{{UserID: player.ID, InBase: true}}, SettledBy: f.admin.ID}); err != nil {
+				t.Fatal(err)
+			}
+			if calls != 1 {
+				t.Fatalf("push calls=%d, want 1", calls)
+			}
+		})
+	}
+}

@@ -38,10 +38,9 @@ vi.mock('../../services/notifications', () => ({
   },
 }));
 
+beforeEach(() => { vi.clearAllMocks(); });
+
 describe('NotificationSettings Component', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
 
   it('loads and renders notification settings', async () => {
     render(<NotificationSettings />);
@@ -75,3 +74,20 @@ it('reports a settings save failure without claiming push is enabled', async () 
   await screen.findByText('Failed to enable push notifications');
   expect(screen.queryByText('Push notifications enabled!')).not.toBeInTheDocument();
 });
+
+ it.each(['registration fails', 'permission denied', 'unsupported browser'])(
+  'can disable account alerts when %s', async (mode) => {
+    const { notificationService } = await import('../../services/notifications');
+    if (mode === 'registration fails') vi.mocked(notificationService.enablePushNotifications).mockResolvedValueOnce(false);
+    if (mode === 'permission denied') vi.mocked(notificationService.getPermissionStatus).mockReturnValueOnce('denied').mockReturnValueOnce('denied');
+    if (mode === 'unsupported browser') vi.mocked(notificationService.isPushSupported).mockReturnValueOnce(false);
+    render(<NotificationSettings />);
+    const toggle = await screen.findByRole('switch', { name: 'Account push alerts' });
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+    const registrationCalls = vi.mocked(notificationService.enablePushNotifications).mock.calls.length;
+    fireEvent.click(toggle);
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'false'));
+    expect(notificationService.updatePreferences).toHaveBeenCalledWith({ push_enabled: false });
+    expect(notificationService.enablePushNotifications).toHaveBeenCalledTimes(registrationCalls);
+  }
+);

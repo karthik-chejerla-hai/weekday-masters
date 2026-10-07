@@ -3,16 +3,18 @@ import { Bell, Loader2, BellOff, BellRing, Smartphone } from 'lucide-react';
 import { notificationService, NotificationPreferences } from '../../services/notifications';
 
 interface ToggleSwitchProps {
+  label?: string;
   enabled: boolean;
   onChange: (enabled: boolean) => void;
   disabled?: boolean;
 }
 
-function ToggleSwitch({ enabled, onChange, disabled }: ToggleSwitchProps) {
+function ToggleSwitch({ label, enabled, onChange, disabled }: ToggleSwitchProps) {
   return (
     <button
       type="button"
       role="switch"
+      aria-label={label}
       aria-checked={enabled}
       disabled={disabled}
       onClick={() => onChange(!enabled)}
@@ -182,15 +184,18 @@ export default function NotificationSettings() {
               Enable Push Notifications
             </button>
           </div>
-        ) : (
+        ) : null}
+
+        {preferences && (
           <div className="flex items-center justify-between mb-4 pb-4 border-b border-slate-200">
             <div>
-              <p className="text-sm font-medium text-slate-700">Push Notifications</p>
-              <p className="text-xs text-slate-500">Receive notifications on this device</p>
+              <p className="text-sm font-medium text-slate-700">Account push alerts</p>
+              <p className="text-xs text-slate-500">Allow notifications on all your registered devices</p>
             </div>
             <ToggleSwitch
-              enabled={preferences?.push_enabled ?? false}
-              onChange={(enabled) => enabled ? handleEnablePush() : updatePreference('push_enabled', false)}
+              label="Account push alerts"
+              enabled={preferences.push_enabled}
+              onChange={(enabled) => updatePreference('push_enabled', enabled)}
               disabled={isSaving}
             />
           </div>
