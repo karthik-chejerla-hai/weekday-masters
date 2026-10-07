@@ -119,6 +119,7 @@ export default function Money() {
             balances={balances}
             lowThresholdCents={lowThreshold}
             currentUserId={user?.id}
+            canNudge={isAdmin}
           />
           {isAdmin && <TopupForm members={balances} onRecorded={load} />}
         </div>

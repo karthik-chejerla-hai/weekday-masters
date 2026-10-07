@@ -20,6 +20,7 @@ import type {
   UpdateSessionInput,
   SelectableRSVPStatus,
   PlayerBalance,
+  BalanceNudgeResult,
   MyBalance,
   PersonalSpend,
   LedgerEntryView,
@@ -303,6 +304,11 @@ class ApiService {
   async listBalances(): Promise<PlayerBalance[]> {
     const response = await this.client.get<{ items: PlayerBalance[] }>('/accounts');
     return response.data.items ?? [];
+  }
+
+  async nudgeBalance(userId: string): Promise<BalanceNudgeResult> {
+    const response = await this.client.post<BalanceNudgeResult>(`/admin/users/${userId}/balance-nudge`);
+    return response.data;
   }
 
   async getMyBalance(): Promise<MyBalance> {

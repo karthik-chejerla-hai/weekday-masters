@@ -128,6 +128,7 @@ func main() {
 		protected.Use(middleware.AuthMiddleware(auth0Config))
 		ledgerHandler.RegisterRoutes(protected)
 		adminHandler.RegisterMemberPushRoutes(protected)
+		notificationHandler.RegisterAdminRoutes(protected)
 		expenseHandler.RegisterRoutes(protected)
 		assistantHandler.RegisterRoutes(protected)
 		handlers.NewGameHandler(services.NewGameService()).RegisterRoutes(protected)

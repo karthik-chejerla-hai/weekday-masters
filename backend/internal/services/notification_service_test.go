@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"firebase.google.com/go/v4/messaging"
 	"os"
@@ -272,5 +273,105 @@ func TestSettlementBalancePushRoutesToMoney(t *testing.T) {
 				t.Fatalf("push calls=%d, want 1", calls)
 			}
 		})
+	}
+}
+
+func TestBalanceNudgeCreatesHistoryAndEnforcesCooldown(t *testing.T) {
+	requireDB(t)
+	admin := newUser(t, "nudge-admin")
+	admin.Role = models.RoleAdmin
+	if err := database.DB.Save(&admin).Error; err != nil {
+		t.Fatal(err)
+	}
+	player := newUser(t, "nudge-player")
+	ns := NewNotificationService(NotificationConfig{FrontendURL: "https://rally.test"})
+
+	result, err := ns.SendBalanceNudge(context.Background(), player.ID, admin.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.PushSent || result.BalanceCents != 0 || result.NotificationID == uuid.Nil {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+
+	var notification models.Notification
+	if err := database.DB.First(&notification, "id = ?", result.NotificationID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if notification.UserID != player.ID || notification.NotificationType != models.NotificationBalanceLow {
+		t.Fatalf("wrong notification: %+v", notification)
+	}
+	var data map[string]string
+	if err := json.Unmarshal([]byte(notification.Data), &data); err != nil {
+		t.Fatal(err)
+	}
+	if data["source"] != "admin_balance_nudge" || data["nudged_by"] != admin.ID.String() {
+		t.Fatalf("missing nudge metadata: %+v", data)
+	}
+
+	_, err = ns.SendBalanceNudge(context.Background(), player.ID, admin.ID)
+	var cooldown *BalanceNudgeCooldownError
+	if !errors.As(err, &cooldown) || cooldown.NextAllowedAt.IsZero() {
+		t.Fatalf("expected cooldown error, got %v", err)
+	}
+	var count int64
+	database.DB.Model(&models.Notification{}).Where("user_id = ?", player.ID).Count(&count)
+	if count != 1 {
+		t.Fatalf("cooldown allowed %d notifications", count)
+	}
+}
+
+func TestBalanceNudgeRequiresALowApprovedMember(t *testing.T) {
+	requireDB(t)
+	admin := newUser(t, "nudge-admin")
+	player := newUser(t, "healthy-player")
+	ns := NewNotificationService(NotificationConfig{})
+
+	if _, err := NewLedgerService().RecordTopup(CashInput{
+		UserID: player.ID, AmountCents: 5000, CreatedBy: admin.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ns.SendBalanceNudge(context.Background(), player.ID, admin.ID); !errors.Is(err, ErrBalanceNudgeNotNeeded) {
+		t.Fatalf("expected healthy balance refusal, got %v", err)
+	}
+
+	player.MembershipStatus = models.MembershipRemoved
+	if err := database.DB.Save(&player).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ns.SendBalanceNudge(context.Background(), player.ID, admin.ID); !errors.Is(err, ErrBalanceNudgeNotAllowed) {
+		t.Fatalf("expected membership refusal, got %v", err)
+	}
+	if _, err := ns.SendBalanceNudge(context.Background(), admin.ID, admin.ID); !errors.Is(err, ErrBalanceNudgeSelf) {
+		t.Fatalf("expected self-nudge refusal, got %v", err)
+	}
+}
+
+func TestBalanceNudgeReportsAcceptedBackgroundPush(t *testing.T) {
+	requireDB(t)
+	admin := newUser(t, "nudge-admin")
+	player := newUser(t, "push-nudge-player")
+	var delivered *messaging.MulticastMessage
+	ns := &NotificationService{
+		fcmEnabled:  true,
+		frontendURL: "https://rally.test",
+		fcmClient: stubPushClient(func(_ context.Context, message *messaging.MulticastMessage) (*messaging.BatchResponse, error) {
+			delivered = message
+			return &messaging.BatchResponse{SuccessCount: 1, Responses: []*messaging.SendResponse{{Success: true}}}, nil
+		}),
+	}
+	if err := ns.RegisterPushToken(player.ID, "nudge-token", "phone"); err != nil {
+		t.Fatal(err)
+	}
+	result, err := ns.SendBalanceNudge(context.Background(), player.ID, admin.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.PushSent || delivered == nil {
+		t.Fatalf("push was not accepted: %+v", result)
+	}
+	if delivered.Data["type"] != string(models.NotificationBalanceLow) || delivered.Webpush.FCMOptions.Link != "https://rally.test/money" {
+		t.Fatalf("wrong push payload: %+v", delivered)
 	}
 }

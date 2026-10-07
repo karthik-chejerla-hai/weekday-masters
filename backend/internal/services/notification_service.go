@@ -30,6 +30,34 @@ type NotificationService struct {
 	fcmEnabled  bool
 }
 
+const BalanceNudgeCooldown = 24 * time.Hour
+
+var (
+	ErrBalanceNudgeSelf       = errors.New("you cannot nudge yourself")
+	ErrBalanceNudgeNotNeeded  = errors.New("this member's balance is not below the low-balance threshold")
+	ErrBalanceNudgeNotAllowed = errors.New("only approved members can receive a balance nudge")
+	ErrNotificationsPaused    = errors.New("notifications are currently paused")
+	ErrNotificationsDisabled  = errors.New("notifications are disabled")
+)
+
+// BalanceNudgeCooldownError reports when the member may be nudged again.
+// Locking the member row in SendBalanceNudge makes this check safe against two
+// admins clicking at the same time.
+type BalanceNudgeCooldownError struct {
+	NextAllowedAt time.Time
+}
+
+func (e *BalanceNudgeCooldownError) Error() string {
+	return fmt.Sprintf("this member was already nudged; try again after %s", e.NextAllowedAt.Format(time.RFC3339))
+}
+
+type BalanceNudgeResult struct {
+	NotificationID uuid.UUID `json:"notification_id"`
+	BalanceCents   int64     `json:"balance_cents"`
+	PushSent       bool      `json:"push_sent"`
+	NextAllowedAt  time.Time `json:"next_allowed_at"`
+}
+
 type NotificationConfig struct {
 	Disabled            bool
 	FirebaseCredentials string
@@ -116,6 +144,105 @@ func (s *NotificationService) SendNotification(
 	}
 
 	return s.deliverNotification(ctx, &notification)
+}
+
+// SendBalanceNudge records a targeted top-up reminder and attempts immediate
+// push delivery. The history record is useful even when the member has opted
+// out of push or has no registered device.
+func (s *NotificationService) SendBalanceNudge(
+	ctx context.Context,
+	userID, sentBy uuid.UUID,
+) (*BalanceNudgeResult, error) {
+	if s.disabled {
+		return nil, ErrNotificationsDisabled
+	}
+	if userID == sentBy {
+		return nil, ErrBalanceNudgeSelf
+	}
+
+	var notification models.Notification
+	var balance int64
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		var user models.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, "id = ?", userID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrMemberNotFound
+			}
+			return err
+		}
+		if user.MembershipStatus != models.MembershipApproved {
+			return ErrBalanceNudgeNotAllowed
+		}
+
+		var club models.Club
+		if err := tx.First(&club).Error; err != nil {
+			return err
+		}
+		if club.NotificationsPaused {
+			return ErrNotificationsPaused
+		}
+
+		if err := tx.Raw(`
+			SELECT COALESCE(SUM(e.amount_cents), 0)
+			FROM accounts a
+			LEFT JOIN ledger_entries e ON e.account_id = a.id
+			WHERE a.user_id = ?
+		`, userID).Scan(&balance).Error; err != nil {
+			return err
+		}
+		if balance >= club.LowBalanceThresholdCents {
+			return ErrBalanceNudgeNotNeeded
+		}
+
+		var previous models.Notification
+		cutoff := time.Now().Add(-BalanceNudgeCooldown)
+		err := tx.Where(
+			"user_id = ? AND created_at > ? AND data ->> 'source' = ?",
+			userID, cutoff, "admin_balance_nudge",
+		).Order("created_at DESC").First(&previous).Error
+		if err == nil {
+			return &BalanceNudgeCooldownError{NextAllowedAt: previous.CreatedAt.Add(BalanceNudgeCooldown)}
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+
+		notifType := models.NotificationBalanceLow
+		title := "Your Rally balance is running low"
+		if balance < 0 {
+			notifType = models.NotificationBalanceNegative
+			title = "Please top up your Rally balance"
+		}
+		data, err := json.Marshal(map[string]string{
+			"balance_cents": fmt.Sprintf("%d", balance),
+			"nudged_by":     sentBy.String(),
+			"source":        "admin_balance_nudge",
+		})
+		if err != nil {
+			return err
+		}
+		notification = models.Notification{
+			UserID:           userID,
+			NotificationType: notifType,
+			Title:            title,
+			Body:             fmt.Sprintf("An admin sent you a reminder to top up. Your balance is %s.", formatCents(balance)),
+			Data:             string(data),
+		}
+		return tx.Create(&notification).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.deliverNotification(ctx, &notification); err != nil {
+		return nil, err
+	}
+	return &BalanceNudgeResult{
+		NotificationID: notification.ID,
+		BalanceCents:   balance,
+		PushSent:       notification.PushSent,
+		NextAllowedAt:  notification.CreatedAt.Add(BalanceNudgeCooldown),
+	}, nil
 }
 
 // deliverNotification sends an already committed history record. Cancellation

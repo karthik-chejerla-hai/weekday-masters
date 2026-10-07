@@ -48,6 +48,7 @@ func TestSessionRoutePathsDoNotCollide(t *testing.T) {
 		"/admin/settlements/:id/reverse",
 		"/admin/transactions/topup",
 		"/admin/transactions/:id/reverse",
+		"/admin/users/:id/balance-nudge",
 	} {
 		api.POST(path, noop)
 	}

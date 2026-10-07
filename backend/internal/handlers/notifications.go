@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -19,6 +20,14 @@ type NotificationHandler struct {
 
 func NewNotificationHandler(notificationService *services.NotificationService) *NotificationHandler {
 	return &NotificationHandler{notificationService: notificationService}
+}
+
+// RegisterAdminRoutes binds both membership and role checks before the route is
+// registered. Gin captures middleware at registration time, so this helper is
+// also used by the handler test harness.
+func (h *NotificationHandler) RegisterAdminRoutes(protected *gin.RouterGroup) {
+	admin := protected.Group("/admin", middleware.RequireApproved(), middleware.RequireAdmin())
+	admin.POST("/users/:id/balance-nudge", h.SendBalanceNudge)
 }
 
 // GetPreferences returns the current user's notification preferences
@@ -200,6 +209,48 @@ func (h *NotificationHandler) MarkNotificationRead(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Notification marked as read"})
+}
+
+// SendBalanceNudge asks one low-balance member to top up. It always creates an
+// in-app history item; push_sent tells the admin whether FCM accepted delivery.
+func (h *NotificationHandler) SendBalanceNudge(c *gin.Context) {
+	actor, err := middleware.GetUserFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+	userID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_member_id", "message": "Invalid member ID."})
+		return
+	}
+
+	result, err := h.notificationService.SendBalanceNudge(c.Request.Context(), userID, actor.ID)
+	if err == nil {
+		c.JSON(http.StatusCreated, result)
+		return
+	}
+
+	var cooldown *services.BalanceNudgeCooldownError
+	switch {
+	case errors.Is(err, services.ErrMemberNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"code": "member_not_found", "message": "Member not found."})
+	case errors.As(err, &cooldown):
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"code": "balance_nudge_cooldown", "message": "This member was already nudged in the last 24 hours.",
+			"details": gin.H{"next_allowed_at": cooldown.NextAllowedAt},
+		})
+	case errors.Is(err, services.ErrBalanceNudgeSelf):
+		c.JSON(http.StatusConflict, gin.H{"code": "cannot_nudge_self", "message": "You cannot nudge yourself."})
+	case errors.Is(err, services.ErrBalanceNudgeNotNeeded):
+		c.JSON(http.StatusConflict, gin.H{"code": "balance_nudge_not_needed", "message": "This member is not below the low-balance threshold."})
+	case errors.Is(err, services.ErrBalanceNudgeNotAllowed):
+		c.JSON(http.StatusConflict, gin.H{"code": "member_not_approved", "message": "Only approved members can receive a balance nudge."})
+	case errors.Is(err, services.ErrNotificationsPaused), errors.Is(err, services.ErrNotificationsDisabled):
+		c.JSON(http.StatusServiceUnavailable, gin.H{"code": "notifications_unavailable", "message": err.Error()})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"code": "internal", "message": "Could not send the balance nudge."})
+	}
 }
 
 // SendAnnouncementRequest represents the request to send an admin announcement
