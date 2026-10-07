@@ -489,6 +489,8 @@ func (s *SettlementService) lineViews(lines []LineInput, amounts []int64) ([]Cha
 func (s *SettlementService) Settle(in SettleInput) (*models.Settlement, *SettlementPreview, error) {
 	var settlement *models.Settlement
 	var preview *SettlementPreview
+	balances := make(map[uuid.UUID]int64)
+	var threshold int64
 
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
 		var session models.Session
@@ -578,6 +580,22 @@ func (s *SettlementService) Settle(in SettleInput) (*models.Settlement, *Settlem
 			return err
 		}
 
+		// Capture the post-charge balances while the account locks are still held.
+		// Later top-ups or concurrent settlements cannot change this crossing.
+		var club models.Club
+		if err := tx.First(&club).Error; err != nil {
+			return err
+		}
+		threshold = club.LowBalanceThresholdCents
+		for _, userID := range ids {
+			var balance int64
+			if err := tx.Raw(`SELECT COALESCE(SUM(e.amount_cents), 0) FROM accounts a
+				LEFT JOIN ledger_entries e ON e.account_id = a.id WHERE a.user_id = ?`, userID).Scan(&balance).Error; err != nil {
+				return err
+			}
+			balances[userID] = balance
+		}
+
 		record := models.Settlement{
 			SessionID:        in.SessionID,
 			ActualShuttles:   in.ActualShuttles,
@@ -627,7 +645,7 @@ func (s *SettlementService) Settle(in SettleInput) (*models.Settlement, *Settlem
 	// settlement that already happened.
 	var session models.Session
 	if err := database.DB.Select("title").First(&session, "id = ?", in.SessionID).Error; err == nil {
-		s.notifyLowBalances(context.Background(), preview, session.Title)
+		s.notifyLowBalances(context.Background(), preview, session.Title, balances, threshold)
 	}
 
 	return settlement, preview, nil
@@ -996,13 +1014,10 @@ func (s *SettlementService) notifyLowBalances(
 	ctx context.Context,
 	preview *SettlementPreview,
 	sessionTitle string,
+	balances map[uuid.UUID]int64,
+	threshold int64,
 ) {
 	if s.notifier == nil {
-		return
-	}
-
-	var club models.Club
-	if err := database.DB.First(&club).Error; err != nil {
 		return
 	}
 
@@ -1021,11 +1036,9 @@ func (s *SettlementService) notifyLowBalances(
 	}
 
 	for _, userID := range order {
-		balance, err := s.ledger.BalanceOfUser(userID)
-		if err != nil {
-			continue
-		}
-		if balance >= club.LowBalanceThresholdCents {
+		balance := balances[userID]
+		before := balance + charged[userID]
+		if balance >= threshold || (balance < 0 && before < 0) || (balance >= 0 && before < threshold) {
 			continue
 		}
 

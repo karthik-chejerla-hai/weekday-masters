@@ -8,6 +8,7 @@ import (
 )
 
 type Config struct {
+	NotificationWorkerToken     string
 	GroqAPIKey                  string
 	GroqModel                   string
 	GroqSpeechModel             string
@@ -21,6 +22,15 @@ type Config struct {
 	GinMode                     string
 	NotificationsDisabled       bool
 	InvitationTestEmailsEnabled bool
+
+	WhatsAppEnabled          bool
+	WhatsAppAccessToken      string
+	WhatsAppPhoneNumberID    string
+	WhatsAppGraphVersion     string
+	WhatsAppLowTemplate      string
+	WhatsAppNegativeTemplate string
+	WhatsAppLanguage         string
+	WhatsAppReservedCents    int
 
 	// Firebase FCM configuration
 	FirebaseProjectID   string
@@ -41,6 +51,7 @@ func Load() *Config {
 	godotenv.Load()
 
 	return &Config{
+		NotificationWorkerToken:     getEnv("NOTIFICATION_WORKER_TOKEN", ""),
 		GroqAPIKey:                  getEnv("GROQ_API_KEY", ""),
 		GroqModel:                   getEnv("GROQ_MODEL", "openai/gpt-oss-120b"),
 		GroqSpeechModel:             getEnv("GROQ_SPEECH_MODEL", "whisper-large-v3-turbo"),
@@ -54,6 +65,15 @@ func Load() *Config {
 		GinMode:                     getEnv("GIN_MODE", "debug"),
 		NotificationsDisabled:       getEnv("NOTIFICATIONS_DISABLED", "false") != "false",
 		InvitationTestEmailsEnabled: getEnv("INVITATION_TEST_EMAILS_ENABLED", "false") == "true",
+
+		WhatsAppEnabled:          getEnv("WHATSAPP_ENABLED", "false") == "true",
+		WhatsAppAccessToken:      getEnv("WHATSAPP_ACCESS_TOKEN", ""),
+		WhatsAppPhoneNumberID:    getEnv("WHATSAPP_PHONE_NUMBER_ID", ""),
+		WhatsAppGraphVersion:     getEnv("WHATSAPP_GRAPH_VERSION", ""),
+		WhatsAppLowTemplate:      getEnv("WHATSAPP_LOW_TEMPLATE", ""),
+		WhatsAppNegativeTemplate: getEnv("WHATSAPP_NEGATIVE_TEMPLATE", ""),
+		WhatsAppLanguage:         getEnv("WHATSAPP_LANGUAGE", "en"),
+		WhatsAppReservedCents:    getEnvInt("WHATSAPP_RESERVED_CENTS", 2),
 
 		// Firebase FCM
 		FirebaseProjectID:   getEnv("FIREBASE_PROJECT_ID", ""),

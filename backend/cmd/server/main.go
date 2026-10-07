@@ -35,6 +35,12 @@ func main() {
 		FirebaseCredentials: cfg.FirebaseCredentials,
 		FirebaseProjectID:   cfg.FirebaseProjectID,
 		FrontendURL:         cfg.FrontendURL,
+		WhatsApp: services.WhatsAppConfig{
+			Enabled: cfg.WhatsAppEnabled, AccessToken: cfg.WhatsAppAccessToken,
+			PhoneNumberID: cfg.WhatsAppPhoneNumberID, GraphVersion: cfg.WhatsAppGraphVersion,
+			LowTemplate: cfg.WhatsAppLowTemplate, NegativeTemplate: cfg.WhatsAppNegativeTemplate,
+			Language: cfg.WhatsAppLanguage, ReservedCents: int64(cfg.WhatsAppReservedCents),
+		},
 	})
 	invitationService := services.NewInvitationService(services.NotificationConfig{
 		Disabled:          cfg.NotificationsDisabled,
@@ -76,7 +82,7 @@ func main() {
 	sessionHandler := handlers.NewSessionHandler(sessionService, rsvpService)
 	rsvpHandler := handlers.NewRSVPHandler(rsvpService)
 	adminHandler := handlers.NewAdminHandler(userService, sessionService, rsvpService)
-	notificationHandler := handlers.NewNotificationHandler(notificationService)
+	notificationHandler := handlers.NewNotificationHandler(notificationService).WithWorkerToken(cfg.NotificationWorkerToken)
 	ledgerService := services.NewLedgerService()
 	ledgerHandler := handlers.NewLedgerHandler(ledgerService)
 	settlementService := services.NewSettlementService(ledgerService).WithNotifier(notificationService)
@@ -116,6 +122,8 @@ func main() {
 		api.GET("/openapi/index.html", handlers.ServeOpenAPIIndex)
 		api.GET("/openapi/spec.yaml", handlers.ServeOpenAPISpec)
 		api.GET("/club", adminHandler.GetClub)
+		api.POST("/notifications/:id/push-receipt", notificationHandler.PushReceipt)
+		api.POST("/internal/whatsapp/dispatch", notificationHandler.DispatchWhatsApp)
 
 		// Registration: requires a valid Auth0 token, but not an existing user row.
 		// Identity is read from the verified token, not the request body.

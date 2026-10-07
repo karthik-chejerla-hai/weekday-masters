@@ -211,6 +211,53 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /notifications/{id}/push-receipt:
+    post:
+      tags: [Notifications]
+      summary: Confirm device receipt with the notification-scoped capability
+      operationId: confirmPushReceipt
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/NotificationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+                  minLength: 64
+                  maxLength: 64
+      responses:
+        "204":
+          description: Receipt recorded. Repeated valid receipts are safe.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          description: Invalid or expired capability.
+
+  /internal/whatsapp/dispatch:
+    post:
+      tags: [Notifications]
+      summary: Process due WhatsApp alerts
+      operationId: dispatchWhatsApp
+      security: []
+      parameters:
+        - in: header
+          name: X-Notification-Worker-Token
+          required: true
+          schema:
+            type: string
+          description: Dedicated scheduler secret. Does not grant member access.
+      responses:
+        "204":
+          description: Pending batch processed.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /notifications/{id}/read:
     post:
       tags: [Notifications]
@@ -2528,6 +2575,9 @@ components:
           type: boolean
         push_balance_alerts:
           type: boolean
+        whatsapp_balance_alerts:
+          type: boolean
+          description: Explicit consent to private balance alerts at the saved Australian mobile number. Number changes revoke consent.
         created_at:
           type: string
           format: date-time
@@ -2572,6 +2622,14 @@ components:
         data:
           type: string
           description: JSON-encoded additional payload
+        push_received_at:
+          type: string
+          format: date-time
+          description: Device receipt confirmation, not proof the player read the message.
+        whatsapp_status:
+          type: string
+          enum: [pending, cancelled, budget_blocked, claimed, accepted, uncertain]
+          description: Accepted means provider acceptance, not recipient delivery.
         push_sent:
           type: boolean
         push_sent_at:
@@ -2793,6 +2851,9 @@ components:
           type: boolean
         push_balance_alerts:
           type: boolean
+        whatsapp_balance_alerts:
+          type: boolean
+          description: Explicit consent to private balance alerts at the saved Australian mobile number. Number changes revoke consent.
 
     RegisterTokenRequest:
       type: object

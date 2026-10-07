@@ -16,7 +16,8 @@ export function firebaseWorker(): Plugin {
         appId: env.VITE_FIREBASE_APP_ID,
       };
       source = readFileSync(resolve(config.root, 'public/firebase-messaging-sw.js'), 'utf8')
-        .replace('/* FIREBASE_CONFIG */ {}', JSON.stringify(firebaseConfig));
+        .replace('/* FIREBASE_CONFIG */ {}', JSON.stringify(firebaseConfig))
+        .replace("/* API_BASE */ '/api'", JSON.stringify((env.VITE_API_URL || '/api').replace(/\/$/, '')));
     },
     configureServer(server) {
       server.middlewares.use('/firebase-messaging-sw.js', (_req, res) => {

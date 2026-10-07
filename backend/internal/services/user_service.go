@@ -11,6 +11,7 @@ import (
 	"github.com/weekday-masters/backend/internal/database"
 	"github.com/weekday-masters/backend/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // RSVPCanceller withdraws a member from a session. UserService needs it when
@@ -238,7 +239,7 @@ func (s *UserService) UpdateProfile(userID uuid.UUID, input UpdateProfileInput) 
 	}
 
 	user.UpdatedAt = time.Now()
-	if err := database.DB.Save(user).Error; err != nil {
+	if err := saveMemberWithWhatsAppConsent(user); err != nil {
 		return nil, err
 	}
 
@@ -481,7 +482,7 @@ func (s *UserService) UpdateMemberDetails(userID uuid.UUID, input UpdateMemberIn
 	}
 
 	user.UpdatedAt = time.Now()
-	if err := database.DB.Save(user).Error; err != nil {
+	if err := saveMemberWithWhatsAppConsent(user); err != nil {
 		return nil, err
 	}
 
@@ -692,4 +693,21 @@ func formatCentsForHumans(cents int64) string {
 		cents = -cents
 	}
 	return fmt.Sprintf("%s$%d.%02d", sign, cents/100, cents%100)
+}
+
+// Save under the user lock so number changes and consent changes serialize.
+func saveMemberWithWhatsAppConsent(user *models.User) error {
+	return database.DB.Transaction(func(tx *gorm.DB) error {
+		var previous models.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&previous, "id = ?", user.ID).Error; err != nil {
+			return err
+		}
+		if previous.PhoneNumber != user.PhoneNumber {
+			if err := tx.Model(&models.UserNotificationPreferences{}).Where("user_id = ?", user.ID).
+				Updates(map[string]interface{}{"whats_app_balance_alerts": false, "whats_app_consent_phone": ""}).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Save(user).Error
+	})
 }

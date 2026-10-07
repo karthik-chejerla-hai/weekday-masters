@@ -24,17 +24,34 @@ self.addEventListener('install', (event) => event.waitUntil(self.skipWaiting()))
 importScripts('https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.7.0/firebase-messaging-compat.js');
 
+const apiBase = /* API_BASE */ '/api';
+
+async function confirmReceipt(data) {
+  if (!data?.notification_id || !data?.receipt_token) return;
+  try {
+    await fetch(`${apiBase}/notifications/${encodeURIComponent(data.notification_id)}/push-receipt`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: data.receipt_token }),
+      credentials: 'omit',
+    });
+  } catch {
+    // The server keeps the fallback pending if the receipt cannot reach it.
+  }
+}
+
 const firebaseConfig = /* FIREBASE_CONFIG */ {};
 if (firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId) {
   firebase.initializeApp(firebaseConfig);
   const messaging = firebase.messaging();
-  messaging.onBackgroundMessage((payload) => {
+  messaging.onBackgroundMessage(async (payload) => {
     // FCM already displays notification payloads. Display data-only messages once.
-    if (payload.notification) return;
-    return self.registration.showNotification(payload.data?.title || 'Rally', {
+    if (payload.notification) { await confirmReceipt(payload.data); return; }
+    await self.registration.showNotification(payload.data?.title || 'Rally', {
       body: payload.data?.body || '',
       icon: '/icons/icon-192x192.svg',
       data: payload.data,
     });
+    await confirmReceipt(payload.data);
   });
 }

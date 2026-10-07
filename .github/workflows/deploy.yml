@@ -78,6 +78,15 @@ jobs:
       - name: Deploy to Cloud Run
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          WHATSAPP_ENABLED: ${{ vars.WHATSAPP_ENABLED || 'false' }}
+          WHATSAPP_ACCESS_TOKEN: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
+          WHATSAPP_PHONE_NUMBER_ID: ${{ vars.WHATSAPP_PHONE_NUMBER_ID }}
+          WHATSAPP_GRAPH_VERSION: ${{ vars.WHATSAPP_GRAPH_VERSION }}
+          WHATSAPP_LOW_TEMPLATE: ${{ vars.WHATSAPP_LOW_TEMPLATE }}
+          WHATSAPP_NEGATIVE_TEMPLATE: ${{ vars.WHATSAPP_NEGATIVE_TEMPLATE }}
+          WHATSAPP_LANGUAGE: ${{ vars.WHATSAPP_LANGUAGE || 'en' }}
+          WHATSAPP_RESERVED_CENTS: ${{ vars.WHATSAPP_RESERVED_CENTS || '2' }}
+          NOTIFICATION_WORKER_TOKEN: ${{ secrets.NOTIFICATION_WORKER_TOKEN }}
         run: |
           # A preview deploy on an open PR writes to this same service, so this
           # can lose an optimistic-concurrency race. See the script.
@@ -98,6 +107,15 @@ jobs:
             --set-env-vars="ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }}" \
             --set-env-vars="DATABASE_URL=${{ secrets.DATABASE_URL }}" \
             --set-env-vars="GROQ_API_KEY=${GROQ_API_KEY}" \
+            --set-env-vars="WHATSAPP_ENABLED=${WHATSAPP_ENABLED}" \
+            --set-env-vars="WHATSAPP_ACCESS_TOKEN=${WHATSAPP_ACCESS_TOKEN}" \
+            --set-env-vars="WHATSAPP_PHONE_NUMBER_ID=${WHATSAPP_PHONE_NUMBER_ID}" \
+            --set-env-vars="WHATSAPP_GRAPH_VERSION=${WHATSAPP_GRAPH_VERSION}" \
+            --set-env-vars="WHATSAPP_LOW_TEMPLATE=${WHATSAPP_LOW_TEMPLATE}" \
+            --set-env-vars="WHATSAPP_NEGATIVE_TEMPLATE=${WHATSAPP_NEGATIVE_TEMPLATE}" \
+            --set-env-vars="WHATSAPP_LANGUAGE=${WHATSAPP_LANGUAGE}" \
+            --set-env-vars="WHATSAPP_RESERVED_CENTS=${WHATSAPP_RESERVED_CENTS}" \
+            --set-env-vars="NOTIFICATION_WORKER_TOKEN=${NOTIFICATION_WORKER_TOKEN}" \
             --set-env-vars="FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}" \
             --set-env-vars="SENDGRID_API_KEY=${{ secrets.SENDGRID_API_KEY }}" \
             --set-env-vars="SENDGRID_FROM_EMAIL=${{ secrets.SENDGRID_FROM_EMAIL }}" \

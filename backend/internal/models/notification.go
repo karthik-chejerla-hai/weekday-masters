@@ -31,6 +31,10 @@ type UserNotificationPreferences struct {
 	PushAdminAnnouncements bool `gorm:"default:true" json:"push_admin_announcements"`
 	PushBalanceAlerts      bool `gorm:"default:true" json:"push_balance_alerts"`
 
+	// Consent applies only to this saved, normalized number.
+	WhatsAppBalanceAlerts bool   `gorm:"default:false" json:"whatsapp_balance_alerts"`
+	WhatsAppConsentPhone  string `gorm:"size:20" json:"-"`
+
 	// Retained database columns for old clients/history. Email alerts are removed.
 	EmailEnabled            bool `gorm:"default:false" json:"-"`
 	EmailSessionReminders   bool `gorm:"default:false" json:"-"`
@@ -89,6 +93,15 @@ type Notification struct {
 	PushSentAt  *time.Time `json:"push_sent_at,omitempty"`
 	EmailSent   bool       `gorm:"default:false" json:"email_sent"`
 	EmailSentAt *time.Time `json:"email_sent_at,omitempty"`
+
+	PushReceivedAt        *time.Time `json:"push_received_at,omitempty"`
+	PushReceiptHash       string     `gorm:"size:64" json:"-"`
+	WhatsAppStatus        string     `gorm:"size:30;index" json:"whatsapp_status,omitempty"`
+	WhatsAppDueAt         *time.Time `gorm:"index" json:"-"`
+	WhatsAppPhone         string     `gorm:"size:20" json:"-"`
+	WhatsAppReservedAt    *time.Time `gorm:"index" json:"-"`
+	WhatsAppReservedCents int64      `gorm:"default:0" json:"-"`
+	WhatsAppMessageID     string     `gorm:"size:255" json:"-"`
 
 	ReadAt    *time.Time `json:"read_at,omitempty"`
 	CreatedAt time.Time  `gorm:"index" json:"created_at"`

@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -16,6 +18,7 @@ import (
 
 type NotificationHandler struct {
 	notificationService *services.NotificationService
+	workerToken         string
 }
 
 func NewNotificationHandler(notificationService *services.NotificationService) *NotificationHandler {
@@ -49,6 +52,7 @@ func (h *NotificationHandler) GetPreferences(c *gin.Context) {
 
 // UpdatePreferencesRequest represents the request to update notification preferences
 type UpdatePreferencesRequest struct {
+	WhatsAppBalanceAlerts  *bool `json:"whatsapp_balance_alerts,omitempty"`
 	PushBalanceAlerts      *bool `json:"push_balance_alerts,omitempty"`
 	PushEnabled            *bool `json:"push_enabled,omitempty"`
 	PushSessionReminders   *bool `json:"push_session_reminders,omitempty"`
@@ -73,6 +77,9 @@ func (h *NotificationHandler) UpdatePreferences(c *gin.Context) {
 
 	// Build updates map
 	updates := make(map[string]interface{})
+	if req.WhatsAppBalanceAlerts != nil {
+		updates["whatsapp_balance_alerts"] = *req.WhatsAppBalanceAlerts
+	}
 	if req.PushBalanceAlerts != nil {
 		updates["push_balance_alerts"] = *req.PushBalanceAlerts
 	}
@@ -98,6 +105,10 @@ func (h *NotificationHandler) UpdatePreferences(c *gin.Context) {
 	}
 
 	prefs, err := h.notificationService.UpdateUserPreferences(user.ID, updates)
+	if errors.Is(err, services.ErrWhatsAppPhone) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update notification preferences"})
 		return
@@ -308,4 +319,47 @@ func (h *NotificationHandler) SendAnnouncement(c *gin.Context) {
 	)
 
 	c.JSON(http.StatusCreated, announcement)
+}
+
+// PushReceipt has no session dependency: a closed browser worker uses a scoped
+// random capability carried only in the push payload, never in history or a URL.
+func (h *NotificationHandler) PushReceipt(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1024)
+	id, err := uuid.Parse(c.Param("id"))
+	var req struct {
+		Token string `json:"token"`
+	}
+	if err != nil || c.ShouldBindJSON(&req) != nil || len(req.Token) != 64 {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+	if err := h.notificationService.RecordPushReceipt(id, req.Token); err != nil {
+		if errors.Is(err, services.ErrPushReceipt) {
+			c.Status(http.StatusNotFound)
+		} else {
+			c.Status(http.StatusInternalServerError)
+		}
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *NotificationHandler) WithWorkerToken(token string) *NotificationHandler {
+	h.workerToken = token
+	return h
+}
+
+// A dedicated scheduler secret permits dispatch only. It grants no member access.
+func (h *NotificationHandler) DispatchWhatsApp(c *gin.Context) {
+	if len(h.workerToken) < 32 || subtle.ConstantTimeCompare([]byte(c.GetHeader("X-Notification-Worker-Token")), []byte(h.workerToken)) != 1 {
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 50*time.Second)
+	defer cancel()
+	if err := h.notificationService.ProcessWhatsAppFallbacks(ctx); err != nil {
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }

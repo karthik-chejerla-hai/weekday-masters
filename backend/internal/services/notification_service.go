@@ -28,6 +28,7 @@ type NotificationService struct {
 	fcmClient   pushClient
 	frontendURL string
 	fcmEnabled  bool
+	whatsapp    *WhatsAppSender
 }
 
 const BalanceNudgeCooldown = 24 * time.Hour
@@ -66,6 +67,7 @@ type NotificationConfig struct {
 	SendGridFromEmail   string
 	SendGridFromName    string
 	FrontendURL         string
+	WhatsApp            WhatsAppConfig
 }
 
 // NewNotificationService creates a new notification service
@@ -76,6 +78,7 @@ func NewNotificationService(cfg NotificationConfig) *NotificationService {
 	}
 	service := &NotificationService{
 		frontendURL: cfg.FrontendURL,
+		whatsapp:    NewWhatsAppSender(cfg.WhatsApp),
 	}
 
 	// An explicit project enables ADC without requiring a private key in Cloud Run.
@@ -101,12 +104,15 @@ func NewNotificationService(cfg NotificationConfig) *NotificationService {
 		log.Println("Firebase credentials not configured, push notifications disabled")
 	}
 
+	if cfg.WhatsApp.Enabled && service.whatsapp == nil {
+		log.Print("WhatsApp disabled: configuration is incomplete or invalid")
+	}
 	return service
 }
 
-// IsEnabled returns true when push delivery is enabled
+// IsEnabled returns true when an automatic notification channel is configured.
 func (s *NotificationService) IsEnabled() bool {
-	return !s.disabled && s.fcmEnabled
+	return !s.disabled && (s.fcmEnabled || s.whatsapp != nil)
 }
 
 // SendNotification records a notification and attempts push delivery
@@ -139,11 +145,32 @@ func (s *NotificationService) SendNotification(
 		Data:             string(dataJSON),
 	}
 
+	receiptData := make(map[string]string)
+	for key, value := range data {
+		receiptData[key] = value
+	}
+	if s.whatsapp != nil && isBalanceAlert(notifType) {
+		var user models.User
+		if err := database.DB.First(&user, "id = ?", userID).Error; err != nil {
+			return err
+		}
+		if user.MembershipStatus != models.MembershipApproved {
+			return nil
+		}
+		prefs, err := s.GetUserPreferences(userID)
+		if err != nil {
+			return err
+		}
+		if err := s.prepareWhatsAppFallback(&notification, &user, prefs, receiptData); err != nil {
+			return err
+		}
+	}
+	// History, receipt hash and fallback schedule commit together before any push.
 	if err := database.DB.Create(&notification).Error; err != nil {
 		return fmt.Errorf("failed to create notification record: %w", err)
 	}
 
-	return s.deliverNotification(ctx, &notification)
+	return s.deliverNotification(ctx, &notification, receiptData["receipt_token"])
 }
 
 // SendBalanceNudge records a targeted top-up reminder and attempts immediate
@@ -248,7 +275,7 @@ func (s *NotificationService) SendBalanceNudge(
 // deliverNotification sends an already committed history record. Cancellation
 // uses this to keep the session, announcement and audience atomic without
 // holding database locks during provider requests.
-func (s *NotificationService) deliverNotification(ctx context.Context, notification *models.Notification) error {
+func (s *NotificationService) deliverNotification(ctx context.Context, notification *models.Notification, receiptToken ...string) error {
 	if s.disabled {
 		return nil
 	}
@@ -284,6 +311,10 @@ func (s *NotificationService) deliverNotification(ctx context.Context, notificat
 		data = make(map[string]string)
 	}
 	data["type"] = string(notification.NotificationType)
+	if len(receiptToken) > 0 && receiptToken[0] != "" {
+		data["notification_id"] = notification.ID.String()
+		data["receipt_token"] = receiptToken[0]
+	}
 	if prefs.IsPushEnabledForType(notification.NotificationType) && s.fcmEnabled && !notification.PushSent {
 		if err := s.sendPushNotification(ctx, userID, notification.Title, notification.Body, data); err != nil {
 			log.Printf("Failed to send push to user %s: %v", userID, err)
@@ -421,13 +452,32 @@ func (s *NotificationService) UpdateUserPreferences(userID uuid.UUID, updates ma
 	if err != nil {
 		return nil, err
 	}
-
-	if err := database.DB.Model(prefs).Updates(updates).Error; err != nil {
+	err = database.DB.Transaction(func(tx *gorm.DB) error {
+		var user models.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, "id = ?", userID).Error; err != nil {
+			return err
+		}
+		if enabled, ok := updates["whatsapp_balance_alerts"].(bool); ok {
+			updates["whats_app_consent_phone"] = ""
+			if enabled {
+				phone, err := australianMobile(user.PhoneNumber)
+				if err != nil || user.MembershipStatus != models.MembershipApproved {
+					return ErrWhatsAppPhone
+				}
+				updates["whats_app_consent_phone"] = phone
+			}
+			updates["whats_app_balance_alerts"] = enabled
+			delete(updates, "whatsapp_balance_alerts")
+		}
+		return tx.Model(prefs).Updates(updates).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := database.DB.First(prefs, "id = ?", prefs.ID).Error; err != nil {
 		return nil, err
 	}
 
-	// Reload to get updated values
-	database.DB.First(prefs, "id = ?", prefs.ID)
 	return prefs, nil
 }
 

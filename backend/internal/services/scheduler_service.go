@@ -52,6 +52,17 @@ func (s *SchedulerService) Start() {
 		return
 	}
 
+	_, err = s.cron.AddFunc("0 * * * * *", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+		defer cancel()
+		if err := s.notificationService.ProcessWhatsAppFallbacks(ctx); err != nil {
+			log.Printf("WhatsApp fallback processing failed: %v", err)
+		}
+	})
+	if err != nil {
+		log.Printf("Failed to add WhatsApp cron job: %v", err)
+		return
+	}
 	s.cron.Start()
 	log.Printf("Scheduler started - Session reminders at %dh and %dh, Deadline alerts at %dh",
 		s.reminderHours24, s.reminderHours12, s.deadlineHours)

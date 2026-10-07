@@ -91,3 +91,14 @@ it('reports a settings save failure without claiming push is enabled', async () 
     expect(notificationService.enablePushNotifications).toHaveBeenCalledTimes(registrationCalls);
   }
 );
+
+
+it('lets the member consent to private WhatsApp balance alerts', async () => {
+  const { notificationService } = await import('../../services/notifications');
+  render(<NotificationSettings />);
+  const toggle = await screen.findByRole('switch', { name: 'WhatsApp balance alerts' });
+  expect(toggle).toHaveAttribute('aria-checked', 'false');
+  fireEvent.click(toggle);
+  await waitFor(() => expect(notificationService.updatePreferences).toHaveBeenCalledWith({ whatsapp_balance_alerts: true }));
+  expect(screen.getByText(/no device confirms receipt within 15 minutes/)).toBeInTheDocument();
+});

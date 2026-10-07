@@ -285,6 +285,10 @@ class ApiService {
     return response.data;
   }
 
+  async confirmPushReceipt(notificationId: string, token: string): Promise<void> {
+    await this.client.post(`/notifications/${encodeURIComponent(notificationId)}/push-receipt`, { token });
+  }
+
   async markNotificationRead(notificationId: string): Promise<void> {
     await this.client.post(`/notifications/${notificationId}/read`);
   }
@@ -497,6 +501,7 @@ export interface MemberPushStatus {
 
 // Notification types
 export interface NotificationPreferences {
+  whatsapp_balance_alerts?: boolean;
   id: string;
   user_id: string;
   push_enabled: boolean;
@@ -518,6 +523,8 @@ export interface Notification {
   data?: string;
   push_sent: boolean;
   push_sent_at?: string;
+  push_received_at?: string;
+  whatsapp_status?: string;
   email_sent: boolean;
   email_sent_at?: string;
   read_at?: string;

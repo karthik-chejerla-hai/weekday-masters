@@ -59,6 +59,11 @@ export const notificationService = {
         payload.body || '',
         payload.data
       );
+      if (payload.data?.notification_id && payload.data?.receipt_token) {
+        void api.confirmPushReceipt(payload.data.notification_id, payload.data.receipt_token).catch(() => {
+          // Missing receipt leaves the WhatsApp fallback eligible.
+        });
+      }
     });
   },
 

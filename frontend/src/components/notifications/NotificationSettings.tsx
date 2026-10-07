@@ -127,7 +127,8 @@ export default function NotificationSettings() {
       setPreferences(updated);
     } catch (error) {
       console.error('Failed to update preference:', error);
-      setMessage({ type: 'error', text: 'Failed to save setting' });
+      const serverError = (error as { response?: { data?: { error?: string } } }).response?.data?.error;
+      setMessage({ type: 'error', text: serverError || 'Failed to save setting' });
     } finally {
       setIsSaving(false);
     }
@@ -244,6 +245,28 @@ export default function NotificationSettings() {
           </div>
         )}
       </div>
+
+      {preferences && (
+        <div className="bg-white rounded-xl border border-slate-200 p-6">
+          <h3 className="text-lg font-semibold text-slate-900 mb-2">WhatsApp balance alerts</h3>
+          <p className="text-sm text-slate-600 mb-3">
+            Receive private low and negative balance alerts at the number saved in your profile.
+            Update your number in your profile. Changing it turns WhatsApp alerts off.
+          </p>
+          <p className="text-sm text-slate-600 mb-4">
+            Push goes first. If no device confirms receipt within 15 minutes, we send WhatsApp.
+            Without a push device, WhatsApp is sent on the next delivery check.
+            Late push messages can still arrive. The club has a monthly sending limit.
+          </p>
+          <div className="flex items-center justify-between gap-4">
+            <label id="whatsapp-consent" className="text-sm font-medium text-slate-700">
+              I agree to receive WhatsApp balance alerts at my saved number.
+            </label>
+            <ToggleSwitch label="WhatsApp balance alerts" enabled={!!preferences.whatsapp_balance_alerts}
+              onChange={(enabled) => updatePreference('whatsapp_balance_alerts', enabled)} disabled={isSaving} />
+          </div>
+        </div>
+      )}
 
       {/* Message */}
       {message && (
