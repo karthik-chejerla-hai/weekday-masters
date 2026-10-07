@@ -616,3 +616,71 @@ func TestSeedFromExportWritesNothingWhenTheFileDoesNotReconcile(t *testing.T) {
 		t.Errorf("%d users were written from a rejected export", users)
 	}
 }
+
+func addImportedGame(t *testing.T, day time.Time) models.SplitwiseRecord {
+	t.Helper()
+	imported := models.SplitwiseImport{SourceHash: day.Format("2006-01-02"), MappingHash: "fixture", Cutoff: day}
+	if err := database.DB.Create(&imported).Error; err != nil {
+		t.Fatal(err)
+	}
+	transaction := models.Transaction{Kind: models.TxnSplitwiseImport, OccurredAt: day}
+	if err := database.DB.Create(&transaction).Error; err != nil {
+		t.Fatal(err)
+	}
+	record := models.SplitwiseRecord{ImportID: imported.ID, RowNumber: 1, RecordedDate: day, PlayedDate: day, IsSession: true, TransactionID: transaction.ID, Description: "Imported game"}
+	if err := database.DB.Create(&record).Error; err != nil {
+		t.Fatal(err)
+	}
+	return record
+}
+
+func TestSeedAvoidsImportedPlayDatesAndRepairsPartialRun(t *testing.T) {
+	for _, partial := range []bool{false, true} {
+		t.Run(fmt.Sprintf("partial=%v", partial), func(t *testing.T) {
+			requireDB(t)
+			admin, _, err := ensureUser(members[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if partial {
+				if _, err := seedSessions(fixedNow, admin.ID, &Report{}, nil); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// Include consecutive dates to ensure this does not just shift by one day.
+			for _, offset := range []int{-8, -9, -1, 5} {
+				addImportedGame(t, fixedNow.AddDate(0, 0, offset))
+			}
+			run(t)
+			for _, spec := range sessionSpecs {
+				session := sessionByTitle(t, spec.title)
+				var collisions int64
+				if err := database.DB.Model(&models.SplitwiseRecord{}).Where("is_session = true AND played_date = ?", session.SessionDate.Format("2006-01-02")).Count(&collisions).Error; err != nil {
+					t.Fatal(err)
+				}
+				if collisions != 0 {
+					t.Fatalf("fixture %s still overlaps import history", spec.key)
+				}
+			}
+			settled := sessionByTitle(t, sessionSpecs[0].title)
+			before := settled.SessionDate
+			// Even a later import must not move native settlement history.
+			record := addImportedGame(t, before)
+			second := run(t)
+			if second.SessionsMade != 0 || second.SettlementMade {
+				t.Fatalf("second seed changed history: %+v", second)
+			}
+			after := sessionByTitle(t, sessionSpecs[0].title)
+			if !after.SessionDate.Equal(before) {
+				t.Fatal("moved settled fixture")
+			}
+			var retained models.SplitwiseRecord
+			if err := database.DB.First(&retained, "id = ?", record.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if retained.Description != record.Description || retained.PlayedDate.Format("2006-01-02") != record.PlayedDate.Format("2006-01-02") {
+				t.Fatal("modified imported history")
+			}
+		})
+	}
+}

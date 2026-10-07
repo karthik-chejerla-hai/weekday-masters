@@ -427,6 +427,25 @@ func seedSessions(
 		var existing models.Session
 		err := database.DB.Where("title = ?", spec.title).First(&existing).Error
 		if err == nil {
+			// A failed preview run may have created this fixture on an imported
+			// play date. Repair only our own session and never move settled history.
+			var settlements int64
+			if err := database.DB.Model(&models.Settlement{}).Where("session_id = ?", existing.ID).Count(&settlements).Error; err != nil {
+				return nil, err
+			}
+			if existing.CreatedBy == by && settlements == 0 {
+				date, err := freeFixtureDate(existing.SessionDate, existing.ID, spec.daysFrom)
+				if err != nil {
+					return nil, err
+				}
+				if date.Format("2006-01-02") != existing.SessionDate.Format("2006-01-02") {
+					existing.SessionDate = date
+					existing.RSVPDeadline = date.AddDate(0, 0, -3)
+					if err := database.DB.Save(&existing).Error; err != nil {
+						return nil, err
+					}
+				}
+			}
 			out[spec.key] = &existing
 			continue
 		}
@@ -436,6 +455,10 @@ func seedSessions(
 
 		date := now.AddDate(0, 0, spec.daysFrom)
 		date = time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, utils.SydneyLocation)
+		date, err = freeFixtureDate(date, uuid.Nil, spec.daysFrom)
+		if err != nil {
+			return nil, err
+		}
 
 		session := models.Session{
 			Title:        spec.title,
@@ -455,6 +478,31 @@ func seedSessions(
 		report.SessionsMade++
 	}
 	return out, nil
+}
+
+// A preview copies real import history. A native session on an imported date
+// is treated as already settled, so synthetic fixtures must use other dates.
+// Move past fixtures backwards and future fixtures forwards to retain their role.
+func freeFixtureDate(date time.Time, sessionID uuid.UUID, daysFrom int) (time.Time, error) {
+	var dates []string
+	if err := database.DB.Raw(`SELECT to_char(played_date, 'YYYY-MM-DD') FROM splitwise_records WHERE is_session = true
+ UNION SELECT to_char(session_date, 'YYYY-MM-DD') FROM sessions WHERE id <> ?`, sessionID).Scan(&dates).Error; err != nil {
+		return time.Time{}, fmt.Errorf("finding a free fixture date: %w", err)
+	}
+	occupied := make(map[string]bool, len(dates))
+	for _, day := range dates {
+		occupied[day] = true
+	}
+	step := -1
+	if daysFrom > 0 {
+		step = 1
+	}
+	// Use Sydney midnight even when GORM reads a PostgreSQL DATE in UTC.
+	date = time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, utils.SydneyLocation)
+	for occupied[date.Format("2006-01-02")] {
+		date = date.AddDate(0, 0, step)
+	}
+	return date, nil
 }
 
 // rsvpPlan is who says what to which session. The upcoming session carries a
