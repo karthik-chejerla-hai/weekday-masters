@@ -252,6 +252,11 @@ class ApiService {
   }
 
   // Notifications - Preferences
+  async getMemberPushStatus(userId: string): Promise<MemberPushStatus> {
+    const response = await this.client.get<MemberPushStatus>(`/admin/users/${userId}/push-notifications`);
+    return response.data;
+  }
+
   async getNotificationPreferences(): Promise<NotificationPreferences> {
     const response = await this.client.get<NotificationPreferences>('/users/me/notifications');
     return response.data;
@@ -472,6 +477,16 @@ class ApiService {
     const response = await this.client.get<ClubPosition>('/position');
     return response.data;
   }
+}
+
+export interface MemberPushStatus {
+  preferences: NotificationPreferences | null;
+  devices: Array<{
+    id: string;
+    device_name: string;
+    created_at: string;
+    last_registered_at: string;
+  }>;
 }
 
 // Notification types
