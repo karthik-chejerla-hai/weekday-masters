@@ -41,8 +41,23 @@ No production activation or real message sending is part of development checks.
 - Final service/handler race checks include scheduler authentication, receipt expiry,
   recovered-then-low balances and the 200-message cap.
 - Full backend coverage: 72.8%, above the 60% floor.
-- Frontend: 47 test files, 306 tests passed; configured coverage floors passed.
+- Frontend: 47 test files, 312 tests passed; configured coverage floors passed.
 - Frontend production build and lint passed. One pre-existing React hook warning
   remains in `SessionDetail.tsx`; Vite also reports the existing large bundle warning.
 - OpenAPI and deployment YAML parsed successfully; Git whitespace checks passed.
 - Real Meta delivery and real-device receipt checks remain activation prerequisites.
+
+## Push registration follow-up
+
+A saved account push preference must not appear to prove device registration.
+Signed-in approved players with push allowed see a setup banner when permission,
+token acquisition or server registration is missing. The banner links to Profile;
+permission is requested only after a setup click. An account opt-out suppresses the
+banner. Settings distinguish the account preference from this device's registration
+and hide the per-type switches until setup succeeds. Turning push on registers the
+device before saving the preference. Returning to the app checks registration again.
+
+Desktop and mobile browser checks cover the setup prompt, a failed token save and
+successful retry. Firebase is stubbed at the SDK boundary; the real notification
+service and API client submit the token to the test server. Screenshots use only
+synthetic members. Real-device delivery remains a production activation check.
