@@ -33,9 +33,7 @@ func main() {
 	notificationService := services.NewNotificationService(services.NotificationConfig{
 		Disabled:            cfg.NotificationsDisabled,
 		FirebaseCredentials: cfg.FirebaseCredentials,
-		SendGridAPIKey:      cfg.SendGridAPIKey,
-		SendGridFromEmail:   cfg.SendGridFromEmail,
-		SendGridFromName:    cfg.SendGridFromName,
+		FirebaseProjectID:   cfg.FirebaseProjectID,
 		FrontendURL:         cfg.FrontendURL,
 	})
 	invitationService := services.NewInvitationService(services.NotificationConfig{

@@ -2448,15 +2448,7 @@ components:
           type: boolean
         push_admin_announcements:
           type: boolean
-        email_enabled:
-          type: boolean
-        email_session_reminders:
-          type: boolean
-        email_rsvp_deadlines:
-          type: boolean
-        email_waitlist_updates:
-          type: boolean
-        email_admin_announcements:
+        push_balance_alerts:
           type: boolean
         created_at:
           type: string
@@ -2703,15 +2695,7 @@ components:
           type: boolean
         push_admin_announcements:
           type: boolean
-        email_enabled:
-          type: boolean
-        email_session_reminders:
-          type: boolean
-        email_rsvp_deadlines:
-          type: boolean
-        email_waitlist_updates:
-          type: boolean
-        email_admin_announcements:
+        push_balance_alerts:
           type: boolean
 
     RegisterTokenRequest:

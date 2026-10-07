@@ -40,16 +40,12 @@ func (h *NotificationHandler) GetPreferences(c *gin.Context) {
 
 // UpdatePreferencesRequest represents the request to update notification preferences
 type UpdatePreferencesRequest struct {
-	PushEnabled             *bool `json:"push_enabled,omitempty"`
-	PushSessionReminders    *bool `json:"push_session_reminders,omitempty"`
-	PushRSVPDeadlines       *bool `json:"push_rsvp_deadlines,omitempty"`
-	PushWaitlistUpdates     *bool `json:"push_waitlist_updates,omitempty"`
-	PushAdminAnnouncements  *bool `json:"push_admin_announcements,omitempty"`
-	EmailEnabled            *bool `json:"email_enabled,omitempty"`
-	EmailSessionReminders   *bool `json:"email_session_reminders,omitempty"`
-	EmailRSVPDeadlines      *bool `json:"email_rsvp_deadlines,omitempty"`
-	EmailWaitlistUpdates    *bool `json:"email_waitlist_updates,omitempty"`
-	EmailAdminAnnouncements *bool `json:"email_admin_announcements,omitempty"`
+	PushBalanceAlerts      *bool `json:"push_balance_alerts,omitempty"`
+	PushEnabled            *bool `json:"push_enabled,omitempty"`
+	PushSessionReminders   *bool `json:"push_session_reminders,omitempty"`
+	PushRSVPDeadlines      *bool `json:"push_rsvp_deadlines,omitempty"`
+	PushWaitlistUpdates    *bool `json:"push_waitlist_updates,omitempty"`
+	PushAdminAnnouncements *bool `json:"push_admin_announcements,omitempty"`
 }
 
 // UpdatePreferences updates the current user's notification preferences
@@ -68,6 +64,9 @@ func (h *NotificationHandler) UpdatePreferences(c *gin.Context) {
 
 	// Build updates map
 	updates := make(map[string]interface{})
+	if req.PushBalanceAlerts != nil {
+		updates["push_balance_alerts"] = *req.PushBalanceAlerts
+	}
 	if req.PushEnabled != nil {
 		updates["push_enabled"] = *req.PushEnabled
 	}
@@ -82,21 +81,6 @@ func (h *NotificationHandler) UpdatePreferences(c *gin.Context) {
 	}
 	if req.PushAdminAnnouncements != nil {
 		updates["push_admin_announcements"] = *req.PushAdminAnnouncements
-	}
-	if req.EmailEnabled != nil {
-		updates["email_enabled"] = *req.EmailEnabled
-	}
-	if req.EmailSessionReminders != nil {
-		updates["email_session_reminders"] = *req.EmailSessionReminders
-	}
-	if req.EmailRSVPDeadlines != nil {
-		updates["email_rsvp_deadlines"] = *req.EmailRSVPDeadlines
-	}
-	if req.EmailWaitlistUpdates != nil {
-		updates["email_waitlist_updates"] = *req.EmailWaitlistUpdates
-	}
-	if req.EmailAdminAnnouncements != nil {
-		updates["email_admin_announcements"] = *req.EmailAdminAnnouncements
 	}
 
 	if len(updates) == 0 {
