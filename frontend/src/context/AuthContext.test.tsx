@@ -29,10 +29,16 @@ function TestConsumer() {
     startMemberPreview,
     stopMemberPreview,
     loginForInvitation,
+    login,
+    retryAuth,
+    authError,
   } = useAuth();
   if (isLoading) return <div>Loading Auth...</div>;
   return (
     <div>
+      {authError && <div role="alert">{authError}</div>}
+      <button onClick={login}>Sign in</button>
+      <button onClick={retryAuth}>Retry profile</button>
       <div>Authenticated: {isAuthenticated ? 'Yes' : 'No'}</div>
       <div>Approved: {isApproved ? 'Yes' : 'No'}</div>
       <div>Admin: {isAdmin ? 'Yes' : 'No'}</div>
@@ -168,4 +174,67 @@ describe('AuthContext', () => {
     expect(screen.getByText('Admin: Yes')).toBeInTheDocument();
     expect(screen.getByText('Member preview: No')).toBeInTheDocument();
   });
+});
+
+
+describe('session renewal failures', () => {
+  beforeEach(() => vi.resetAllMocks());
+
+  function mockSession(error: unknown, token?: string) {
+    const loginWithRedirect = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(useAuth0).mockReturnValue({
+      isAuthenticated: true, isLoading: false, user: { name: 'Alex' },
+      getAccessTokenSilently: token ? vi.fn().mockResolvedValue(token) : vi.fn().mockRejectedValue(error),
+      loginWithRedirect, logout: vi.fn(),
+    } as unknown as ReturnType<typeof useAuth0>);
+    return loginWithRedirect;
+  }
+
+  it.each(['login_required', 'consent_required', 'interaction_required', 'missing_refresh_token', 'invalid_grant'])(
+    'shows normal sign-in when silent renewal returns %s', async (code) => {
+      const login = mockSession({ error: code });
+      render(<AuthProvider><TestConsumer /></AuthProvider>);
+      await screen.findByText('Authenticated: No');
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(api.authCallback).not.toHaveBeenCalled();
+      expect(api.setAccessToken).toHaveBeenCalledWith(null);
+      await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+      expect(login).toHaveBeenCalledWith({ authorizationParams: { connection: 'google-oauth2' } });
+    }
+  );
+
+  it('keeps unexpected renewal failures visible and clears them for a new sign-in', async () => {
+    mockSession({ error: 'network_error' });
+    render(<AuthProvider><TestConsumer /></AuthProvider>);
+    expect(await screen.findByRole('alert')).toHaveTextContent('We could not finish signing you in');
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('does not hide a backend failure with an error code that also means renewal expired', async () => {
+    mockSession(null, 'valid-token');
+    vi.mocked(api.authCallback).mockRejectedValue({ error: 'login_required', response: { data: { error: 'Profile service unavailable.' } } });
+    render(<AuthProvider><TestConsumer /></AuthProvider>);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Profile service unavailable.');
+  });
+
+  it('reports a failure to start interactive sign-in', async () => {
+    const login = mockSession({ error: 'missing_refresh_token' });
+    login.mockRejectedValue(new Error('redirect failed'));
+    render(<AuthProvider><TestConsumer /></AuthProvider>);
+    await screen.findByText('Authenticated: No');
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Google sign-in could not start.');
+  });
+});
+
+
+it('keeps Auth0 redirect failures visible even when their code requires sign-in', async () => {
+  vi.mocked(useAuth0).mockReturnValue({
+    isAuthenticated: false, isLoading: false, user: undefined,
+    error: { error: 'login_required' }, getAccessTokenSilently: vi.fn(),
+    loginWithRedirect: vi.fn(), logout: vi.fn(),
+  } as unknown as ReturnType<typeof useAuth0>);
+  render(<AuthProvider><TestConsumer /></AuthProvider>);
+  expect(await screen.findByRole('alert')).toHaveTextContent('Google sign-in did not finish');
 });

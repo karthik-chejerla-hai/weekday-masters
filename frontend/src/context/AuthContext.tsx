@@ -4,6 +4,14 @@ import { api } from '../services/api';
 import { AuthContext, type AuthContextType } from './auth-context';
 import type { User } from '../types';
 
+// These silent-renewal errors require a fresh interactive sign-in. They do not
+// mean the user attempted to sign in and failed. Do not apply this list to
+// redirect errors or backend profile failures.
+const signInRequiredErrors = new Set([
+  'login_required', 'consent_required', 'interaction_required',
+  'missing_refresh_token', 'invalid_grant',
+]);
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const {
     isAuthenticated: auth0IsAuthenticated,
@@ -23,6 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const syncUser = useCallback(async () => {
     setAuthError(null);
     if (!auth0IsAuthenticated || !auth0User) {
+      api.setAccessToken(null);
       setUser(null);
       setIsLoading(false);
       return;
@@ -30,7 +39,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     try {
       setIsLoading(true);
-      const token = await getAccessTokenSilently();
+      let token: string;
+      try {
+        token = await getAccessTokenSilently();
+      } catch (error) {
+        const code = (error as { error?: string } | null)?.error;
+        if (!code || !signInRequiredErrors.has(code)) throw error;
+        api.setAccessToken(null);
+        setUser(null);
+        setIsViewingAsMember(false);
+        return;
+      }
       api.setAccessToken(token);
 
       // Sync user with backend
@@ -69,14 +88,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [auth0IsLoading, syncUser]);
 
   const login = () => {
+    setAuthError(null);
     loginWithRedirect({
       authorizationParams: {
         connection: 'google-oauth2',
       },
-    });
+    }).catch(() => setAuthError('Google sign-in could not start. Please try again.'));
   };
 
   const loginForInvitation = () => {
+    setAuthError(null);
     loginWithRedirect({
       appState: { returnTo: '/welcome' },
       authorizationParams: { connection: 'google-oauth2', prompt: 'select_account' },
