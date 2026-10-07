@@ -59,7 +59,7 @@ it('repairs registration even when browser permission is already granted', async
   const { notificationService } = await import('../../services/notifications');
   vi.mocked(notificationService.enablePushNotifications).mockResolvedValueOnce(false);
   render(<NotificationSettings />);
-  await screen.findByText('Set up this device');
+  await screen.findByText('Register device');
   expect(notificationService.enablePushNotifications).toHaveBeenCalled();
   expect(screen.queryByText('Email Notifications')).not.toBeInTheDocument();
 });
@@ -69,10 +69,10 @@ it('reports a settings save failure without claiming push is enabled', async () 
   vi.mocked(notificationService.enablePushNotifications).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
   vi.mocked(notificationService.updatePreferences).mockRejectedValueOnce(new Error('offline'));
   render(<NotificationSettings />);
-  const button = await screen.findByText('Set up this device');
+  const button = await screen.findByText('Register device');
   fireEvent.click(button);
   await screen.findByText('Failed to enable push notifications');
-  expect(screen.queryByText('This device is registered for push alerts.')).not.toBeInTheDocument();
+  expect(screen.queryByText('Device registered for push notifications')).not.toBeInTheDocument();
 });
 
  it.each(['registration fails', 'permission denied', 'unsupported browser'])(
@@ -108,10 +108,10 @@ it('does not show selected alert types as ready when token registration fails', 
   const { notificationService } = await import('../../services/notifications');
   vi.mocked(notificationService.enablePushNotifications).mockResolvedValueOnce(false);
   render(<NotificationSettings />);
-  await screen.findByRole('button', { name: 'Set up this device' });
-  expect(screen.getByText('Push alerts are not ready on this device')).toBeInTheDocument();
+  await screen.findByRole('button', { name: 'Register device' });
+  expect(screen.getByText('Register device for push notifications')).toBeInTheDocument();
   expect(screen.queryByRole('switch', { name: 'Session Reminders' })).not.toBeInTheDocument();
-  expect(screen.getByText(/A saved On preference does not confirm device setup/)).toBeInTheDocument();
+  expect(screen.getByText(/Allow alerts on registered devices/)).toBeInTheDocument();
 });
 
 it('turning the account preference on also registers this device', async () => {
@@ -121,7 +121,7 @@ it('turning the account preference on also registers this device', async () => {
   render(<NotificationSettings />);
   const toggle = await screen.findByRole('switch', { name: 'Account push alerts' });
   fireEvent.click(toggle);
-  await screen.findByText('This device is registered');
+  await screen.findByText('Device registered for push notifications');
   expect(notificationService.enablePushNotifications).toHaveBeenCalledOnce();
   expect(notificationService.updatePreferences).toHaveBeenCalledWith({ push_enabled: true });
 });

@@ -113,9 +113,8 @@ export default function NotificationSettings() {
         const updated = await notificationService.updatePreferences({ push_enabled: true });
         setPreferences(updated);
         setDeviceRegistered(true);
-        setMessage({ type: 'success', text: 'This device is registered for push alerts.' });
       } else {
-        setMessage({ type: 'error', text: 'Could not complete device setup. Check your connection and browser permission, then try again.' });
+        setMessage({ type: 'error', text: 'Registration failed. Please try again.' });
       }
     } catch (error) {
       console.error('Failed to enable push:', error);
@@ -166,27 +165,21 @@ export default function NotificationSettings() {
         </div>
 
         <div role="status" className={`rounded-lg p-3 mb-4 text-sm ${pushGlobalEnabled ? 'bg-green-50 text-green-800' : 'bg-amber-50 text-amber-900'}`}>
-          <p className="font-semibold">{pushGlobalEnabled ? 'This device is registered' : 'Push alerts are not ready on this device'}</p>
-          <p>{pushGlobalEnabled
-            ? 'Rally can send push alerts here. Registration does not confirm delivery of each alert.'
-            : 'An account preference alone cannot receive alerts. Set up each phone or browser you use.'}</p>
+          <p className="font-semibold">{pushGlobalEnabled ? 'Device registered for push notifications' : 'Register device for push notifications'}</p>
         </div>
 
         {!pushSupported ? (
           <p className="text-sm text-slate-500 mb-4">
-            Push setup is unavailable here. On iPhone or iPad, add Rally to your Home Screen and open it there. If setup is still unavailable, contact an admin.
+            Push is unavailable here. On iPhone or iPad, open Rally from your Home Screen.
           </p>
         ) : pushPermission === 'denied' ? (
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
             <p className="text-sm text-amber-800">
-              Push notifications are blocked. Please enable them in your browser settings to receive notifications.
+              Allow notifications in your browser settings.
             </p>
           </div>
         ) : pushPermission !== 'granted' || !deviceRegistered || !preferences?.push_enabled ? (
           <div className="mb-4">
-            <p className="text-sm text-slate-600 mb-3">
-              Set up this device to receive session and balance alerts. Allow notifications when your browser asks.
-            </p>
             <button
               onClick={handleEnablePush}
               disabled={isSaving}
@@ -197,7 +190,7 @@ export default function NotificationSettings() {
               ) : (
                 <Bell className="w-4 h-4" />
               )}
-              Set up this device
+              Register device
             </button>
           </div>
         ) : null}
@@ -206,7 +199,7 @@ export default function NotificationSettings() {
           <div className="flex items-center justify-between mb-4 pb-4 border-b border-slate-200">
             <div>
               <p className="text-sm font-medium text-slate-700">Account preference</p>
-              <p className="text-xs text-slate-500">Allow alerts on registered devices. A saved On preference does not confirm device setup.</p>
+              <p className="text-xs text-slate-500">Allow alerts on registered devices.</p>
             </div>
             <ToggleSwitch
               label="Account push alerts"
