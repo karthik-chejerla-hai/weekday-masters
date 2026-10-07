@@ -37,12 +37,16 @@ Hosting step went unnoticed — merged PRs kept serving a public preview until t
 Two things outlive it, and are handled by `infra-retention.yml` rather than at
 PR-close time:
 
-- **Artifact Registry images.** Every push to a PR builds and pushes a
-  `pr-N-<sha>` image. An Artifact Registry cleanup policy, defined in
+- **Artifact Registry images.** Every production and preview deploy pushes a
+  commit-tagged image. An Artifact Registry cleanup policy, defined in
   `.github/artifact-registry-cleanup-policy.json` and applied by that workflow,
-  deletes `pr-`-tagged images after 7 days while keeping the 20 most recent
-  versions whatever their age. Keep rules win over delete rules, so that count is
-  a floor the policy cannot cut through.
+  retains the existing preview behavior: `pr-`-tagged images become eligible
+  after 7 days while the policy keeps the 20 most recent versions whatever their
+  age. A separate sweep identifies production images by their plain commit-SHA
+  tags and keeps only the five newest production builds; preview-only images do
+  not count toward that five. Cloud Run imports an image when it creates an
+  immutable revision, so deleting the registry copy does not interrupt a deployed
+  revision; an older commit can be rebuilt if it ever needs to be redeployed.
 - **Cloud Run revisions.** `--remove-tags` takes the `pr-N` URL out of service
   but leaves the revision behind, untagged and serving no traffic. The same
   workflow prunes them, keeping the 20 newest and only ever considering a
@@ -53,9 +57,6 @@ PR-close time:
 defaults to a dry run, a scheduled one acts. It ends by checking the production
 backend still answers on `/health`, which is the thing that would matter if one
 of those guards were ever wrong.
-
-Production images are tagged with the full commit sha, never `pr-`, so nothing
-here touches them: they are the rollback history and are kept indefinitely.
 
 Run the workflow manually (`workflow_dispatch`) to sweep up preview channels for
 PRs that are already closed. It defaults to a dry run; set `dry_run` to false to
