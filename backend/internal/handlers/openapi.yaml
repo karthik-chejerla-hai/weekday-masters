@@ -563,6 +563,48 @@ paths:
         "404":
           description: No member with that id
 
+  /admin/users/{id}/push-notifications:
+    get:
+      tags: ["Admin: Members"]
+      summary: Read a member's saved push settings and registered devices
+      description: Approved admins only. Read-only; missing preferences stay null. Device registrations record past permission, not current browser permission or delivery. Delivery tokens are never returned.
+      operationId: getMemberPushStatus
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Saved preferences and all current registration records for this member
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [preferences, devices]
+                properties:
+                  preferences:
+                    nullable: true
+                    allOf:
+                      - $ref: "#/components/schemas/UserNotificationPreferences"
+                  devices:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, device_name, created_at, last_registered_at]
+                      properties:
+                        id: { type: string, format: uuid }
+                        device_name: { type: string }
+                        created_at: { type: string, format: date-time }
+                        last_registered_at: { type: string, format: date-time }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: No member with that id
+        "500":
+          description: Could not read settings or devices
+
   /admin/users/{id}/reinstate:
     post:
       tags: ["Admin: Members"]

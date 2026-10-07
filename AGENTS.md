@@ -248,7 +248,9 @@ Read `.specify/memory/constitution.md` principles V–VII before touching any of
 **Admin screens:** `/admin` is the dashboard (join requests, club settings, announcements) and
 `/admin/members` manages the roll — add, edit, remove and reinstate. The two are deliberately
 separate: the dashboard handles people asking to join, the members page handles people who are (or
-were) in the club.
+were) in the club. Each member has an expandable push settings panel. Its admin-only read endpoint
+returns saved preferences and device registration metadata, never FCM tokens. A missing preference
+record stays null. Registration dates do not establish current browser permission or delivery.
 
 The **Not signed in** tab has invitation review controls: exact desktop/mobile email previews,
 test copy to the current admin, and paused or available member sending. `/welcome` is the public

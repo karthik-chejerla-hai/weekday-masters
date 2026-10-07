@@ -20,6 +20,7 @@ import { displayName, isPendingInvite } from '../utils/members';
 import Avatar from '../components/ui/Avatar';
 import Badge from '../components/ui/Badge';
 import InvitationPanel from '../components/members/InvitationPanel';
+import MemberPushPanel from '../components/members/MemberPushPanel';
 
 /**
  * The member endpoints answer failures as `{ "error": "..." }`, and the messages
@@ -399,6 +400,7 @@ export default function AdminMembers() {
                     onInvitation={() => setInvitationId(invitationId === member.id ? null : member.id)}
                   />
                 )}
+                <MemberPushPanel member={member} />
                 {invitationId === member.id && member.membership_status === 'approved' && isPendingInvite(member) && (
                   <InvitationPanel key={`${member.id}:${member.email}`} member={member} onClose={() => setInvitationId(null)} />
                 )}

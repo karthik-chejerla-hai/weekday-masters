@@ -77,6 +77,7 @@ func newHarness(t *testing.T) *harness {
 	// not invent its own.
 	api := r.Group("/api")
 	ledgerHandler.RegisterRoutes(api)
+	adminHandler.RegisterMemberPushRoutes(api)
 	NewInvitationHandler(services.NewInvitationService(services.NotificationConfig{FrontendURL: "https://rally.test"}, false)).RegisterRoutes(api)
 	{
 		api.POST("/auth/callback", authHandler.Callback)
