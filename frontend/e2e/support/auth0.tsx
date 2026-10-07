@@ -3,7 +3,11 @@ import type { ReactNode } from 'react';
 // Only resolved by vite.e2e.config.ts. Keep function/user identities stable so
 // AuthProvider's effect behaves like the real SDK rather than looping.
 const user = { sub: 'auth0:browser-test', name: 'Alex Test', picture: '' };
-const getAccessTokenSilently = async () => 'browser-test-token';
+const getAccessTokenSilently = async () => {
+  const error = sessionStorage.getItem('e2e:token-error');
+  if (error) throw { error };
+  return 'browser-test-token';
+};
 const loginWithRedirect = async (options: unknown) => {
   sessionStorage.setItem('e2e:login', JSON.stringify(options));
 };
