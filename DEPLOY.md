@@ -58,9 +58,6 @@ defaults to a dry run, a scheduled one acts. It ends by checking the production
 backend still answers on `/health`, which is the thing that would matter if one
 of those guards were ever wrong.
 
-Production images are tagged with the full commit sha, never `pr-`, so nothing
-here touches them: they are the rollback history and are kept indefinitely.
-
 Run the workflow manually (`workflow_dispatch`) to sweep up preview channels for
 PRs that are already closed. It defaults to a dry run; set `dry_run` to false to
 actually delete.
