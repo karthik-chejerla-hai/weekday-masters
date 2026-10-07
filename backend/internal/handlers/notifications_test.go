@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/weekday-masters/backend/internal/database"
 	"github.com/weekday-masters/backend/internal/models"
+	"github.com/weekday-masters/backend/internal/services"
 )
 
 // --- preferences ----------------------------------------------------------
@@ -250,4 +251,46 @@ func TestEmailPreferencesRemovedAndBalancePushPreferenceSaved(t *testing.T) {
 	if updated.PushBalanceAlerts {
 		t.Fatal("balance preference not saved")
 	}
+}
+
+func TestSendBalanceNudge_TargetsOneLowBalanceMember(t *testing.T) {
+	h := newHarness(t)
+	admin := makeAdmin(t)
+	player := makePlayer(t)
+
+	var result services.BalanceNudgeResult
+	h.as(admin).post("/api/admin/users/"+player.ID.String()+"/balance-nudge", nil).
+		expect(http.StatusCreated).decode(&result)
+	if result.NotificationID == uuid.Nil || result.PushSent || result.BalanceCents != 0 {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+
+	var notice models.Notification
+	if err := database.DB.First(&notice, "id = ?", result.NotificationID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if notice.UserID != player.ID || notice.NotificationType != models.NotificationBalanceLow {
+		t.Fatalf("wrong targeted notification: %+v", notice)
+	}
+
+	h.as(admin).post("/api/admin/users/"+player.ID.String()+"/balance-nudge", nil).
+		expect(http.StatusTooManyRequests)
+}
+
+func TestSendBalanceNudge_RequiresApprovedAdminAndValidTarget(t *testing.T) {
+	h := newHarness(t)
+	admin := makeAdmin(t)
+	player := makePlayer(t)
+	pending := makePending(t)
+
+	h.as(player).post("/api/admin/users/"+admin.ID.String()+"/balance-nudge", nil).
+		expect(http.StatusForbidden)
+	h.as(admin).post("/api/admin/users/not-a-uuid/balance-nudge", nil).
+		expect(http.StatusBadRequest)
+	h.as(admin).post("/api/admin/users/"+uuid.NewString()+"/balance-nudge", nil).
+		expect(http.StatusNotFound)
+	h.as(admin).post("/api/admin/users/"+pending.ID.String()+"/balance-nudge", nil).
+		expect(http.StatusConflict)
+	h.as(admin).post("/api/admin/users/"+admin.ID.String()+"/balance-nudge", nil).
+		expect(http.StatusConflict)
 }

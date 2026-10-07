@@ -605,6 +605,42 @@ paths:
         "500":
           description: Could not read settings or devices
 
+  /admin/users/{id}/balance-nudge:
+    post:
+      tags: ["Admin: Members"]
+      summary: Remind a low-balance member to top up
+      description: >
+        Approved admins only. Creates a balance alert in the member's Rally
+        notification history and attempts push delivery to their registered
+        devices. The response distinguishes accepted push delivery from an
+        in-app-only reminder. Only approved members below the configured
+        low-balance threshold are eligible, and a member may be nudged at most
+        once every 24 hours.
+      operationId: sendBalanceNudge
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "201":
+          description: Nudge recorded and push delivery attempted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BalanceNudgeResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: No member with that id
+        "409":
+          description: The target is the caller, is not approved, or no longer has a low balance
+        "429":
+          description: This member was nudged during the preceding 24 hours
+        "503":
+          description: Notifications are paused or disabled
+
   /admin/users/{id}/reinstate:
     post:
       tags: ["Admin: Members"]
@@ -2499,6 +2535,24 @@ components:
           type: string
           format: date-time
 
+    BalanceNudgeResult:
+      type: object
+      required: [notification_id, balance_cents, push_sent, next_allowed_at]
+      properties:
+        notification_id:
+          type: string
+          format: uuid
+        balance_cents:
+          type: integer
+          format: int64
+          description: The member's balance when the nudge was recorded, in cents.
+        push_sent:
+          type: boolean
+          description: True when FCM accepted delivery to at least one registered device.
+        next_allowed_at:
+          type: string
+          format: date-time
+
     Notification:
       type: object
       properties:
@@ -2510,7 +2564,7 @@ components:
           format: uuid
         notification_type:
           type: string
-          enum: [session_reminder, rsvp_deadline, waitlist_update, admin_announcement]
+          enum: [session_reminder, rsvp_deadline, waitlist_update, admin_announcement, balance_low, balance_negative]
         title:
           type: string
         body:

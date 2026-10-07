@@ -17,6 +17,7 @@ vi.mock('../services/api', () => ({
     getClub: vi.fn(),
     getClubPosition: vi.fn(),
     recordTopup: vi.fn(),
+    nudgeBalance: vi.fn(),
   },
 }));
 
@@ -73,6 +74,10 @@ beforeEach(() => {
     months: [{ month: 1, amount_cents: 10000, session_count: 4 }, { month: 2, amount_cents: 2345, session_count: 1 }],
   });
   vi.mocked(api.getLedgerActivity).mockResolvedValue({ items: entries.map((entry) => ({ id: entry.id, occurred_at: entry.occurred_at, entry })), total: 2 });
+  vi.mocked(api.nudgeBalance).mockResolvedValue({
+    notification_id: 'notice-1', balance_cents: -825, push_sent: true,
+    next_allowed_at: '2026-10-08T12:00:00Z',
+  });
 });
 
 describe('Money', () => {
@@ -203,6 +208,32 @@ describe('Money', () => {
     renderPage();
 
     await waitFor(() => expect(screen.getByText('Record a top-up')).toBeInTheDocument());
+  });
+
+  it('lets an admin nudge a low-balance member once', async () => {
+    mockAuth({ isAdmin: true });
+    renderPage();
+
+    const nudge = await screen.findByRole('button', { name: 'Nudge Jono to top up' });
+    expect(screen.queryByRole('button', { name: 'Nudge Priya to top up' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Nudge Karthik to top up' })).not.toBeInTheDocument();
+
+    await userEvent.click(nudge);
+    await waitFor(() => expect(api.nudgeBalance).toHaveBeenCalledWith('u3'));
+    expect(await screen.findByText('Push nudge queued for Jono.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Nudge Jono to top up' })).toBeDisabled();
+  });
+
+  it('explains when a nudge is saved without push delivery', async () => {
+    mockAuth({ isAdmin: true });
+    vi.mocked(api.nudgeBalance).mockResolvedValueOnce({
+      notification_id: 'notice-2', balance_cents: -825, push_sent: false,
+      next_allowed_at: '2026-10-08T12:00:00Z',
+    });
+    renderPage();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Nudge Jono to top up' }));
+    expect(await screen.findByText('Jono will see the nudge in Rally; push is unavailable or disabled.')).toBeInTheDocument();
   });
 
   it('reports a load failure instead of showing an empty ledger', async () => {

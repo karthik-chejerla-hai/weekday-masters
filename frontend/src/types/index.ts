@@ -222,6 +222,13 @@ export interface MyBalance {
   state: BalanceState;
 }
 
+export interface BalanceNudgeResult {
+  notification_id: string;
+  balance_cents: number;
+  push_sent: boolean;
+  next_allowed_at: string;
+}
+
 export interface PersonalSpend {
   year: number;
   as_of: string;
