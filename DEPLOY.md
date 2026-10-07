@@ -37,12 +37,14 @@ Hosting step went unnoticed — merged PRs kept serving a public preview until t
 Two things outlive it, and are handled by `infra-retention.yml` rather than at
 PR-close time:
 
-- **Artifact Registry images.** Every push to a PR builds and pushes a
-  `pr-N-<sha>` image. An Artifact Registry cleanup policy, defined in
+- **Artifact Registry images.** Every production and preview deploy pushes a
+  commit-tagged image. An Artifact Registry cleanup policy, defined in
   `.github/artifact-registry-cleanup-policy.json` and applied by that workflow,
-  deletes `pr-`-tagged images after 7 days while keeping the 20 most recent
-  versions whatever their age. Keep rules win over delete rules, so that count is
-  a floor the policy cannot cut through.
+  deletes images older than one day while keeping the five most recent versions
+  whatever their age. Keep rules win over delete rules, so that count is a floor
+  the policy cannot cut through. Cloud Run imports an image when it creates an
+  immutable revision, so deleting the registry copy does not interrupt a deployed
+  revision; an older commit can be rebuilt if it ever needs to be redeployed.
 - **Cloud Run revisions.** `--remove-tags` takes the `pr-N` URL out of service
   but leaves the revision behind, untagged and serving no traffic. The same
   workflow prunes them, keeping the 20 newest and only ever considering a

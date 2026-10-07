@@ -5,9 +5,10 @@ name: Infra Retention
 # does not touch accumulate quietly behind it, and this is where they are dealt
 # with.
 #
-#   Artifact Registry images. Every push to a PR builds and pushes a
-#   pr-<number>-<sha> image. Nothing removed them, so the registry held one for
-#   every commit ever pushed to a PR. This costs storage, monthly, forever.
+#   Artifact Registry images. Every production and preview deploy pushes a new
+#   commit-tagged image. Cloud Run imports it into the immutable revision, so
+#   keeping every source image only adds storage cost. The server-side policy
+#   retains the five newest versions and expires everything older than one day.
 #
 #   Cloud Run revisions. `--remove-tags` takes the pr-N URL out of service but
 #   leaves the revision behind, untagged and serving nothing. They are free, but
