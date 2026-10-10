@@ -318,6 +318,9 @@ func TestDisabledDeliveryAllowlistTargetsOnlyTheConfiguredEmail(t *testing.T) {
 	if err := ns.RegisterPushToken(other.ID, "other-token", "Other browser"); err != nil {
 		t.Fatal(err)
 	}
+	if err := database.DB.Model(&models.Club{}).Where("true").Update("notifications_paused", true).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	for _, user := range []models.User{admin, other} {
 		if err := ns.SendNotification(context.Background(), user.ID, models.NotificationAdminAnnouncement, "Preview", "Selective", nil); err != nil {

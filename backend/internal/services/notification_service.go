@@ -164,7 +164,7 @@ func (s *NotificationService) SendNotification(
 	title, body string,
 	data map[string]string,
 ) error {
-	allowed, err := s.deliveryAllowed(userID)
+	allowed, bypassClubPause, err := s.deliveryPolicy(userID)
 	if err != nil {
 		return err
 	}
@@ -177,7 +177,7 @@ func (s *NotificationService) SendNotification(
 	if err := database.DB.Select("notifications_paused").First(&club).Error; err != nil {
 		return err
 	}
-	if club.NotificationsPaused {
+	if club.NotificationsPaused && !bypassClubPause {
 		return nil
 	}
 	// Create notification record
@@ -300,7 +300,7 @@ func (s *NotificationService) SendBalanceNudge(
 // uses this to keep the session, announcement and audience atomic without
 // holding database locks during provider requests.
 func (s *NotificationService) deliverNotification(ctx context.Context, notification *models.Notification) error {
-	allowed, err := s.deliveryAllowed(notification.UserID)
+	allowed, bypassClubPause, err := s.deliveryPolicy(notification.UserID)
 	if err != nil {
 		return err
 	}
@@ -311,7 +311,7 @@ func (s *NotificationService) deliverNotification(ctx context.Context, notificat
 	if err := database.DB.Select("notifications_paused").First(&club).Error; err != nil {
 		return err
 	}
-	if club.NotificationsPaused {
+	if club.NotificationsPaused && !bypassClubPause {
 		return nil
 	}
 	userID := notification.UserID
@@ -446,21 +446,23 @@ func (s *NotificationService) notificationURL(data map[string]string) string {
 	return base + path
 }
 
-// deliveryAllowed leaves the deployment stop in place for everyone except an
-// exact, case-insensitive email allowlist entry. Preview supplies the verified
-// admin email; production leaves this empty.
-func (s *NotificationService) deliveryAllowed(userID uuid.UUID) (bool, error) {
+// deliveryPolicy leaves the deployment stop in place for everyone except an
+// exact, case-insensitive email allowlist entry. That preview-only exception
+// also bypasses a club pause inherited from production data. Production leaves
+// the allowlist empty.
+func (s *NotificationService) deliveryPolicy(userID uuid.UUID) (allowed, bypassClubPause bool, err error) {
 	if !s.disabled {
-		return true, nil
+		return true, false, nil
 	}
 	if s.disabledAllowEmail == "" {
-		return false, nil
+		return false, false, nil
 	}
 	var user models.User
 	if err := database.DB.Select("email").First(&user, "id = ?", userID).Error; err != nil {
-		return false, err
+		return false, false, err
 	}
-	return strings.EqualFold(strings.TrimSpace(user.Email), s.disabledAllowEmail), nil
+	allowed = strings.EqualFold(strings.TrimSpace(user.Email), s.disabledAllowEmail)
+	return allowed, allowed, nil
 }
 
 // SendBulkNotification sends notifications to multiple users
