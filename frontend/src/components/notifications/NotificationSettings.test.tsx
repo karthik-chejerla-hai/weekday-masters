@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import NotificationSettings from './NotificationSettings';
+import { notificationService } from '../../services/notifications';
 
 vi.mock('../../services/notifications', () => ({
   notificationService: {
@@ -38,7 +39,22 @@ vi.mock('../../services/notifications', () => ({
   },
 }));
 
-beforeEach(() => { vi.clearAllMocks(); });
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(notificationService.isPushSupported).mockReturnValue(true);
+  vi.mocked(notificationService.getPermissionStatus).mockReturnValue('granted');
+  vi.mocked(notificationService.getPreferences).mockResolvedValue({
+    id: 'pref-1', user_id: 'user-1', push_enabled: true,
+    push_session_reminders: true, push_rsvp_deadlines: true,
+    push_waitlist_updates: true, push_admin_announcements: true,
+  } as never);
+  vi.mocked(notificationService.updatePreferences).mockResolvedValue({
+    id: 'pref-1', user_id: 'user-1', push_enabled: false,
+    push_session_reminders: true, push_rsvp_deadlines: true,
+    push_waitlist_updates: true, push_admin_announcements: true,
+  } as never);
+  vi.mocked(notificationService.enablePushNotifications).mockResolvedValue(true);
+});
 
 describe('NotificationSettings Component', () => {
 
@@ -59,7 +75,7 @@ it('repairs registration even when browser permission is already granted', async
   const { notificationService } = await import('../../services/notifications');
   vi.mocked(notificationService.enablePushNotifications).mockResolvedValueOnce(false);
   render(<NotificationSettings />);
-  await screen.findByText('Enable Push Notifications');
+  await screen.findByText('Enable on this device');
   expect(notificationService.enablePushNotifications).toHaveBeenCalled();
   expect(screen.queryByText('Email Notifications')).not.toBeInTheDocument();
 });
@@ -69,10 +85,22 @@ it('reports a settings save failure without claiming push is enabled', async () 
   vi.mocked(notificationService.enablePushNotifications).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
   vi.mocked(notificationService.updatePreferences).mockRejectedValueOnce(new Error('offline'));
   render(<NotificationSettings />);
-  const button = await screen.findByText('Enable Push Notifications');
+  const button = await screen.findByText('Enable on this device');
   fireEvent.click(button);
   await screen.findByText('Failed to enable push notifications');
-  expect(screen.queryByText('Push notifications enabled!')).not.toBeInTheDocument();
+  expect(screen.queryByText('Push notifications enabled on this device.')).not.toBeInTheDocument();
+});
+
+it('reports the device as ready only after token registration and the account preference save', async () => {
+  const { notificationService } = await import('../../services/notifications');
+  vi.mocked(notificationService.getPermissionStatus).mockReturnValueOnce('default').mockReturnValue('granted');
+  vi.mocked(notificationService.getPreferences).mockResolvedValueOnce({ push_enabled: false } as never);
+  vi.mocked(notificationService.updatePreferences).mockResolvedValueOnce({ push_enabled: true } as never);
+  render(<NotificationSettings />);
+  fireEvent.click(await screen.findByText('Enable on this device'));
+  await screen.findByText('This device is registered for push notifications');
+  expect(screen.getByText('Push notifications enabled on this device.')).toBeInTheDocument();
+  expect(notificationService.updatePreferences).toHaveBeenCalledWith({ push_enabled: true });
 });
 
  it.each(['registration fails', 'permission denied', 'unsupported browser'])(
