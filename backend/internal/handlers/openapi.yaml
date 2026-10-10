@@ -641,6 +641,36 @@ paths:
         "503":
           description: Notifications are paused or disabled
 
+  /admin/notifications/test-push:
+    post:
+      tags: ["Admin: Members"]
+      summary: Send a push delivery test to the signed-in admin
+      description: >
+        Approved admins only. Sends a one-off diagnostic push exclusively to
+        devices registered to the caller's own account. It honours the caller's
+        account opt-out but intentionally bypasses deployment-wide and club
+        notification stops, allowing preview verification without enabling
+        announcements, scheduled notifications, or delivery to other members.
+        No notification-history row is created.
+      operationId: sendTestPush
+      responses:
+        "200":
+          description: FCM accepted the test for at least one registered device
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PushTestResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Account push alerts are off or no device is registered
+        "502":
+          description: The push provider rejected the test
+        "503":
+          description: FCM is not configured for this deployment
+
   /admin/users/{id}/reinstate:
     post:
       tags: ["Admin: Members"]
@@ -2552,6 +2582,17 @@ components:
         next_allowed_at:
           type: string
           format: date-time
+
+    PushTestResult:
+      type: object
+      required: [accepted_devices, attempted_devices]
+      properties:
+        accepted_devices:
+          type: integer
+          minimum: 1
+        attempted_devices:
+          type: integer
+          minimum: 1
 
     Notification:
       type: object

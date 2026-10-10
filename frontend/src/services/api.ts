@@ -277,6 +277,11 @@ class ApiService {
     await this.client.delete('/users/me/push-tokens', { data: { token } });
   }
 
+  async sendTestPush(): Promise<PushTestResult> {
+    const response = await this.client.post<PushTestResult>('/admin/notifications/test-push');
+    return response.data;
+  }
+
   // Notifications - History
   async getNotificationHistory(limit = 20, offset = 0): Promise<Notification[]> {
     const response = await this.client.get<Notification[]>('/users/me/notifications/history', {
@@ -507,6 +512,11 @@ export interface NotificationPreferences {
   push_balance_alerts: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface PushTestResult {
+  accepted_devices: number;
+  attempted_devices: number;
 }
 
 export interface Notification {

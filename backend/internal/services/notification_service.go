@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
 	"strings"
 	"time"
 
@@ -24,10 +25,11 @@ type pushClient interface {
 }
 
 type NotificationService struct {
-	disabled    bool
-	fcmClient   pushClient
-	frontendURL string
-	fcmEnabled  bool
+	disabled           bool
+	disabledAllowEmail string
+	fcmClient          pushClient
+	frontendURL        string
+	fcmEnabled         bool
 }
 
 const BalanceNudgeCooldown = 24 * time.Hour
@@ -38,6 +40,9 @@ var (
 	ErrBalanceNudgeNotAllowed = errors.New("only approved members can receive a balance nudge")
 	ErrNotificationsPaused    = errors.New("notifications are currently paused")
 	ErrNotificationsDisabled  = errors.New("notifications are disabled")
+	ErrPushUnavailable        = errors.New("push delivery is unavailable")
+	ErrPushDisabledForUser    = errors.New("account push alerts are disabled")
+	ErrNoPushDevices          = errors.New("no registered push devices")
 )
 
 // BalanceNudgeCooldownError reports when the member may be nudged again.
@@ -58,8 +63,17 @@ type BalanceNudgeResult struct {
 	NextAllowedAt  time.Time `json:"next_allowed_at"`
 }
 
+// PushTestResult reports provider acceptance for an explicit self-test. It
+// deliberately does not create notification history: this is a delivery
+// diagnostic, not a club announcement.
+type PushTestResult struct {
+	AcceptedDevices  int `json:"accepted_devices"`
+	AttemptedDevices int `json:"attempted_devices"`
+}
+
 type NotificationConfig struct {
 	Disabled            bool
+	DisabledAllowEmail  string
 	FirebaseCredentials string
 	FirebaseProjectID   string
 	SendGridAPIKey      string
@@ -71,11 +85,10 @@ type NotificationConfig struct {
 // NewNotificationService creates a new notification service
 // Cloud Run uses Application Default Credentials; local callers may supply JSON.
 func NewNotificationService(cfg NotificationConfig) *NotificationService {
-	if cfg.Disabled {
-		return &NotificationService{disabled: true}
-	}
 	service := &NotificationService{
-		frontendURL: cfg.FrontendURL,
+		disabled:           cfg.Disabled,
+		disabledAllowEmail: strings.TrimSpace(cfg.DisabledAllowEmail),
+		frontendURL:        cfg.FrontendURL,
 	}
 
 	// An explicit project enables ADC without requiring a private key in Cloud Run.
@@ -104,6 +117,40 @@ func NewNotificationService(cfg NotificationConfig) *NotificationService {
 	return service
 }
 
+// SendTestPush sends an explicit diagnostic push only to the caller's own
+// registered devices. It intentionally bypasses the deployment-wide and club
+// notification stops so an admin can verify preview setup without enabling
+// announcements, cron, or delivery to any other member.
+func (s *NotificationService) SendTestPush(ctx context.Context, userID uuid.UUID) (*PushTestResult, error) {
+	if !s.fcmEnabled || s.fcmClient == nil {
+		return nil, ErrPushUnavailable
+	}
+
+	var user models.User
+	if err := database.DB.First(&user, "id = ?", userID).Error; err != nil {
+		return nil, err
+	}
+	if user.MembershipStatus != models.MembershipApproved {
+		return nil, ErrBalanceNudgeNotAllowed
+	}
+
+	prefs, err := s.GetUserPreferences(userID)
+	if err != nil {
+		return nil, err
+	}
+	if !prefs.PushEnabled {
+		return nil, ErrPushDisabledForUser
+	}
+
+	return s.sendPushNotificationWithResult(
+		ctx,
+		userID,
+		"Rally push test",
+		"Push notifications are working on your registered device.",
+		map[string]string{"type": "push_test"},
+	)
+}
+
 // IsEnabled returns true when push delivery is enabled
 func (s *NotificationService) IsEnabled() bool {
 	return !s.disabled && s.fcmEnabled
@@ -117,7 +164,11 @@ func (s *NotificationService) SendNotification(
 	title, body string,
 	data map[string]string,
 ) error {
-	if s.disabled {
+	allowed, bypassClubPause, err := s.deliveryPolicy(userID)
+	if err != nil {
+		return err
+	}
+	if !allowed {
 		return nil
 	}
 	// Fail closed if the pause cannot be read. The importer sets it in the
@@ -126,7 +177,7 @@ func (s *NotificationService) SendNotification(
 	if err := database.DB.Select("notifications_paused").First(&club).Error; err != nil {
 		return err
 	}
-	if club.NotificationsPaused {
+	if club.NotificationsPaused && !bypassClubPause {
 		return nil
 	}
 	// Create notification record
@@ -249,14 +300,18 @@ func (s *NotificationService) SendBalanceNudge(
 // uses this to keep the session, announcement and audience atomic without
 // holding database locks during provider requests.
 func (s *NotificationService) deliverNotification(ctx context.Context, notification *models.Notification) error {
-	if s.disabled {
+	allowed, bypassClubPause, err := s.deliveryPolicy(notification.UserID)
+	if err != nil {
+		return err
+	}
+	if !allowed {
 		return nil
 	}
 	var club models.Club
 	if err := database.DB.Select("notifications_paused").First(&club).Error; err != nil {
 		return err
 	}
-	if club.NotificationsPaused {
+	if club.NotificationsPaused && !bypassClubPause {
 		return nil
 	}
 	userID := notification.UserID
@@ -304,18 +359,28 @@ func (s *NotificationService) sendPushNotification(
 	title, body string,
 	data map[string]string,
 ) error {
+	_, err := s.sendPushNotificationWithResult(ctx, userID, title, body, data)
+	return err
+}
+
+func (s *NotificationService) sendPushNotificationWithResult(
+	ctx context.Context,
+	userID uuid.UUID,
+	title, body string,
+	data map[string]string,
+) (*PushTestResult, error) {
 	if !s.fcmEnabled {
-		return errors.New("FCM not enabled")
+		return nil, ErrPushUnavailable
 	}
 
 	// Get all push tokens for user
 	var tokens []models.UserPushToken
 	if err := database.DB.Where("user_id = ?", userID).Find(&tokens).Error; err != nil {
-		return err
+		return nil, err
 	}
 
 	if len(tokens) == 0 {
-		return errors.New("no registered push devices")
+		return nil, ErrNoPushDevices
 	}
 
 	// Build token strings
@@ -325,25 +390,28 @@ func (s *NotificationService) sendPushNotification(
 	}
 
 	// Build multicast message
+	webpush := &messaging.WebpushConfig{
+		Notification: &messaging.WebpushNotification{
+			Icon: "/icons/icon-192x192.svg",
+		},
+	}
+	if link := s.notificationURL(data); link != "" {
+		webpush.FCMOptions = &messaging.WebpushFCMOptions{Link: link}
+	}
 	message := &messaging.MulticastMessage{
 		Tokens: tokenStrings,
 		Notification: &messaging.Notification{
 			Title: title,
 			Body:  body,
 		},
-		Data: data,
-		Webpush: &messaging.WebpushConfig{
-			FCMOptions: &messaging.WebpushFCMOptions{Link: s.notificationURL(data)},
-			Notification: &messaging.WebpushNotification{
-				Icon: "/icons/icon-192x192.svg",
-			},
-		},
+		Data:    data,
+		Webpush: webpush,
 	}
 
 	// Send
 	response, err := s.fcmClient.SendEachForMulticast(ctx, message)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Remove invalid tokens
@@ -357,20 +425,44 @@ func (s *NotificationService) sendPushNotification(
 	}
 
 	if response.SuccessCount == 0 {
-		return errors.New("FCM rejected all device deliveries")
+		return nil, errors.New("FCM rejected all device deliveries")
 	}
 	log.Printf("Push notification sent to %d/%d devices for user %s", response.SuccessCount, len(tokens), userID)
-	return nil
+	return &PushTestResult{AcceptedDevices: response.SuccessCount, AttemptedDevices: len(tokens)}, nil
 }
 
 func (s *NotificationService) notificationURL(data map[string]string) string {
+	base := strings.TrimRight(s.frontendURL, "/")
+	parsed, err := url.Parse(base)
+	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" {
+		return ""
+	}
 	path := "/dashboard"
 	if id, err := uuid.Parse(data["session_id"]); err == nil {
 		path = "/sessions/" + id.String()
 	} else if strings.HasPrefix(data["type"], "balance_") {
 		path = "/money"
 	}
-	return strings.TrimRight(s.frontendURL, "/") + path
+	return base + path
+}
+
+// deliveryPolicy leaves the deployment stop in place for everyone except an
+// exact, case-insensitive email allowlist entry. That preview-only exception
+// also bypasses a club pause inherited from production data. Production leaves
+// the allowlist empty.
+func (s *NotificationService) deliveryPolicy(userID uuid.UUID) (allowed, bypassClubPause bool, err error) {
+	if !s.disabled {
+		return true, false, nil
+	}
+	if s.disabledAllowEmail == "" {
+		return false, false, nil
+	}
+	var user models.User
+	if err := database.DB.Select("email").First(&user, "id = ?", userID).Error; err != nil {
+		return false, false, err
+	}
+	allowed = strings.EqualFold(strings.TrimSpace(user.Email), s.disabledAllowEmail)
+	return allowed, allowed, nil
 }
 
 // SendBulkNotification sends notifications to multiple users

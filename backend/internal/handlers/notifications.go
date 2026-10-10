@@ -27,7 +27,35 @@ func NewNotificationHandler(notificationService *services.NotificationService) *
 // also used by the handler test harness.
 func (h *NotificationHandler) RegisterAdminRoutes(protected *gin.RouterGroup) {
 	admin := protected.Group("/admin", middleware.RequireApproved(), middleware.RequireAdmin())
+	admin.POST("/notifications/test-push", h.SendTestPush)
 	admin.POST("/users/:id/balance-nudge", h.SendBalanceNudge)
+}
+
+// SendTestPush verifies push delivery for the signed-in admin without enabling
+// preview notifications for the club or targeting another member.
+func (h *NotificationHandler) SendTestPush(c *gin.Context) {
+	actor, err := middleware.GetUserFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	result, err := h.notificationService.SendTestPush(c.Request.Context(), actor.ID)
+	if err == nil {
+		c.JSON(http.StatusOK, result)
+		return
+	}
+
+	switch {
+	case errors.Is(err, services.ErrPushDisabledForUser):
+		c.JSON(http.StatusConflict, gin.H{"code": "push_disabled", "message": err.Error()})
+	case errors.Is(err, services.ErrNoPushDevices):
+		c.JSON(http.StatusConflict, gin.H{"code": "no_push_devices", "message": err.Error()})
+	case errors.Is(err, services.ErrPushUnavailable):
+		c.JSON(http.StatusServiceUnavailable, gin.H{"code": "push_unavailable", "message": err.Error()})
+	default:
+		c.JSON(http.StatusBadGateway, gin.H{"code": "push_delivery_failed", "message": "The push provider did not accept the test notification."})
+	}
 }
 
 // GetPreferences returns the current user's notification preferences

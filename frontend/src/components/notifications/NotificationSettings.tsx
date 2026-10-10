@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Bell, Loader2, BellOff, BellRing, Smartphone } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Bell, Loader2, BellOff, BellRing, Send, Smartphone } from 'lucide-react';
 import { notificationService, NotificationPreferences } from '../../services/notifications';
 
 interface ToggleSwitchProps {
@@ -56,6 +56,7 @@ function NotificationRow({
         <div className="flex items-center gap-2">
           <Smartphone className="w-4 h-4 text-slate-400" />
           <ToggleSwitch
+            label={label}
             enabled={pushEnabled}
             onChange={onPushChange}
             disabled={pushDisabled}
@@ -66,10 +67,15 @@ function NotificationRow({
   );
 }
 
-export default function NotificationSettings() {
+interface NotificationSettingsProps {
+  isAdmin?: boolean;
+}
+
+export default function NotificationSettings({ isAdmin = false }: NotificationSettingsProps) {
   const [preferences, setPreferences] = useState<NotificationPreferences | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSendingTest, setIsSendingTest] = useState(false);
   const [deviceRegistered, setDeviceRegistered] = useState(false);
   const [pushSupported] = useState(() => notificationService.isPushSupported());
   const [pushPermission, setPushPermission] = useState<NotificationPermission | 'unsupported'>(
@@ -77,15 +83,14 @@ export default function NotificationSettings() {
   );
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  useEffect(() => {
-    loadPreferences();
-  }, []);
-
-  const loadPreferences = async () => {
+  const loadPreferences = useCallback(async () => {
     try {
       const prefs = await notificationService.getPreferences();
       setPreferences(prefs);
-      if (prefs.push_enabled && notificationService.getPermissionStatus() === 'granted') {
+      const permission = notificationService.getPermissionStatus();
+      setPushPermission(permission);
+      setDeviceRegistered(false);
+      if (pushSupported && prefs.push_enabled && permission === 'granted') {
         setDeviceRegistered(await notificationService.enablePushNotifications());
       }
     } catch (error) {
@@ -94,7 +99,14 @@ export default function NotificationSettings() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [pushSupported]);
+
+  useEffect(() => {
+    void loadPreferences();
+    const refresh = () => { void loadPreferences(); };
+    window.addEventListener('focus', refresh);
+    return () => window.removeEventListener('focus', refresh);
+  }, [loadPreferences]);
 
   const handleEnablePush = async () => {
     setIsSaving(true);
@@ -106,14 +118,22 @@ export default function NotificationSettings() {
         const updated = await notificationService.updatePreferences({ push_enabled: true });
         setPreferences(updated);
         setDeviceRegistered(true);
-        setMessage({ type: 'success', text: 'Push notifications enabled!' });
+        setMessage({ type: 'success', text: 'Push notifications enabled on this device.' });
       } else {
-        setMessage({ type: 'error', text: 'Failed to enable push notifications. Please check your browser settings.' });
+        const permission = notificationService.getPermissionStatus();
+        setPushPermission(permission);
+        setMessage({
+          type: 'error',
+          text: permission === 'denied'
+            ? 'Notifications are blocked. Allow them in your browser settings, then return here.'
+            : 'Registration failed. Please try again.',
+        });
       }
     } catch (error) {
       console.error('Failed to enable push:', error);
       setMessage({ type: 'error', text: 'Failed to enable push notifications' });
     } finally {
+      setPushPermission(notificationService.getPermissionStatus());
       setIsSaving(false);
     }
   };
@@ -127,9 +147,27 @@ export default function NotificationSettings() {
       setPreferences(updated);
     } catch (error) {
       console.error('Failed to update preference:', error);
-      setMessage({ type: 'error', text: 'Failed to save setting' });
+      const serverError = (error as { response?: { data?: { error?: string } } }).response?.data?.error;
+      setMessage({ type: 'error', text: serverError || 'Failed to save setting' });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleSendTest = async () => {
+    setIsSendingTest(true);
+    setMessage(null);
+    try {
+      const result = await notificationService.sendTestPush();
+      setMessage({
+        type: 'success',
+        text: `Test notification accepted by ${result.accepted_devices} of ${result.attempted_devices} registered ${result.attempted_devices === 1 ? 'device' : 'devices'}.`,
+      });
+    } catch (error) {
+      const serverMessage = (error as { response?: { data?: { message?: string } } }).response?.data?.message;
+      setMessage({ type: 'error', text: serverMessage || 'Could not send the test notification.' });
+    } finally {
+      setIsSendingTest(false);
     }
   };
 
@@ -146,7 +184,7 @@ export default function NotificationSettings() {
   return (
     <div className="space-y-6">
       {/* Push Notifications Section */}
-      <div className="bg-white rounded-xl border border-slate-200 p-6">
+      <div id="push-notifications" className="scroll-mt-24 bg-white rounded-xl border border-slate-200 p-6">
         <div className="flex items-center gap-3 mb-4">
           {pushGlobalEnabled ? (
             <BellRing className="w-5 h-5 text-primary-600" />
@@ -156,20 +194,26 @@ export default function NotificationSettings() {
           <h3 className="text-lg font-semibold text-slate-900">Push Notifications</h3>
         </div>
 
+        <div role="status" className={`rounded-lg p-3 mb-4 text-sm ${pushGlobalEnabled ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-900'}`}>
+          <p className="font-semibold">
+            {pushGlobalEnabled ? 'This device is registered for push notifications' : 'This device still needs push setup'}
+          </p>
+        </div>
+
         {!pushSupported ? (
           <p className="text-sm text-slate-500 mb-4">
-            Push notifications are not supported in your browser.
+            Push is unavailable here. On iPhone or iPad, add Rally to your Home Screen and open it from there.
           </p>
         ) : pushPermission === 'denied' ? (
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
             <p className="text-sm text-amber-800">
-              Push notifications are blocked. Please enable them in your browser settings to receive notifications.
+              Notifications are blocked. Allow them in your browser settings, then return to this page.
             </p>
           </div>
-        ) : pushPermission !== 'granted' || !deviceRegistered ? (
+        ) : pushPermission !== 'granted' || !deviceRegistered || !preferences?.push_enabled ? (
           <div className="mb-4">
             <p className="text-sm text-slate-600 mb-3">
-              Enable push notifications to receive instant updates about sessions and RSVPs.
+              Enable this device to receive RSVP deadlines, cancellations and waitlist openings even when Rally is closed.
             </p>
             <button
               onClick={handleEnablePush}
@@ -181,7 +225,7 @@ export default function NotificationSettings() {
               ) : (
                 <Bell className="w-4 h-4" />
               )}
-              Enable Push Notifications
+              Enable on this device
             </button>
           </div>
         ) : null}
@@ -190,18 +234,36 @@ export default function NotificationSettings() {
           <div className="flex items-center justify-between mb-4 pb-4 border-b border-slate-200">
             <div>
               <p className="text-sm font-medium text-slate-700">Account push alerts</p>
-              <p className="text-xs text-slate-500">Allow notifications on all your registered devices</p>
+              <p className="text-xs text-slate-500">Allow alerts on registered devices</p>
             </div>
             <ToggleSwitch
               label="Account push alerts"
               enabled={preferences.push_enabled}
-              onChange={(enabled) => updatePreference('push_enabled', enabled)}
+              onChange={(enabled) => enabled ? handleEnablePush() : updatePreference('push_enabled', false)}
               disabled={isSaving}
             />
           </div>
         )}
 
-        {pushPermission === 'granted' && preferences?.push_enabled && (
+        {isAdmin && pushGlobalEnabled && (
+          <div className="mb-4 rounded-xl border border-primary-200 bg-primary-50/60 p-4">
+            <p className="text-sm font-semibold text-slate-900">Test your registered devices</p>
+            <p className="mt-1 text-xs leading-5 text-slate-600">
+              Sends a one-off test only to devices registered to your account. Preview notifications stay disabled for everyone else.
+            </p>
+            <button
+              type="button"
+              onClick={handleSendTest}
+              disabled={isSendingTest}
+              className="btn-secondary mt-3 gap-2"
+            >
+              {isSendingTest ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              Send test notification
+            </button>
+          </div>
+        )}
+
+        {pushGlobalEnabled && preferences && (
           <div className="space-y-1">
             <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">
               Notification Types

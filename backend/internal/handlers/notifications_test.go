@@ -294,3 +294,13 @@ func TestSendBalanceNudge_RequiresApprovedAdminAndValidTarget(t *testing.T) {
 	h.as(admin).post("/api/admin/users/"+admin.ID.String()+"/balance-nudge", nil).
 		expect(http.StatusConflict)
 }
+
+func TestSendTestPushIsAdminOnlyAndFailsClosedWithoutFCM(t *testing.T) {
+	h := newHarness(t)
+	admin := makeAdmin(t)
+	player := makePlayer(t)
+
+	h.as(nil).post("/api/admin/notifications/test-push", nil).expect(http.StatusUnauthorized)
+	h.as(player).post("/api/admin/notifications/test-push", nil).expect(http.StatusForbidden)
+	h.as(admin).post("/api/admin/notifications/test-push", nil).expect(http.StatusServiceUnavailable)
+}

@@ -7,6 +7,7 @@ import (
 	"firebase.google.com/go/v4/messaging"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -217,6 +218,124 @@ func TestFCMUsesApplicationDefaultCredentials(t *testing.T) {
 	ns := NewNotificationService(NotificationConfig{FirebaseProjectID: "test-project"})
 	if !ns.IsEnabled() || ns.fcmClient == nil {
 		t.Fatal("project configuration did not enable FCM using ADC")
+	}
+}
+
+func TestDisabledDeliveryStillInitializesFCMForExplicitTests(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "adc.json")
+	if err := os.WriteFile(path, []byte(`{"type":"authorized_user","client_id":"test","client_secret":"test","refresh_token":"test"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", path)
+	ns := NewNotificationService(NotificationConfig{Disabled: true, FirebaseProjectID: "test-project"})
+	if ns.IsEnabled() {
+		t.Fatal("deployment-wide delivery became enabled")
+	}
+	if !ns.fcmEnabled || ns.fcmClient == nil {
+		t.Fatal("FCM was not initialized for an explicit self-test")
+	}
+}
+
+func TestSendTestPushTargetsOnlyTheCallerWhileNotificationsAreDisabled(t *testing.T) {
+	requireDB(t)
+	admin := newUser(t, "pushadmin")
+	other := newUser(t, "othermember")
+	var sentTokens []string
+	ns := &NotificationService{
+		disabled: true, fcmEnabled: true, frontendURL: "https://rally.test",
+		fcmClient: stubPushClient(func(_ context.Context, msg *messaging.MulticastMessage) (*messaging.BatchResponse, error) {
+			sentTokens = append(sentTokens, msg.Tokens...)
+			if msg.Data["type"] != "push_test" || msg.Webpush.FCMOptions.Link != "https://rally.test/dashboard" {
+				t.Fatalf("wrong test payload: %+v", msg)
+			}
+			return &messaging.BatchResponse{SuccessCount: len(msg.Tokens), Responses: []*messaging.SendResponse{{Success: true}}}, nil
+		}),
+	}
+	if err := ns.RegisterPushToken(admin.ID, "admin-token", "Admin browser"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ns.RegisterPushToken(other.ID, "other-token", "Other browser"); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := ns.SendTestPush(context.Background(), admin.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.AcceptedDevices != 1 || result.AttemptedDevices != 1 {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	if len(sentTokens) != 1 || sentTokens[0] != "admin-token" {
+		t.Fatalf("test escaped the caller's devices: %v", sentTokens)
+	}
+	var historyCount int64
+	if err := database.DB.Model(&models.Notification{}).Count(&historyCount).Error; err != nil || historyCount != 0 {
+		t.Fatalf("test push created history: count=%d err=%v", historyCount, err)
+	}
+}
+
+func TestSendTestPushHonoursAccountOptOutAndRequiresADevice(t *testing.T) {
+	requireDB(t)
+	admin := newUser(t, "pushadmin")
+	calls := 0
+	ns := &NotificationService{fcmEnabled: true, fcmClient: stubPushClient(func(_ context.Context, _ *messaging.MulticastMessage) (*messaging.BatchResponse, error) {
+		calls++
+		return &messaging.BatchResponse{}, nil
+	})}
+
+	if _, err := ns.SendTestPush(context.Background(), admin.ID); !errors.Is(err, ErrNoPushDevices) {
+		t.Fatalf("expected no-device error, got %v", err)
+	}
+	if _, err := ns.UpdateUserPreferences(admin.ID, map[string]interface{}{"push_enabled": false}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ns.SendTestPush(context.Background(), admin.ID); !errors.Is(err, ErrPushDisabledForUser) {
+		t.Fatalf("expected opt-out error, got %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("called FCM %d times despite setup errors", calls)
+	}
+}
+
+func TestDisabledDeliveryAllowlistTargetsOnlyTheConfiguredEmail(t *testing.T) {
+	requireDB(t)
+	admin := newUser(t, "previewadmin")
+	other := newUser(t, "previewmember")
+	var sentTokens []string
+	ns := &NotificationService{
+		disabled: true, disabledAllowEmail: strings.ToUpper(admin.Email), fcmEnabled: true, frontendURL: "*",
+		fcmClient: stubPushClient(func(_ context.Context, msg *messaging.MulticastMessage) (*messaging.BatchResponse, error) {
+			sentTokens = append(sentTokens, msg.Tokens...)
+			if msg.Webpush.FCMOptions != nil {
+				t.Fatalf("invalid preview frontend URL was sent to FCM: %+v", msg.Webpush.FCMOptions)
+			}
+			return &messaging.BatchResponse{SuccessCount: len(msg.Tokens), Responses: []*messaging.SendResponse{{Success: true}}}, nil
+		}),
+	}
+	if err := ns.RegisterPushToken(admin.ID, "admin-token", "Admin browser"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ns.RegisterPushToken(other.ID, "other-token", "Other browser"); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.DB.Model(&models.Club{}).Where("true").Update("notifications_paused", true).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	for _, user := range []models.User{admin, other} {
+		if err := ns.SendNotification(context.Background(), user.ID, models.NotificationAdminAnnouncement, "Preview", "Selective", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(sentTokens) != 1 || sentTokens[0] != "admin-token" {
+		t.Fatalf("disabled allowlist delivered to the wrong devices: %v", sentTokens)
+	}
+	var notices []models.Notification
+	if err := database.DB.Find(&notices).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(notices) != 1 || notices[0].UserID != admin.ID || !notices[0].PushSent {
+		t.Fatalf("wrong selective notification history: %+v", notices)
 	}
 }
 

@@ -307,7 +307,9 @@ Before deployment, verify that the Firebase project's `fcm.googleapis.com` API i
 enabled and the **runtime** service account has `cloudmessaging.messages.create`
 (for example through `roles.firebasecloudmessaging.admin`). The GitHub deployer
 identity is not the runtime identity. Keep both notification pause controls in
-place; preview deployments must retain `NOTIFICATIONS_DISABLED=true`.
+place; preview deployments must retain `NOTIFICATIONS_DISABLED=true`. Preview
+may set `NOTIFICATIONS_DISABLED_ALLOW_EMAIL` to the verified admin email so
+one account can test push delivery without contacting other members.
 
 Frontend builds embed only the public Firebase web configuration in
 `firebase-messaging-sw.js`. The worker initializes on every start, including when
