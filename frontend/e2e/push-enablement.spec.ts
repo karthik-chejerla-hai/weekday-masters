@@ -47,3 +47,37 @@ test('member explicitly enables push and can recover from a failed token save', 
   expect(saved.push_enabled).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
+
+test.describe('admin push test', () => {
+  test.use({ identity: 'admin' });
+
+  test('sends only after the admin device is registered', async ({ page }) => {
+    await page.route('**/src/services/firebase.ts', route => route.fulfill({
+      contentType: 'application/javascript',
+      body: `export const isFirebaseConfigured = () => true;
+        export const getNotificationPermission = () => 'granted';
+        export const requestNotificationPermission = async () => 'admin-device-token';
+        export const onForegroundMessage = () => () => {};`,
+    }));
+
+    await page.route('**/api/users/me/notifications', route => json(route, {
+      ...preferences,
+      push_enabled: true,
+    }));
+    await page.route('**/api/users/me/push-tokens', route => json(route, { message: 'Registered' }));
+
+    const tests: unknown[] = [];
+    await page.route('**/api/admin/notifications/test-push', async route => {
+      tests.push(route.request().postDataJSON());
+      await json(route, { accepted_devices: 1, attempted_devices: 1 });
+    });
+
+    await page.goto('/profile');
+    const button = page.getByRole('button', { name: 'Send test notification' });
+    await expect(button).toBeVisible();
+    await button.click();
+
+    await expect(page.getByText('Test notification accepted by 1 of 1 registered device.')).toBeVisible();
+    expect(tests).toHaveLength(1);
+  });
+});

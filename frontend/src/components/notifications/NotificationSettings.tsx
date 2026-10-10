@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Bell, Loader2, BellOff, BellRing, Smartphone } from 'lucide-react';
+import { Bell, Loader2, BellOff, BellRing, Send, Smartphone } from 'lucide-react';
 import { notificationService, NotificationPreferences } from '../../services/notifications';
 
 interface ToggleSwitchProps {
@@ -67,10 +67,15 @@ function NotificationRow({
   );
 }
 
-export default function NotificationSettings() {
+interface NotificationSettingsProps {
+  isAdmin?: boolean;
+}
+
+export default function NotificationSettings({ isAdmin = false }: NotificationSettingsProps) {
   const [preferences, setPreferences] = useState<NotificationPreferences | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSendingTest, setIsSendingTest] = useState(false);
   const [deviceRegistered, setDeviceRegistered] = useState(false);
   const [pushSupported] = useState(() => notificationService.isPushSupported());
   const [pushPermission, setPushPermission] = useState<NotificationPermission | 'unsupported'>(
@@ -149,6 +154,23 @@ export default function NotificationSettings() {
     }
   };
 
+  const handleSendTest = async () => {
+    setIsSendingTest(true);
+    setMessage(null);
+    try {
+      const result = await notificationService.sendTestPush();
+      setMessage({
+        type: 'success',
+        text: `Test notification accepted by ${result.accepted_devices} of ${result.attempted_devices} registered ${result.attempted_devices === 1 ? 'device' : 'devices'}.`,
+      });
+    } catch (error) {
+      const serverMessage = (error as { response?: { data?: { message?: string } } }).response?.data?.message;
+      setMessage({ type: 'error', text: serverMessage || 'Could not send the test notification.' });
+    } finally {
+      setIsSendingTest(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -220,6 +242,24 @@ export default function NotificationSettings() {
               onChange={(enabled) => enabled ? handleEnablePush() : updatePreference('push_enabled', false)}
               disabled={isSaving}
             />
+          </div>
+        )}
+
+        {isAdmin && pushGlobalEnabled && (
+          <div className="mb-4 rounded-xl border border-primary-200 bg-primary-50/60 p-4">
+            <p className="text-sm font-semibold text-slate-900">Test your registered devices</p>
+            <p className="mt-1 text-xs leading-5 text-slate-600">
+              Sends a one-off test only to devices registered to your account. Preview notifications stay disabled for everyone else.
+            </p>
+            <button
+              type="button"
+              onClick={handleSendTest}
+              disabled={isSendingTest}
+              className="btn-secondary mt-3 gap-2"
+            >
+              {isSendingTest ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              Send test notification
+            </button>
           </div>
         )}
 

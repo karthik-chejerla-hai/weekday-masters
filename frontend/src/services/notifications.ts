@@ -1,4 +1,4 @@
-import { api, NotificationPreferences, Notification } from './api';
+import { api, NotificationPreferences, Notification, PushTestResult } from './api';
 import {
   requestNotificationPermission,
   onForegroundMessage,
@@ -47,6 +47,10 @@ export const notificationService = {
     } catch (error) {
       console.error('Failed to disable push notifications:', error);
     }
+  },
+
+  async sendTestPush(): Promise<PushTestResult> {
+    return api.sendTestPush();
   },
 
   // Set up handler for foreground notifications

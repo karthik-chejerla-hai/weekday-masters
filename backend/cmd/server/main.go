@@ -32,6 +32,7 @@ func main() {
 	// when they have been promoted off a session waitlist.
 	notificationService := services.NewNotificationService(services.NotificationConfig{
 		Disabled:            cfg.NotificationsDisabled,
+		DisabledAllowEmail:  cfg.NotificationsDisabledAllowEmail,
 		FirebaseCredentials: cfg.FirebaseCredentials,
 		FirebaseProjectID:   cfg.FirebaseProjectID,
 		FrontendURL:         cfg.FrontendURL,

@@ -164,7 +164,7 @@ export default function Profile() {
           <Bell className="w-6 h-6 text-primary-600" />
           Notification Settings
         </h2>
-        <NotificationSettings />
+        <NotificationSettings isAdmin={isAdmin} />
       </div>
     </div>
   );

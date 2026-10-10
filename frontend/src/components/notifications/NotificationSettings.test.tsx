@@ -36,6 +36,7 @@ vi.mock('../../services/notifications', () => ({
       email_admin_announcements: true,
     }),
     enablePushNotifications: vi.fn().mockResolvedValue(true),
+    sendTestPush: vi.fn().mockResolvedValue({ accepted_devices: 1, attempted_devices: 1 }),
   },
 }));
 
@@ -54,6 +55,7 @@ beforeEach(() => {
     push_waitlist_updates: true, push_admin_announcements: true,
   } as never);
   vi.mocked(notificationService.enablePushNotifications).mockResolvedValue(true);
+  vi.mocked(notificationService.sendTestPush).mockResolvedValue({ accepted_devices: 1, attempted_devices: 1 });
 });
 
 describe('NotificationSettings Component', () => {
@@ -119,3 +121,17 @@ it('reports the device as ready only after token registration and the account pr
     expect(notificationService.enablePushNotifications).toHaveBeenCalledTimes(registrationCalls);
   }
 );
+
+it('lets an admin send a self-targeted push test after device setup', async () => {
+  const { notificationService } = await import('../../services/notifications');
+  render(<NotificationSettings isAdmin />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Send test notification' }));
+  await screen.findByText('Test notification accepted by 1 of 1 registered device.');
+  expect(notificationService.sendTestPush).toHaveBeenCalledOnce();
+});
+
+it('does not expose the push test to members', async () => {
+  render(<NotificationSettings />);
+  await screen.findByText('This device is registered for push notifications');
+  expect(screen.queryByRole('button', { name: 'Send test notification' })).not.toBeInTheDocument();
+});
