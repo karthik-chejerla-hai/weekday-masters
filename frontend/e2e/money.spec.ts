@@ -74,6 +74,7 @@ test.describe('Admin top-ups', () => {
     await expect(opener).toBeFocused();
     await expect(page.getByRole('status')).toContainText('Top-up recorded.');
     await expect(page.getByRole('main')).toContainText('$62.34');
+    await expect(page.getByRole('banner')).toContainText('$62.34');
     expect(writes).toEqual(Array(2).fill({ user_id: member.id, amount_cents: 1234, description: 'Test bank transfer' }));
     await page.reload();
     await expect(page.getByRole('main')).toContainText('$62.34');

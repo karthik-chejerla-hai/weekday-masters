@@ -115,7 +115,10 @@ export default function Money() {
             currentUserId={user?.id}
             canNudge={isAdmin}
           />
-          {isAdmin && <FormDisclosure label="Record top-up" successMessage="Top-up recorded." onRecorded={load}>
+          {isAdmin && <FormDisclosure label="Record top-up" successMessage="Top-up recorded." onRecorded={() => {
+            window.dispatchEvent(new Event('rally:balances-changed'));
+            void load();
+          }}>
             {(actions) => <TopupForm members={balances} {...actions} />}
           </FormDisclosure>}
         </div>
