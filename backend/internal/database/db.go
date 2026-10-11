@@ -44,6 +44,7 @@ func Migrate() error {
 		&models.Account{},
 		&models.Transaction{},
 		&models.LedgerEntry{},
+		&models.BalanceCorrection{},
 		&models.Settlement{},
 		&models.ChargeLine{},
 		&models.SplitwiseImport{},

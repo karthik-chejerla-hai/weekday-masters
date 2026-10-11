@@ -12,6 +12,7 @@ import (
 type TransactionKind string
 
 const (
+	TxnBalanceCorrection   TransactionKind = "balance_correction"
 	TxnPlayerTopup         TransactionKind = "player_topup"
 	TxnWithdrawal          TransactionKind = "withdrawal"
 	TxnCourtCreditPurchase TransactionKind = "court_credit_purchase"
