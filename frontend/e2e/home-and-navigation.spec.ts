@@ -1,4 +1,4 @@
-import { test, expect, club } from './support/fixtures';
+import { test, expect, club, json } from './support/fixtures';
 
 test.describe('Public entry', () => {
   test.use({ identity: 'visitor' });
@@ -33,4 +33,24 @@ test('member can navigate at the configured screen size', async ({ page, isMobil
   await navigation.getByRole('link', { name: 'Money', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Money', exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test('keeps one header balance and profile with spend navigation and balance refresh', async ({ page, isMobile }) => {
+  let cents = -1234;
+  await page.route('**/api/accounts/me', route => json(route, { balance_cents: cents, state: cents < 0 ? 'negative' : 'ok' }));
+  if (isMobile) await page.setViewportSize({ width: 320, height: 800 });
+  await page.goto('/money');
+  const header = page.getByRole('banner');
+  await expect(header.getByRole('link', { name: 'Your balance: -$12.34' })).toBeVisible();
+  await expect(header.getByTitle('You owe the club')).toBeVisible();
+  await expect(header.getByRole('link', { name: "Open Alex's profile" })).toBeVisible();
+  await expect(page.locator('aside a[href="/profile"]')).toHaveCount(0);
+  await expect(page.getByRole('main').getByText('Your balance', { exact: true })).toHaveCount(0);
+  cents = 2000;
+  await page.evaluate(() => window.dispatchEvent(new Event('rally:balances-changed')));
+  await expect(header.getByRole('link', { name: 'Your balance: $20.00' })).toBeVisible();
+  await header.getByRole('link', { name: /Open Analytics/ }).click();
+  await expect(page).toHaveURL('/money?tab=analytics');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  if (!isMobile) await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toBeVisible();
 });

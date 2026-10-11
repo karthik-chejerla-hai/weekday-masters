@@ -6,12 +6,11 @@ import { api } from '../services/api';
 import BalancesList from '../components/money/BalancesList';
 import LedgerBrowser from '../components/money/LedgerBrowser';
 import TopupForm from '../components/money/TopupForm';
-import BalanceChip from '../components/money/BalanceChip';
 import PositionPanel from '../components/money/PositionPanel';
 import AssetPurchaseForms from '../components/money/AssetPurchaseForms';
 import BalanceCorrectionForm from '../components/money/BalanceCorrectionForm';
 import SpendAnalytics from '../components/money/SpendAnalytics';
-import type { ClubPosition, MyBalance, PlayerBalance } from '../types';
+import type { ClubPosition, PlayerBalance } from '../types';
 
 type Tab = 'balances' | 'ledger' | 'club' | 'analytics';
 
@@ -33,7 +32,6 @@ export default function Money() {
   });
 
   const [balances, setBalances] = useState<PlayerBalance[]>([]);
-  const [myBalance, setMyBalance] = useState<MyBalance | null>(null);
   const [revision, setRevision] = useState(0);
   const [positionError, setPositionError] = useState(false);
   const [lowThreshold, setLowThreshold] = useState(2000);
@@ -44,12 +42,11 @@ export default function Money() {
   const load = useCallback(async () => {
     setError(null);
     setPositionError(false);
-    const [balanceList, mine, club, clubPosition] = await Promise.allSettled([
-      api.listBalances(), api.getMyBalance(), api.getClub(), api.getClubPosition(),
+    const [balanceList, club, clubPosition] = await Promise.allSettled([
+      api.listBalances(), api.getClub(), api.getClubPosition(),
     ]);
     if (balanceList.status === 'fulfilled') setBalances(balanceList.value);
-    if (mine.status === 'fulfilled') setMyBalance(mine.value);
-    if (balanceList.status === 'rejected' || mine.status === 'rejected') {
+    if (balanceList.status === 'rejected') {
       setError('Could not load balances. Please try again.');
     }
     if (club.status === 'fulfilled' && typeof club.value?.low_balance_threshold_cents === 'number') {
@@ -82,12 +79,7 @@ export default function Money() {
           <h1 className="page-title">Money</h1>
           <p className="page-description">Check member balances and understand every change to yours.</p>
         </div>
-        {myBalance && (
-          <div className="shrink-0 text-right">
-            <p className="mb-1 text-xs font-medium text-slate-500">Your balance</p>
-            <BalanceChip cents={myBalance.balance_cents} state={myBalance.state} />
-          </div>
-        )}
+
       </div>
 
       {error && (
