@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Clock, MapPin, Timer } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import type { Session, TimeFormat } from '../../types';
@@ -15,7 +15,6 @@ interface SessionCardProps {
 }
 
 export default function SessionCard({ session, venueName, courtNumber, timeFormat, featured = false }: SessionCardProps) {
-  const navigate = useNavigate();
 
   const sessionDate = parseISO(session.session_date);
   const isDeadlinePassed = new Date() > new Date(session.rsvp_deadline);
@@ -26,16 +25,12 @@ export default function SessionCard({ session, venueName, courtNumber, timeForma
   const confirmedCount = confirmedRsvps.length;
   const spotsLeft = session.max_players - confirmedCount;
 
-  const handleCardClick = () => {
-    navigate(`/sessions/${session.id}`);
-  };
-
   return (
     <article className={`overflow-hidden rounded-2xl border bg-white shadow-sm ${featured ? 'border-primary-200' : 'border-slate-200'}`}>
-      {/* Main Card Content - Clickable */}
-      <div
-        onClick={handleCardClick}
-        className="cursor-pointer p-4 transition-colors hover:bg-slate-50 sm:p-5"
+      <Link
+        to={`/sessions/${session.id}`}
+        aria-label={`${session.title}, ${format(sessionDate, 'EEEE, d MMMM yyyy')}`}
+        className="block p-4 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-700 sm:p-5"
       >
         <div className="flex gap-4">
           <div className={`flex w-14 shrink-0 flex-col items-center justify-center rounded-xl bg-primary-50 text-primary-800 sm:w-16 ${featured ? 'h-[76px]' : 'h-14'}`}>
@@ -91,7 +86,7 @@ export default function SessionCard({ session, venueName, courtNumber, timeForma
             <span>RSVP by {format(new Date(session.rsvp_deadline), 'EEE, d MMM')}</span>
           </div>
         )}
-      </div>
+      </Link>
     </article>
   );
 }

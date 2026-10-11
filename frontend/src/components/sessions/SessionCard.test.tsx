@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import SessionCard from './SessionCard';
 import type { Session } from '../../types';
 
@@ -50,6 +51,21 @@ describe('SessionCard Component', () => {
       },
     ],
   };
+
+  it('opens the session with Tab and Enter through one named link', async () => {
+    const user = userEvent.setup();
+    render(<MemoryRouter><Routes>
+      <Route path="/" element={<SessionCard session={baseSession} />} />
+      <Route path="/sessions/:id" element={<h1>Session destination</h1>} />
+    </Routes></MemoryRouter>);
+    const link = screen.getByRole('link', { name: 'Sunday Social Match, Sunday, 12 April 2026' });
+    expect(screen.getAllByRole('link')).toHaveLength(1);
+    expect(link).toHaveAttribute('href', '/sessions/session-123');
+    await user.tab();
+    expect(link).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(screen.getByRole('heading', { name: 'Session destination' })).toBeInTheDocument();
+  });
 
   it('renders session title, times, and venue', () => {
     render(
