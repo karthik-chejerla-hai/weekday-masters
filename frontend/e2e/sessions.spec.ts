@@ -90,6 +90,26 @@ test('compact cards show my response and a long confirmed roster without overflo
   await page.goto('/sessions');
   await expect(page.getByText('Your RSVP: Waitlisted (#1)')).toBeVisible();
   await expect(page.getByText('Full · 1 waiting')).toBeVisible();
-  await expect(page.getByRole('list', { name: 'Confirmed players' }).getByRole('listitem')).toHaveCount(6);
+  await expect(page.getByRole('list', { name: 'Player responses' }).getByRole('listitem')).toHaveCount(7);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test('cards retain IN, MAYBE, OUT and waitlisted names with coloured borders', async ({ page }) => {
+  const rsvps: RSVP[] = (['in', 'maybe', 'out', 'waitlisted'] as const).map((status, i) => ({
+    id: `r${i}`, session_id: session.id, user_id: `player-${i}`, status,
+    user: { ...member, id: `player-${i}`, nickname: ['Alex', 'Blair', 'Casey', 'Drew'][i] },
+    rsvp_timestamp: NOW, created_at: NOW, updated_at: NOW, is_late_rsvp: false, added_by_admin: false,
+  }));
+  await page.route(/\/api\/sessions(?:\?.*)?$/, route => json(route, [{ ...session, rsvps }]));
+  await page.goto('/dashboard');
+  const responses = page.getByRole('list', { name: 'Player responses' });
+  for (const [name, label, colour] of [
+    ['Alex', 'IN', 'rgb(22, 163, 74)'], ['Blair', 'MAYBE', 'rgb(234, 179, 8)'],
+    ['Casey', 'OUT', 'rgb(220, 38, 38)'], ['Drew', 'WAITLISTED', 'rgb(234, 179, 8)'],
+  ]) {
+    const chip = responses.getByRole('listitem').filter({ hasText: name });
+    await expect(chip.getByText(label, { exact: true })).toBeVisible();
+    await expect(chip).toHaveCSS('border-color', colour);
+  }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });

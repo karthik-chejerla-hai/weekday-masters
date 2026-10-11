@@ -70,7 +70,7 @@ export default function SessionCard({ session, venueName, courtNumber, timeForma
         </p>
 
         <div className="mt-3">
-          <PlayerRSVPChips rsvps={confirmedRsvps} />
+          <PlayerRSVPChips rsvps={session.rsvps ?? []} />
         </div>
         {!isDeadlinePassed && !isCancelled && (
           <p className="mt-3 flex items-start gap-1.5 text-xs text-amber-800">
@@ -78,7 +78,7 @@ export default function SessionCard({ session, venueName, courtNumber, timeForma
             <span>RSVP by {formatInTimeZone(session.rsvp_deadline, 'Australia/Sydney', 'EEE, d MMM')}</span>
           </p>
         )}
-        <p className="mt-2 text-xs text-slate-500">Open session for all responses and details</p>
+        <p className="mt-2 text-xs text-slate-500">Open session for details</p>
       </Link>
     </article>
   );

@@ -118,13 +118,15 @@ describe('SessionCard Component', () => {
     expect(screen.getByText(`Your RSVP: ${label}`)).toBeInTheDocument();
   });
 
-  it('keeps confirmed names and moves other players to session details', () => {
+  it('keeps every player response visible on the card', () => {
     const confirmed = baseSession.rsvps![0];
     const absent = { ...confirmed, id: 'r2', user_id: 'u2', status: 'out' as const,
       user: { ...confirmed.user!, id: 'u2', nickname: 'Absent player' } };
     render(<MemoryRouter><SessionCard session={{ ...baseSession, rsvps: [confirmed, absent] }} currentUserId="u3" /></MemoryRouter>);
-    expect(screen.getByRole('list', { name: 'Confirmed players' })).toHaveTextContent('Player');
-    expect(screen.queryByText('Absent player')).not.toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Player responses' })).toHaveTextContent('Player');
+    expect(screen.getByText('Absent player')).toBeInTheDocument();
+    expect(screen.getByText('OUT')).toBeInTheDocument();
+    expect(screen.getByText('IN')).toBeInTheDocument();
     expect(screen.getByText('Your RSVP: Not responded')).toBeInTheDocument();
   });
 
