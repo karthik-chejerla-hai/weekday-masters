@@ -15,7 +15,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
 ];
 
 export default function Sessions() {
-  const { isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [tab, setTab] = useState<Tab>('upcoming');
 
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -101,7 +101,7 @@ export default function Sessions() {
           ) : (
             <div className="space-y-3">
               {sessions.map((session) => (
-                <SessionCard key={session.id} session={session} venueName={club?.venue_name} courtNumber={club?.court_number} timeFormat={club?.time_format} />
+                <SessionCard currentUserId={user?.id} key={session.id} session={session} venueName={club?.venue_name} courtNumber={club?.court_number} timeFormat={club?.time_format} />
               ))}
             </div>
           )}
