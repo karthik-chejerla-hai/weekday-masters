@@ -136,7 +136,10 @@ export default function Money() {
           </div>}
           {position && <PositionPanel position={position} />}
           {isAdmin && position && !position.assets_pending && <AssetPurchaseForms onRecorded={load} />}
-          {isAdmin && position && !positionError && !position.assets_pending && <BalanceCorrectionForm position={position} revision={revision} onRecorded={load} />}
+          {isAdmin && position && !positionError && !position.assets_pending && <details className="rounded-xl border border-slate-200 bg-white">
+            <summary className="min-h-11 cursor-pointer rounded-xl px-4 py-3 text-sm font-semibold text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-700">Balance corrections and history</summary>
+            <BalanceCorrectionForm position={position} revision={revision} onRecorded={load} />
+          </details>}
         </div>
       )}
     </div>

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api } from '../../services/api';
 import { parseDollarsToCents } from './format';
+import FormDisclosure from './FormDisclosure';
 
 interface AssetPurchaseFormsProps {
   onRecorded: () => void;
@@ -16,13 +17,17 @@ interface AssetPurchaseFormsProps {
 export default function AssetPurchaseForms({ onRecorded }: AssetPurchaseFormsProps) {
   return (
     <div className="space-y-4">
-      <CourtCreditForm onRecorded={onRecorded} />
-      <ShuttlePurchaseForm onRecorded={onRecorded} />
+      <FormDisclosure label="Top up court credit" successMessage="Court credit top-up recorded." onRecorded={onRecorded}>
+        {(actions) => <CourtCreditForm {...actions} />}
+      </FormDisclosure>
+      <FormDisclosure label="Record shuttle purchase" successMessage="Shuttle purchase recorded." onRecorded={onRecorded}>
+        {(actions) => <ShuttlePurchaseForm {...actions} />}
+      </FormDisclosure>
     </div>
   );
 }
 
-function CourtCreditForm({ onRecorded }: { onRecorded: () => void }) {
+function CourtCreditForm({ onRecorded, onSavingChange }: { onRecorded: () => void; onSavingChange: (saving: boolean) => void }) {
   // The venue sells credit in fixed blocks, so this is almost always $100.
   const [amount, setAmount] = useState('100.00');
   const [isSaving, setIsSaving] = useState(false);
@@ -34,6 +39,7 @@ function CourtCreditForm({ onRecorded }: { onRecorded: () => void }) {
     if (!Number.isFinite(cents) || cents <= 0) return;
 
     setIsSaving(true);
+    onSavingChange(true);
     setError(null);
     try {
       await api.recordCourtCredit(cents, 'Venue account top-up');
@@ -42,6 +48,7 @@ function CourtCreditForm({ onRecorded }: { onRecorded: () => void }) {
       setError('Could not record that top-up.');
     } finally {
       setIsSaving(false);
+      onSavingChange(false);
     }
   };
 
@@ -60,7 +67,7 @@ function CourtCreditForm({ onRecorded }: { onRecorded: () => void }) {
           onChange={(e) => setAmount(e.target.value)}
         />
       </div>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
       <button type="submit" className="btn-primary w-full" disabled={isSaving}>
         {isSaving ? 'Recording…' : 'Record top-up'}
       </button>
@@ -68,7 +75,7 @@ function CourtCreditForm({ onRecorded }: { onRecorded: () => void }) {
   );
 }
 
-function ShuttlePurchaseForm({ onRecorded }: { onRecorded: () => void }) {
+function ShuttlePurchaseForm({ onRecorded, onSavingChange }: { onRecorded: () => void; onSavingChange: (saving: boolean) => void }) {
   const [units, setUnits] = useState('12');
   const [amount, setAmount] = useState('50.00');
   const [isSaving, setIsSaving] = useState(false);
@@ -81,6 +88,7 @@ function ShuttlePurchaseForm({ onRecorded }: { onRecorded: () => void }) {
     if (!Number.isFinite(cents) || cents <= 0 || !Number.isInteger(count) || count <= 0) return;
 
     setIsSaving(true);
+    onSavingChange(true);
     setError(null);
     try {
       await api.recordShuttlePurchase(count, cents, 'Shuttle purchase');
@@ -89,6 +97,7 @@ function ShuttlePurchaseForm({ onRecorded }: { onRecorded: () => void }) {
       setError('Could not record that purchase.');
     } finally {
       setIsSaving(false);
+      onSavingChange(false);
     }
   };
 
@@ -124,7 +133,7 @@ function ShuttlePurchaseForm({ onRecorded }: { onRecorded: () => void }) {
           />
         </div>
       </div>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
       <button type="submit" className="btn-primary w-full" disabled={isSaving}>
         {isSaving ? 'Recording…' : 'Record purchase'}
       </button>
