@@ -114,3 +114,20 @@ test('cards retain main RSVP pills with avatars and coloured borders', async ({ 
   }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
+
+test('upcoming attendance is labelled and results remain a secondary keyboard link', async ({ page }) => {
+  await page.goto('/sessions/session-1');
+  await expect(page.getByText('Current response: Not responded')).toBeVisible();
+  for (const name of ["I'm In", 'Maybe', "Can't Make It"]) {
+    const button = page.getByRole('button', { name, exact: true });
+    await expect(button.getByText(name, { exact: true })).toBeVisible();
+    await expect(button).toHaveAttribute('aria-pressed', 'false');
+  }
+  const results = page.getByRole('link', { name: 'Game scores and results' });
+  await expect(results).not.toHaveClass(/btn-primary/);
+  for (let i = 0; i < 30 && !(await results.evaluate(el => el === document.activeElement)); i++) await page.keyboard.press('Tab');
+  await expect(results).toBeFocused();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL('/sessions/session-1/games');
+});
