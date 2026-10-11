@@ -61,3 +61,20 @@ test('missing session offers a working return to the schedule', async ({ page })
   await expect(page).toHaveURL('/sessions');
   await expect(page.getByRole('heading', { name: 'Sessions', exact: true })).toBeVisible();
 });
+
+for (const path of ['/dashboard', '/sessions']) {
+  test(`session card supports keyboard navigation from ${path}`, async ({ page }) => {
+    await page.goto(path);
+    const link = page.getByRole('link', { name: 'Friday badminton, Friday, 16 October 2026', exact: true });
+    await expect(link).toBeVisible();
+    // Tab through the actual page to prove the card participates in tab order.
+    for (let i = 0; i < 30 && !(await link.evaluate(el => el === document.activeElement)); i++) {
+      await page.keyboard.press('Tab');
+    }
+    await expect(link).toBeFocused();
+    expect(await link.evaluate(el => getComputedStyle(el).boxShadow)).not.toBe('none');
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL('/sessions/session-1');
+    await expect(page.getByRole('heading', { name: 'Your RSVP' })).toBeVisible();
+  });
+}
