@@ -94,7 +94,7 @@ test('compact cards show my response and a long confirmed roster without overflo
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
-test('cards retain IN, MAYBE, OUT and waitlisted names with coloured borders', async ({ page }) => {
+test('cards retain main RSVP pills with avatars and coloured borders', async ({ page }) => {
   const rsvps: RSVP[] = (['in', 'maybe', 'out', 'waitlisted'] as const).map((status, i) => ({
     id: `r${i}`, session_id: session.id, user_id: `player-${i}`, status,
     user: { ...member, id: `player-${i}`, nickname: ['Alex', 'Blair', 'Casey', 'Drew'][i] },
@@ -104,11 +104,12 @@ test('cards retain IN, MAYBE, OUT and waitlisted names with coloured borders', a
   await page.goto('/dashboard');
   const responses = page.getByRole('list', { name: 'Player responses' });
   for (const [name, label, colour] of [
-    ['Alex', 'IN', 'rgb(22, 163, 74)'], ['Blair', 'MAYBE', 'rgb(234, 179, 8)'],
-    ['Casey', 'OUT', 'rgb(220, 38, 38)'], ['Drew', 'WAITLISTED', 'rgb(234, 179, 8)'],
+    ['Alex', 'Confirmed', 'rgb(134, 239, 172)'], ['Blair', 'Tentative', 'rgb(252, 211, 77)'],
+    ['Casey', 'Not attending', 'rgb(252, 165, 165)'], ['Drew', 'Waitlisted', 'rgb(252, 211, 77)'],
   ]) {
-    const chip = responses.getByRole('listitem').filter({ hasText: name });
-    await expect(chip.getByText(label, { exact: true })).toBeVisible();
+    const chip = responses.getByRole('listitem', { name: `${name}, ${label}`, exact: true });
+    await expect(chip.getByText(name, { exact: true })).toBeVisible();
+    await expect(chip.locator('[aria-hidden="true"]').first()).toBeVisible();
     await expect(chip).toHaveCSS('border-color', colour);
   }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

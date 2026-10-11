@@ -125,8 +125,8 @@ describe('SessionCard Component', () => {
     render(<MemoryRouter><SessionCard session={{ ...baseSession, rsvps: [confirmed, absent] }} currentUserId="u3" /></MemoryRouter>);
     expect(screen.getByRole('list', { name: 'Player responses' })).toHaveTextContent('Player');
     expect(screen.getByText('Absent player')).toBeInTheDocument();
-    expect(screen.getByText('OUT')).toBeInTheDocument();
-    expect(screen.getByText('IN')).toBeInTheDocument();
+    expect(screen.getByRole('listitem', { name: 'Absent player, Not attending' })).toBeInTheDocument();
+    expect(screen.getByRole('listitem', { name: 'Player, Confirmed' })).toBeInTheDocument();
     expect(screen.getByText('Your RSVP: Not responded')).toBeInTheDocument();
   });
 
