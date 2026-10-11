@@ -104,6 +104,42 @@ describe('SessionCard Component', () => {
     expect(screen.queryByText('2 courts')).not.toBeInTheDocument();
   });
 
+  it('shows one date for a generated title and retains custom titles', () => {
+    render(<MemoryRouter><SessionCard session={{ ...baseSession, title: 'Sunday - 12 Apr 2026' }} /></MemoryRouter>);
+    expect(screen.getAllByText('Sunday, 12 April 2026')).toHaveLength(1);
+    expect(screen.queryByText('Sunday - 12 Apr 2026')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['in', 'Confirmed'], ['maybe', 'Tentative'], ['out', 'Not attending'], ['waitlisted', 'Waitlisted (#2)'],
+  ] as const)('shows the caller response for %s without colour or hover', (status, label) => {
+    const rsvp = { ...baseSession.rsvps![0], status, waitlist_position: 2 };
+    render(<MemoryRouter><SessionCard session={{ ...baseSession, rsvps: [rsvp] }} currentUserId="u1" /></MemoryRouter>);
+    expect(screen.getByText(`Your RSVP: ${label}`)).toBeInTheDocument();
+  });
+
+  it('keeps every player response visible on the card', () => {
+    const confirmed = baseSession.rsvps![0];
+    const absent = { ...confirmed, id: 'r2', user_id: 'u2', status: 'out' as const,
+      user: { ...confirmed.user!, id: 'u2', nickname: 'Absent player' } };
+    render(<MemoryRouter><SessionCard session={{ ...baseSession, rsvps: [confirmed, absent] }} currentUserId="u3" /></MemoryRouter>);
+    expect(screen.getByRole('list', { name: 'Player responses' })).toHaveTextContent('Player');
+    expect(screen.getByText('Absent player')).toBeInTheDocument();
+    expect(screen.getByRole('listitem', { name: 'Absent player, Not attending' })).toBeInTheDocument();
+    expect(screen.getByRole('listitem', { name: 'Player, Confirmed' })).toBeInTheDocument();
+    expect(screen.getByText('Your RSVP: Not responded')).toBeInTheDocument();
+  });
+
+  it('retains both full/waiting and closed states', () => {
+    const confirmed = baseSession.rsvps![0];
+    render(<MemoryRouter><SessionCard session={{ ...baseSession, max_players: 1,
+      rsvp_deadline: '2000-01-01T00:00:00Z',
+      rsvps: [confirmed, { ...confirmed, id: 'r2', user_id: 'u2', status: 'waitlisted' }],
+    }} /></MemoryRouter>);
+    expect(screen.getByText('Full · 1 waiting')).toBeInTheDocument();
+    expect(screen.getByText('RSVP Closed')).toBeInTheDocument();
+  });
+
   describe('RSVP deadline', () => {
     afterEach(() => {
       vi.useRealTimers();

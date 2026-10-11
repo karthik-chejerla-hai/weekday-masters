@@ -90,7 +90,7 @@ export default function Dashboard() {
               Details <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
-          <SessionCard session={nextSession} venueName={club?.venue_name} courtNumber={club?.court_number} timeFormat={club?.time_format} featured />
+          <SessionCard currentUserId={user?.id} session={nextSession} venueName={club?.venue_name} courtNumber={club?.court_number} timeFormat={club?.time_format} featured />
         </section>
       )}
 
@@ -135,7 +135,7 @@ export default function Dashboard() {
             </Link>
           </div>
           <div className="space-y-3">
-            {futureSessions.map((session) => <SessionCard key={session.id} session={session} venueName={club?.venue_name} courtNumber={club?.court_number} timeFormat={club?.time_format} />)}
+            {futureSessions.map((session) => <SessionCard currentUserId={user?.id} key={session.id} session={session} venueName={club?.venue_name} courtNumber={club?.court_number} timeFormat={club?.time_format} />)}
           </div>
         </section>
       )}
