@@ -176,3 +176,24 @@ describe('SessionDetail page', () => {
     expect(screen.getByText(/join the waitlist/i)).toBeInTheDocument();
   });
 });
+
+it.each([
+  ['upcoming', future(1), 'open', false],
+  ['started', past(1), 'open', true],
+  ['cancelled', past(1), 'cancelled', false],
+] as const)('uses the correct results emphasis for a %s session', async (_, starts_at, status, primary) => {
+  loads(makeSession({ starts_at, status }));
+  renderPage();
+  const link = await screen.findByRole('link', { name: 'Game scores and results' });
+  expect(link).toHaveAttribute('href', '/sessions/session-1/games');
+  expect(link.classList.contains('btn-primary')).toBe(primary);
+});
+
+it.each(['in', 'maybe', 'out', 'waitlisted'] as const)('identifies the current %s response through text and pressed state', async status => {
+  loads(makeSession({ rsvps: [makeRSVP({ status })] }));
+  renderPage();
+  expect(await screen.findByText(/^Current response:/)).toHaveTextContent({
+    in: 'Confirmed', maybe: 'Tentative', out: 'Not attending', waitlisted: 'Waitlisted',
+  }[status]);
+  expect(screen.getByRole('button', { pressed: true })).toBeInTheDocument();
+});

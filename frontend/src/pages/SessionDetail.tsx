@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Calendar, Clock, Users, MapPin, AlertCircle, Loader2 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
-import { formatInTimeZone } from 'date-fns-tz';
+import { formatInTimeZone, fromZonedTime } from 'date-fns-tz';
 import { useAuth } from '../context/useAuth';
 import { api } from '../services/api';
 import type { Club, Session, RSVPSummary, SelectableRSVPStatus, RSVP } from '../types';
@@ -71,6 +71,12 @@ export default function SessionDetail() {
   const sessionDate = parseISO(session.session_date);
   const isDeadlinePassed = new Date() > new Date(session.rsvp_deadline);
   const isCancelled = session.status === 'cancelled';
+  const startsAt = session.starts_at ? Date.parse(session.starts_at)
+    : fromZonedTime(`${session.session_date.slice(0, 10)}T${session.start_time}:00`, 'Australia/Sydney').getTime();
+  const emphasizeResults = !isCancelled && startsAt <= Date.now();
+  const responseLabel = myRsvp ? {
+    in: 'Confirmed', maybe: 'Tentative', out: 'Not attending', waitlisted: 'Waitlisted',
+  }[myRsvp.status] : 'Not responded';
   const canChangeRsvp = !isDeadlinePassed && !isCancelled;
   const canOnlyChangeToIn = isDeadlinePassed && myRsvp?.status === 'in';
   const isWaitlisted = myRsvp?.status === 'waitlisted';
@@ -182,7 +188,8 @@ export default function SessionDetail() {
 
       {!isCancelled && (
         <div className="bg-white rounded-xl border border-slate-200 p-6">
-          <h2 className="font-semibold text-slate-900 mb-4">Your RSVP</h2>
+          <h2 className="font-semibold text-slate-900">Your RSVP</h2>
+          <p className="mt-1 mb-4 text-sm font-medium text-slate-700">Current response: {responseLabel}</p>
 
           {canOnlyChangeToIn ? (
             <div className="p-4 bg-amber-50 rounded-lg text-amber-800 text-sm">
@@ -215,7 +222,12 @@ export default function SessionDetail() {
         </div>
       )}
 
-      <Link to={`/sessions/${id}/games`} className="btn-primary w-full">Game scores and results</Link>
+      <Link
+        to={`/sessions/${id}/games`}
+        className={emphasizeResults
+          ? 'btn-primary w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-700 focus-visible:ring-offset-2'
+          : 'inline-flex min-h-11 items-center rounded-lg px-2 text-sm font-semibold text-primary-800 underline underline-offset-4 hover:text-primary-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-700 focus-visible:ring-offset-2'}
+      >Game scores and results</Link>
 
       <div className="bg-white rounded-xl border border-slate-200 p-6">
         <PlayerList
