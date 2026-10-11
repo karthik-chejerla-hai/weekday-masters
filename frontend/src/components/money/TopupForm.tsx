@@ -6,6 +6,7 @@ import type { PlayerBalance } from '../../types';
 interface TopupFormProps {
   members: PlayerBalance[];
   onRecorded: () => void;
+  onSavingChange?: (saving: boolean) => void;
 }
 
 /**
@@ -15,7 +16,7 @@ interface TopupFormProps {
  * that it arrived. Amounts are entered in dollars and converted to cents once,
  * here, before anything else touches them.
  */
-export default function TopupForm({ members, onRecorded }: TopupFormProps) {
+export default function TopupForm({ members, onRecorded, onSavingChange }: TopupFormProps) {
   const [userId, setUserId] = useState('');
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
@@ -30,6 +31,7 @@ export default function TopupForm({ members, onRecorded }: TopupFormProps) {
     if (!canSubmit) return;
 
     setIsSaving(true);
+    onSavingChange?.(true);
     setError(null);
     try {
       await api.recordTopup(userId, amountCents, description || 'Bank transfer');
@@ -41,6 +43,7 @@ export default function TopupForm({ members, onRecorded }: TopupFormProps) {
       setError('Could not record that top-up. Check the amount and try again.');
     } finally {
       setIsSaving(false);
+      onSavingChange?.(false);
     }
   };
 
