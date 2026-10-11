@@ -9,6 +9,7 @@ import TopupForm from '../components/money/TopupForm';
 import BalanceChip from '../components/money/BalanceChip';
 import PositionPanel from '../components/money/PositionPanel';
 import AssetPurchaseForms from '../components/money/AssetPurchaseForms';
+import BalanceCorrectionForm from '../components/money/BalanceCorrectionForm';
 import SpendAnalytics from '../components/money/SpendAnalytics';
 import type { ClubPosition, MyBalance, PlayerBalance } from '../types';
 
@@ -137,6 +138,7 @@ export default function Money() {
           </div>}
           {position && <PositionPanel position={position} />}
           {isAdmin && position && !position.assets_pending && <AssetPurchaseForms onRecorded={load} />}
+          {isAdmin && position && !positionError && !position.assets_pending && <BalanceCorrectionForm position={position} revision={revision} onRecorded={load} />}
         </div>
       )}
     </div>

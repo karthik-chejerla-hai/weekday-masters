@@ -41,6 +41,8 @@ func (h *LedgerHandler) RegisterRoutes(protected *gin.RouterGroup) {
 	admin.POST("/transactions/topup", h.RecordTopup)
 	admin.POST("/transactions/withdrawal", h.RecordWithdrawal)
 	admin.POST("/transactions/court-credit", h.RecordCourtCredit)
+	admin.POST("/balance-corrections", middleware.RequireApproved(), h.CorrectAssetBalance)
+	admin.GET("/balance-corrections", middleware.RequireApproved(), h.ListBalanceCorrections)
 	admin.POST("/transactions/shuttle-purchase", h.RecordShuttlePurchase)
 	admin.POST("/transactions/opening-balances", h.RecordOpeningBalances)
 	admin.POST("/transactions/:id/reverse", h.ReverseTransaction)

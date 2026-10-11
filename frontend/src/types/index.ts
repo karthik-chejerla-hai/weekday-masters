@@ -193,6 +193,7 @@ export type AccountKind = 'player' | 'bank' | 'court_credit' | 'shuttle_stock' |
 export type BalanceState = 'ok' | 'low' | 'negative';
 
 export type TransactionKind =
+  | 'balance_correction'
   | 'player_topup'
   | 'withdrawal'
   | 'court_credit_purchase'
@@ -202,6 +203,19 @@ export type TransactionKind =
 	| 'splitwise_import'
 	| 'import_assets'
   | 'reversal';
+
+export interface BalanceCorrection {
+  request_id: string;
+  transaction_id: string;
+  account_kind: 'bank' | 'court_credit';
+  before_cents: number;
+  after_cents: number;
+  adjustment_cents: number;
+  reason: string;
+  created_by: string;
+  actor_name: string;
+  created_at: string;
+}
 
 export interface Account {
   id: string;

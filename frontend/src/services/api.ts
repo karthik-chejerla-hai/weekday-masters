@@ -26,6 +26,7 @@ import type {
   LedgerEntryView,
   LedgerActivityView,
   Transaction,
+  BalanceCorrection,
   SettlementInput,
   SettlementPreview,
   SettlementView,
@@ -369,6 +370,19 @@ class ApiService {
       occurred_at: occurredAt,
     });
     return response.data;
+  }
+
+  async correctAssetBalance(input: {
+    request_id: string; account_kind: 'bank' | 'court_credit';
+    expected_cents: number; target_cents: number; reason: string;
+  }): Promise<BalanceCorrection> {
+    const response = await this.client.post<BalanceCorrection>('/admin/balance-corrections', input);
+    return response.data;
+  }
+
+  async listBalanceCorrections(limit = 20, offset = 0): Promise<{ items: BalanceCorrection[]; total: number }> {
+    const response = await this.client.get<{ items: BalanceCorrection[]; total: number }>('/admin/balance-corrections', { params: { limit, offset } });
+    return { items: response.data.items ?? [], total: response.data.total ?? 0 };
   }
 
   async recordShuttlePurchase(units: number, amountCents: number, description?: string, occurredAt?: string): Promise<Transaction> {

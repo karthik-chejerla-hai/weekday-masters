@@ -18,6 +18,8 @@ vi.mock('../services/api', () => ({
     getClubPosition: vi.fn(),
     recordTopup: vi.fn(),
     nudgeBalance: vi.fn(),
+    listBalanceCorrections: vi.fn(),
+    correctAssetBalance: vi.fn(),
   },
 }));
 
@@ -66,6 +68,7 @@ function renderPage(path = '/money') {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(api.listBalanceCorrections).mockResolvedValue({ items: [], total: 0 });
   vi.mocked(api.listBalances).mockResolvedValue(balances);
   vi.mocked(api.getMyBalance).mockResolvedValue({ balance_cents: 4250, state: 'ok' });
   vi.mocked(api.getMySpend).mockResolvedValue({

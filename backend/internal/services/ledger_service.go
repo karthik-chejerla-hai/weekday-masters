@@ -562,6 +562,9 @@ func (s *LedgerService) ReverseTransaction(transactionID uuid.UUID, description 
 	if original.Kind == models.TxnSplitwiseImport || original.Kind == models.TxnImportAssets {
 		return nil, errors.New("imported history requires a reviewed correction, not an individual reversal")
 	}
+	if original.Kind == models.TxnBalanceCorrection {
+		return nil, errors.New("correct the current asset balance with a new audited correction instead of reversing this snapshot")
+	}
 
 	var alreadyReversed int64
 	if err := database.DB.Model(&models.Transaction{}).

@@ -1167,6 +1167,60 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /admin/balance-corrections:
+    post:
+      tags: [Ledger]
+      summary: Correct a verified bank or court-credit balance (approved admins only)
+      description: >
+        Append an asset adjustment and an equal surplus adjustment, leaving other
+        assets and member balances unchanged. A required reason, actor snapshot,
+        timestamp and before/after balances are retained atomically in audit history.
+        Expected balance is checked under account locks. Request IDs make identical
+        retries safe; a reused ID with different input returns 409. No existing ledger
+        entry is edited. To undo a correction, create a new correction.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [request_id, account_kind, expected_cents, target_cents, reason]
+              properties:
+                request_id: { type: string, format: uuid }
+                account_kind: { type: string, enum: [bank, court_credit] }
+                expected_cents: { type: integer, format: int64, minimum: -4503599627370495, maximum: 4503599627370495 }
+                target_cents: { type: integer, format: int64, minimum: 0, maximum: 4503599627370495 }
+                reason: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        "200":
+          description: Correction audit record (also returned on identical retry)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BalanceCorrection" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: Balance changed, request ID conflicts, or imported assets are pending
+    get:
+      tags: [Ledger]
+      summary: Read correction audit history (approved admins only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: query, name: limit, schema: { type: integer, default: 50, minimum: 1, maximum: 200 } }
+        - { in: query, name: offset, schema: { type: integer, default: 0, minimum: 0 } }
+      responses:
+        "200":
+          description: Newest corrections first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/BalanceCorrection" } }
+                  total: { type: integer }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /admin/transactions/court-credit:
     post:
       tags: [Ledger]
@@ -2911,6 +2965,7 @@ components:
             - session_settlement
             - splitwise_import
             - import_assets
+            - balance_correction
             - opening_balance
             - reversal
         session_id: { type: string, format: uuid }
@@ -2997,6 +3052,21 @@ components:
         amount_cents: { type: integer, format: int64, minimum: 1 }
         occurred_at: { type: string, format: date-time }
         description: { type: string }
+
+    BalanceCorrection:
+      type: object
+      properties:
+        request_id: { type: string, format: uuid }
+        transaction_id: { type: string, format: uuid }
+        account_id: { type: string, format: uuid }
+        account_kind: { type: string, enum: [bank, court_credit] }
+        before_cents: { type: integer, format: int64 }
+        after_cents: { type: integer, format: int64 }
+        adjustment_cents: { type: integer, format: int64 }
+        reason: { type: string }
+        created_by: { type: string, format: uuid }
+        actor_name: { type: string }
+        created_at: { type: string, format: date-time }
 
     AssetPurchaseRequest:
       type: object
