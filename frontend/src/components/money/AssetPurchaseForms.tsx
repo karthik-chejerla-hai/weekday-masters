@@ -1,30 +1,56 @@
-import { useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { api } from '../../services/api';
 import { parseDollarsToCents } from './format';
-import FormDisclosure from './FormDisclosure';
+import PositionPanel from './PositionPanel';
+import BalanceCorrectionForm from './BalanceCorrectionForm';
+import type { ClubPosition } from '../../types';
 
-interface AssetPurchaseFormsProps {
-  onRecorded: () => void;
-}
+const actions = ['Top up court credit', 'Record shuttle purchase', 'Audit bank balance'];
 
-/**
- * Recording what the club bought.
- *
- * Neither of these moves a player balance — they convert cash into something the
- * club will consume later. Keeping them next to the position is deliberate: the
- * moment you notice credit is short is the moment you want to top it up.
- */
-export default function AssetPurchaseForms({ onRecorded }: AssetPurchaseFormsProps) {
-  return (
-    <div className="space-y-4">
-      <FormDisclosure label="Top up court credit" successMessage="Court credit top-up recorded." onRecorded={onRecorded}>
-        {(actions) => <CourtCreditForm {...actions} />}
-      </FormDisclosure>
-      <FormDisclosure label="Record shuttle purchase" successMessage="Shuttle purchase recorded." onRecorded={onRecorded}>
-        {(actions) => <ShuttlePurchaseForm {...actions} />}
-      </FormDisclosure>
+/** Each card opens one form in the shared area below the asset row. */
+export default function AssetPurchaseForms({ position, revision, onRecorded }: {
+  position: ClubPosition; revision: number; onRecorded: () => void;
+}) {
+  const [active, setActive] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState('');
+  const panelId = useId();
+  const panel = useRef<HTMLDivElement>(null);
+  const openers = useRef<Array<HTMLButtonElement | null>>([]);
+  const returnTo = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (active !== null) panel.current?.querySelector<HTMLElement>('select, input, textarea')?.focus();
+    else if (returnTo.current !== null) {
+      openers.current[returnTo.current]?.focus();
+      returnTo.current = null;
+    }
+  }, [active]);
+
+  const close = () => { returnTo.current = active; setActive(null); };
+  const recorded = () => {
+    setSuccess(active === 0 ? 'Court credit top-up recorded.' : active === 1 ? 'Shuttle purchase recorded.' : 'Balance correction recorded.');
+    setSaving(false);
+    close();
+    onRecorded();
+  };
+
+  return <PositionPanel position={position} actions={actions.map((label, index) => (
+    <button key={label} ref={element => { openers.current[index] = element; }} type="button"
+      className="btn-outline w-full" aria-expanded={active === index} aria-controls={panelId} disabled={saving}
+      onClick={() => { setSuccess(''); if (active === index) close(); else setActive(index); }}>
+      {label}
+    </button>
+  ))}>
+    {success && <p role="status" className="text-sm text-green-800">{success}</p>}
+    <div id={panelId} ref={panel} role="region" aria-label={active === null ? 'Asset form' : actions[active]} hidden={active === null} className="space-y-3">
+      {active === 0 && <CourtCreditForm onRecorded={recorded} onSavingChange={setSaving} />}
+      {active === 1 && <ShuttlePurchaseForm onRecorded={recorded} onSavingChange={setSaving} />}
+      {active === 2 && <BalanceCorrectionForm position={position} revision={revision} initialAsset="bank"
+        onRecorded={onRecorded} onSaved={recorded} onSavingChange={setSaving} />}
+      {active !== null && <button type="button" className="btn-secondary" disabled={saving} onClick={close}>Cancel</button>}
     </div>
-  );
+  </PositionPanel>;
 }
 
 function CourtCreditForm({ onRecorded, onSavingChange }: { onRecorded: () => void; onSavingChange: (saving: boolean) => void }) {

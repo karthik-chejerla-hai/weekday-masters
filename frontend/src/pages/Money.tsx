@@ -9,7 +9,6 @@ import TopupForm from '../components/money/TopupForm';
 import FormDisclosure from '../components/money/FormDisclosure';
 import PositionPanel from '../components/money/PositionPanel';
 import AssetPurchaseForms from '../components/money/AssetPurchaseForms';
-import BalanceCorrectionForm from '../components/money/BalanceCorrectionForm';
 import SpendAnalytics from '../components/money/SpendAnalytics';
 import type { ClubPosition, PlayerBalance } from '../types';
 
@@ -134,12 +133,9 @@ export default function Money() {
             Could not load club assets.
             <button className="ml-2 font-semibold underline" onClick={() => void load()}>Try again</button>
           </div>}
-          {position && <PositionPanel position={position} />}
-          {isAdmin && position && !position.assets_pending && <AssetPurchaseForms onRecorded={load} />}
-          {isAdmin && position && !positionError && !position.assets_pending && <details className="rounded-xl border border-slate-200 bg-white">
-            <summary className="min-h-11 cursor-pointer rounded-xl px-4 py-3 text-sm font-semibold text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-700">Balance corrections and history</summary>
-            <BalanceCorrectionForm position={position} revision={revision} onRecorded={load} />
-          </details>}
+          {position && (isAdmin && !positionError && !position.assets_pending
+            ? <AssetPurchaseForms position={position} revision={revision} onRecorded={load} />
+            : <PositionPanel position={position} />)}
         </div>
       )}
     </div>

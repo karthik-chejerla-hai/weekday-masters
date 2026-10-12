@@ -8,10 +8,11 @@ type Asset = 'court_credit' | 'bank';
 type Review = Parameters<typeof api.correctAssetBalance>[0];
 const label = (asset: Asset) => asset === 'court_credit' ? 'Court credit' : 'Bank';
 
-export default function BalanceCorrectionForm({ position, revision, onRecorded }: {
+export default function BalanceCorrectionForm({ position, revision, onRecorded, initialAsset = 'court_credit', onSaved, onSavingChange }: {
   position: ClubPosition; revision: number; onRecorded: () => void;
+  initialAsset?: Asset; onSaved?: () => void; onSavingChange?: (saving: boolean) => void;
 }) {
-  const [asset, setAsset] = useState<Asset>('court_credit');
+  const [asset, setAsset] = useState<Asset>(initialAsset);
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
   const [review, setReview] = useState<Review | null>(null);
@@ -51,16 +52,16 @@ export default function BalanceCorrectionForm({ position, revision, onRecorded }
 
   const save = async () => {
     if (!review || saving) return;
-    setSaving(true); setError(null);
+    setSaving(true); onSavingChange?.(true); setError(null);
     try {
       await api.correctAssetBalance(review);
       setSuccess(`${label(review.account_kind)} corrected to ${formatCents(review.target_cents)}. Audit record saved.`);
       setReview(null); setAmount(''); setReason(''); setPage(0);
-      onRecorded();
+      (onSaved ?? onRecorded)();
     } catch (err) {
       setError(isAxiosError<{ message?: string }>(err) ? err.response?.data?.message ?? 'Could not save. Retry this correction safely.' : 'Could not save. Retry this correction safely.');
       if (isAxiosError<{code?: string}>(err) && err.response?.data?.code === 'balance_changed') { setReview(null); onRecorded(); }
-    } finally { setSaving(false); }
+    } finally { setSaving(false); onSavingChange?.(false); }
   };
 
   return <section className="card p-4 space-y-4" aria-label="Balance corrections">
