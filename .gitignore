@@ -67,3 +67,6 @@ infrastructure/terraform.tfvars
 
 # PR screenshots are uploaded as attachments, never committed.
 /docs/review/*.png
+
+# Keep implementation plans outside the repository.
+/specs/**/plan.md
