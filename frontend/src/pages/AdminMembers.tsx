@@ -2,15 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
+  ChevronDown,
   UserPlus,
   Loader2,
   Pencil,
   Save,
   X,
-  Trash2,
   RotateCcw,
   Mail,
-  Phone,
   Shield,
   Search,
 } from 'lucide-react';
@@ -375,35 +374,51 @@ export default function AdminMembers() {
         ) : (
           <ul className="divide-y divide-slate-200">
             {visible.map((member) => (
-              <li key={member.id} className="p-4">
-                {editingId === member.id ? (
-                  <MemberEditor
-                    member={member}
-                    onCancel={() => setEditingId(null)}
-                    onSaved={(updated) => {
-                      replaceMember(updated);
-                      setEditingId(null);
-                      setNotice(`${displayName(updated)}'s details were updated.`);
-                    }}
-                  />
-                ) : (
-                  <MemberRow
-                    member={member}
-                    isBusy={busyId === member.id}
-                    onEdit={() => {
-                      setEditingId(member.id);
-                      setRowError(null);
-                      setNotice(null);
-                    }}
-                    onRemove={() => handleRemove(member)}
-                    onReinstate={() => handleReinstate(member)}
-                    onInvitation={() => setInvitationId(invitationId === member.id ? null : member.id)}
-                  />
-                )}
-                <MemberPushPanel member={member} />
-                {invitationId === member.id && member.membership_status === 'approved' && isPendingInvite(member) && (
-                  <InvitationPanel key={`${member.id}:${member.email}`} member={member} onClose={() => setInvitationId(null)} />
-                )}
+              <li key={member.id}>
+                <details className="group">
+                  <summary role="button" aria-label={`Details for ${displayName(member)}`} className="flex min-h-16 cursor-pointer list-none items-center gap-3 rounded-lg p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 [&::-webkit-details-marker]:hidden">
+                    <Avatar src={member.profile_picture} name={displayName(member)} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block break-words font-medium text-slate-900">{displayName(member)}</span>
+                      <span className="flex flex-wrap gap-1">
+                        {member.role === 'admin' && <Badge variant="info"><Shield className="mr-1 h-3 w-3" />Admin</Badge>}
+                        {member.membership_status === 'removed' ? <Badge variant="danger">Removed</Badge> : isPendingInvite(member) && <Badge variant="warning">Not signed in</Badge>}
+                      </span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-1 text-sm font-medium text-primary-700">Details<ChevronDown aria-hidden="true" className="h-4 w-4 group-open:rotate-180" /></span>
+                  </summary>
+                  <div className="space-y-4 px-4 pb-4">
+                    {editingId === member.id ? (
+                      <MemberEditor
+                        member={member}
+                        onCancel={() => { setEditingId(null); requestAnimationFrame(() => document.getElementById(`edit-${member.id}`)?.focus()); }}
+                        onSaved={(updated) => {
+                          replaceMember(updated);
+                          setEditingId(null);
+                          setNotice(`${displayName(updated)}'s details were updated.`);
+                          requestAnimationFrame(() => document.getElementById(`edit-${member.id}`)?.focus());
+                        }}
+                      />
+                    ) : (
+                      <MemberRow
+                        member={member}
+                        isBusy={busyId === member.id}
+                        onEdit={() => {
+                          setEditingId(member.id);
+                          setRowError(null);
+                          setNotice(null);
+                        }}
+                        onRemove={() => handleRemove(member)}
+                        onReinstate={() => handleReinstate(member)}
+                        onInvitation={() => setInvitationId(invitationId === member.id ? null : member.id)}
+                      />
+                    )}
+                    <MemberPushPanel member={member} />
+                    {invitationId === member.id && member.membership_status === 'approved' && isPendingInvite(member) && (
+                      <InvitationPanel key={`${member.id}:${member.email}`} member={member} onClose={() => setInvitationId(null)} />
+                    )}
+                  </div>
+                </details>
               </li>
             ))}
           </ul>
@@ -432,47 +447,18 @@ function MemberRow({
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-4">
-      <div className="flex items-center gap-3 min-w-0">
-        <Avatar src={member.profile_picture} name={displayName(member)} />
-        <div className="min-w-0">
-          <p className="font-medium text-slate-900 flex items-center gap-2 flex-wrap">
-            {displayName(member)}
-            {/* Their full name whenever it is not simply what is already shown —
-                so a nickname, or a surname the first-name default drops, is
-                still visible to whoever is looking them up. */}
-            {displayName(member) !== member.name && (
-              <span className="text-sm font-normal text-slate-500">{member.name}</span>
-            )}
-            {member.role === 'admin' && (
-              <Badge variant="info">
-                <Shield className="w-3 h-3 mr-1" />
-                Admin
-              </Badge>
-            )}
-            {isPendingInvite(member) && !removed && <Badge variant="warning">Not signed in</Badge>}
-            {removed && <Badge variant="danger">Removed</Badge>}
-          </p>
-          <p className="text-sm text-slate-500 flex items-center gap-3 flex-wrap">
-            <span className="flex items-center gap-1 truncate">
-              <Mail className="w-3.5 h-3.5 shrink-0" />
-              {member.email}
-            </span>
-            {member.phone_number && (
-              <span className="flex items-center gap-1">
-                <Phone className="w-3.5 h-3.5" />
-                {member.phone_number}
-              </span>
-            )}
-          </p>
-        </div>
-      </div>
+      <dl className="min-w-0 space-y-2 text-sm">
+        <div><dt className="font-medium text-slate-700">Full name</dt><dd className="break-words text-slate-600">{member.name}</dd></div>
+        <div><dt className="font-medium text-slate-700">Email</dt><dd className="break-all text-slate-600">{member.email || 'Not provided'}</dd></div>
+        <div><dt className="font-medium text-slate-700">Phone</dt><dd className="break-words text-slate-600">{member.phone_number || 'Not provided'}</dd></div>
+      </dl>
 
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex flex-wrap items-center gap-2">
         {removed ? (
           <button
             onClick={onReinstate}
             disabled={isBusy}
-            className="p-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors disabled:opacity-50"
+            className="inline-flex min-h-11 items-center gap-2 px-3 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors disabled:opacity-50"
             title={`Reinstate ${displayName(member)}`}
             aria-label={`Reinstate ${displayName(member)}`}
           >
@@ -480,7 +466,7 @@ function MemberRow({
               <Loader2 className="w-5 h-5 animate-spin" />
             ) : (
               <RotateCcw className="w-5 h-5" />
-            )}
+            )} Reinstate member
           </button>
         ) : (
           <>
@@ -490,25 +476,22 @@ function MemberRow({
               </button>
             )}
             <button
+              id={`edit-${member.id}`}
               onClick={onEdit}
-              className="p-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors"
+              className="inline-flex min-h-11 items-center gap-2 px-3 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors"
               title={`Edit ${displayName(member)}`}
               aria-label={`Edit ${displayName(member)}`}
             >
-              <Pencil className="w-5 h-5" />
+              <Pencil className="w-5 h-5" /> Edit
             </button>
             <button
               onClick={onRemove}
               disabled={isBusy}
-              className="p-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors disabled:opacity-50"
+              className="inline-flex min-h-11 items-center gap-2 px-3 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors disabled:opacity-50"
               title={`Remove ${displayName(member)}`}
-              aria-label={`Remove ${displayName(member)}`}
+              aria-label={`Remove member ${displayName(member)}`}
             >
-              {isBusy ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                <Trash2 className="w-5 h-5" />
-              )}
+              {isBusy && <Loader2 className="w-5 h-5 animate-spin" />} Remove member
             </button>
           </>
         )}
@@ -569,6 +552,7 @@ function MemberEditor({
           <span className="block text-sm font-medium text-slate-700 mb-1">Full name</span>
           <input
             type="text"
+            autoFocus
             required
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}

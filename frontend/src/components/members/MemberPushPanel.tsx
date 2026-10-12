@@ -43,7 +43,7 @@ export default function MemberPushPanel({ member }: { member: User }) {
         type="button"
         aria-expanded={open}
         aria-controls={`push-${member.id}`}
-        className="text-sm font-medium text-primary-700 hover:underline"
+        className="min-h-11 rounded text-sm font-medium text-primary-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
         onClick={() => {
           setOpen(!open);
           if (!open && !loading) void load();
