@@ -115,7 +115,7 @@ describe('Money', () => {
     vi.mocked(api.getMySpend).mockRejectedValueOnce(new Error('network'));
     renderPage('/money?tab=analytics');
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load your spend');
-    expect(screen.getByText('$42.50')).toBeInTheDocument();
+    expect(screen.queryByText('Your balance')).not.toBeInTheDocument();
     expect(screen.queryByText('$0.00')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByText('$123.45')).toBeInTheDocument();

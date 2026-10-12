@@ -126,16 +126,6 @@ export default function Header() {
         )}
 
         <div className="mt-auto space-y-3 border-t border-slate-200 pt-4">
-          {balance && (
-            <Link to="/money" className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-3">
-              <span className="text-xs font-medium text-slate-500">Your balance</span>
-              <BalanceChip cents={balance.balance_cents} state={balance.state} compact />
-            </Link>
-          )}
-          <Link to="/profile" className="flex min-h-11 items-center gap-3 rounded-xl px-2 hover:bg-slate-50">
-            <Avatar src={user?.profile_picture} name={displayName(user)} size="sm" />
-            <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">{displayName(user)}</span>
-          </Link>
           <button onClick={logout} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-800" title="Logout">
             <LogOut className="h-5 w-5" />
             Sign out

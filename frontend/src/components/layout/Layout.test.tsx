@@ -41,7 +41,7 @@ beforeEach(() => {
 describe('Header', () => {
   it('shows the signed-in member', () => {
     renderAt(<Header />);
-    expect(screen.getByText('Jane')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: "Open Jane's profile" })).toHaveAttribute('href', '/profile');
   });
 
   it('hides the admin link from ordinary members', () => {
