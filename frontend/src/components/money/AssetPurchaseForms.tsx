@@ -7,13 +7,13 @@ import type { ClubPosition } from '../../types';
 
 const actions = ['Top up court credit', 'Record shuttle purchase', 'Audit bank balance'];
 
-/** Each card opens one form in the shared area below the asset row. */
+/** One form follows its card on mobile and spans below the card row on desktop. */
 export default function AssetPurchaseForms({ position, revision, onRecorded }: {
   position: ClubPosition; revision: number; onRecorded: () => void;
 }) {
   const [active, setActive] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
-  const [success, setSuccess] = useState('');
+  const [success, setSuccess] = useState<{ asset: number; message: string } | null>(null);
   const panelId = useId();
   const panel = useRef<HTMLDivElement>(null);
   const openers = useRef<Array<HTMLButtonElement | null>>([]);
@@ -29,27 +29,29 @@ export default function AssetPurchaseForms({ position, revision, onRecorded }: {
 
   const close = () => { returnTo.current = active; setActive(null); };
   const recorded = () => {
-    setSuccess(active === 0 ? 'Court credit top-up recorded.' : active === 1 ? 'Shuttle purchase recorded.' : 'Balance correction recorded.');
+    if (active !== null) setSuccess({ asset: active, message: active === 0 ? 'Court credit top-up recorded.' : active === 1 ? 'Shuttle purchase recorded.' : 'Balance correction recorded.' });
     setSaving(false);
     close();
     onRecorded();
   };
 
-  return <PositionPanel position={position} actions={actions.map((label, index) => (
+  return <PositionPanel position={position} formAssetIndex={active ?? success?.asset} actions={actions.map((label, index) => (
     <button key={label} ref={element => { openers.current[index] = element; }} type="button"
       className="btn-outline w-full" aria-expanded={active === index} aria-controls={panelId} disabled={saving}
-      onClick={() => { setSuccess(''); if (active === index) close(); else setActive(index); }}>
+      onClick={() => { setSuccess(null); if (active === index) close(); else setActive(index); }}>
       {label}
     </button>
   ))}>
-    {success && <p role="status" className="text-sm text-green-800">{success}</p>}
-    <div id={panelId} ref={panel} role="region" aria-label={active === null ? 'Asset form' : actions[active]} hidden={active === null} className="space-y-3">
-      {active === 0 && <CourtCreditForm onRecorded={recorded} onSavingChange={setSaving} />}
-      {active === 1 && <ShuttlePurchaseForm onRecorded={recorded} onSavingChange={setSaving} />}
-      {active === 2 && <BalanceCorrectionForm position={position} revision={revision} initialAsset="bank"
-        onRecorded={onRecorded} onSaved={recorded} onSavingChange={setSaving} />}
-      {active !== null && <button type="button" className="btn-secondary" disabled={saving} onClick={close}>Cancel</button>}
-    </div>
+    {(active !== null || success) && <>
+      {success && <p role="status" className="text-sm text-green-800">{success.message}</p>}
+      <div id={panelId} ref={panel} role="region" aria-label={active === null ? 'Asset form' : actions[active]} hidden={active === null} className="space-y-3">
+        {active === 0 && <CourtCreditForm onRecorded={recorded} onSavingChange={setSaving} />}
+        {active === 1 && <ShuttlePurchaseForm onRecorded={recorded} onSavingChange={setSaving} />}
+        {active === 2 && <BalanceCorrectionForm position={position} revision={revision} initialAsset="bank"
+          onRecorded={onRecorded} onSaved={recorded} onSavingChange={setSaving} />}
+        {active !== null && <button type="button" className="btn-secondary" disabled={saving} onClick={close}>Cancel</button>}
+      </div>
+    </>}
   </PositionPanel>;
 }
 

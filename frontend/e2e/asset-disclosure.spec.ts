@@ -59,24 +59,57 @@ test.describe('Admin asset actions', () => {
     // The fixture rejects all unhandled writes: review and Cancel must never post.
   });
 
-  test('card actions share one form area and align on desktop', async ({ page }, testInfo) => {
+  test('forms follow their asset on mobile and span below the cards on desktop', async ({ page }) => {
     await page.goto('/money?tab=club');
     const labels = ['Top up court credit', 'Record shuttle purchase', 'Audit bank balance'];
     const buttons = labels.map(name => page.getByRole('button', { name, exact: true }));
-    if (testInfo.project.name === 'chromium') {
+    const desktop = page.viewportSize()!.width >= 1024;
+    if (desktop) {
       const boxes = await Promise.all(buttons.map(button => button.boundingBox()));
       expect(Math.max(...boxes.map(box => box!.y)) - Math.min(...boxes.map(box => box!.y))).toBeLessThan(2);
     }
     for (let i = 0; i < buttons.length; i++) {
       await buttons[i].click();
-      await expect(page.getByRole('region', { name: labels[i], exact: true })).toBeVisible();
+      const form = page.getByRole('region', { name: labels[i], exact: true });
+      await expect(form).toBeVisible();
       await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toHaveCount(1);
+      const formBox = (await form.boundingBox())!;
+      const buttonBoxes = await Promise.all(buttons.map(button => button.boundingBox()));
+      if (desktop) {
+        expect(formBox.y).toBeGreaterThanOrEqual(Math.max(...buttonBoxes.map(box => box!.y + box!.height)));
+        const gridBox = (await page.getByRole('region', { name: 'Club asset cards' }).boundingBox())!;
+        expect(Math.abs(formBox.width - gridBox.width)).toBeLessThan(2);
+      } else {
+        expect(formBox.y).toBeGreaterThanOrEqual(buttonBoxes[i]!.y + buttonBoxes[i]!.height);
+        if (i < 2) {
+          const nextCard = (await page.getByRole('region', { name: 'Club asset cards' }).locator('article').nth(i + 1).boundingBox())!;
+          expect(nextCard.y).toBeGreaterThanOrEqual(formBox.y + formBox.height);
+        }
+      }
     }
     await expect(page.getByLabel('Amount paid to the venue')).toHaveCount(0);
     await expect(page.getByLabel('Shuttles', { exact: true })).toHaveCount(0);
     await buttons[2].click();
     await expect(page.getByRole('region', { name: 'Asset form', exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+
+  test('resizing keeps the single form entry and focus intact', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/money?tab=club');
+    const opener = page.getByRole('button', { name: 'Top up court credit', exact: true });
+    await opener.click();
+    const amount = page.getByLabel('Amount paid to the venue');
+    await amount.fill('25.50');
+    for (const width of [1280, 820, 390]) {
+      await page.setViewportSize({ width, height: 844 });
+      await expect(amount).toHaveCount(1);
+      await expect(amount).toHaveValue('25.50');
+      await expect(amount).toBeFocused();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    }
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(opener).toBeFocused();
   });
 
   test('bank audit keeps review and retry, blocks switching during save, then closes', async ({ page }) => {

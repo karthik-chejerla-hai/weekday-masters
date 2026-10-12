@@ -8,10 +8,12 @@ import type { ClubPosition } from '../../types';
 interface PositionPanelProps {
   position: ClubPosition;
   actions?: ReactNode[];
+  /** The asset whose form or success message follows it in mobile reading order. */
+  formAssetIndex?: number;
   children?: ReactNode;
 }
 
-export default function PositionPanel({ position, actions, children }: PositionPanelProps) {
+export default function PositionPanel({ position, actions, formAssetIndex = 2, children }: PositionPanelProps) {
   const { assets, liabilities, surplus_cents, balanced, warnings } = position;
 
   if (position.assets_pending) {
@@ -43,12 +45,19 @@ export default function PositionPanel({ position, actions, children }: PositionP
       </div>}
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 lg:gap-4" role="region" aria-label="Club asset cards">
-        <AssetCard title="Unused Court Credit" value={formatCents(assets.court_credit_cents)} note="Available for next session" Icon={Wallet} action={actions?.[0]} />
-        <AssetCard title="Shuttles available" value={formatCents(assets.shuttle_stock_cents)} note={`${assets.shuttle_stock_units} shuttles in the bag`} Icon={ShuttleIcon} action={actions?.[1]} />
-        <AssetCard title="Bank Account balance" value={formatCents(assets.bank_cents)} note="Club funds" Icon={Landmark} action={actions?.[2]} />
+        {[
+          { title: 'Unused Court Credit', value: formatCents(assets.court_credit_cents), note: 'Available for next session', Icon: Wallet },
+          { title: 'Shuttles available', value: formatCents(assets.shuttle_stock_cents), note: `${assets.shuttle_stock_units} shuttles in the bag`, Icon: ShuttleIcon },
+          { title: 'Bank Account balance', value: formatCents(assets.bank_cents), note: 'Club funds', Icon: Landmark },
+        ].flatMap((asset, index) => [
+          <AssetCard key={asset.title} {...asset} action={actions?.[index]} />,
+          // Keep the one mounted panel beside its opener in mobile reading order.
+          // CSS places it below the complete card row on desktop without remounting.
+          ...(children && index === formAssetIndex ? [
+            <div key="asset-form" className="min-w-0 lg:order-last lg:col-span-3">{children}</div>,
+          ] : []),
+        ])}
       </div>
-
-      {children}
 
       <details className="rounded-xl border border-slate-200 bg-white">
         <summary className="min-h-11 cursor-pointer rounded-xl px-4 py-3 text-sm font-semibold text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-700">Reconciliation and audit details</summary>
