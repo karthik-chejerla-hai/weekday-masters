@@ -3,14 +3,16 @@ import { isAxiosError } from 'axios';
 import { api } from '../../services/api';
 import type { BalanceCorrection, ClubPosition } from '../../types';
 import { formatCents } from './format';
+import FormActionRow from './FormActionRow';
 
 type Asset = 'court_credit' | 'bank';
 type Review = Parameters<typeof api.correctAssetBalance>[0];
 const label = (asset: Asset) => asset === 'court_credit' ? 'Court credit' : 'Bank';
 
-export default function BalanceCorrectionForm({ position, revision, onRecorded, initialAsset = 'court_credit', onSaved, onSavingChange }: {
+export default function BalanceCorrectionForm({ position, revision, onRecorded, initialAsset = 'court_credit', onSaved, onSavingChange, onCancel }: {
   position: ClubPosition; revision: number; onRecorded: () => void;
   initialAsset?: Asset; onSaved?: () => void; onSavingChange?: (saving: boolean) => void;
+  onCancel?: () => void;
 }) {
   const [asset, setAsset] = useState<Asset>(initialAsset);
   const [amount, setAmount] = useState('');
@@ -80,10 +82,10 @@ export default function BalanceCorrectionForm({ position, revision, onRecorded, 
       </dl>
       <p className="whitespace-pre-wrap break-words text-sm">Reason: {review.reason}</p>
       <p className="text-xs text-slate-500">Your name, time, reason and before/after balances will be retained in the audit history. Existing ledger entries are preserved.</p>
-      <div className="flex flex-wrap gap-2">
-        <button type="button" className="btn-primary" disabled={saving} onClick={() => void save()}>{saving ? 'Saving…' : 'Save correction'}</button>
-        <button type="button" className="btn-secondary" disabled={saving} onClick={() => { setReview(null); setError(null); }}>Back to edit</button>
-      </div>
+      <button type="button" className="text-sm font-medium text-slate-600 underline underline-offset-4 disabled:opacity-50" disabled={saving} onClick={() => { setReview(null); setError(null); }}>Back to edit</button>
+      <FormActionRow onCancel={onCancel} disabled={saving}>
+        <button type="button" className="btn-primary min-w-0 flex-1 sm:flex-none" disabled={saving} onClick={() => void save()}>{saving ? 'Saving…' : 'Save correction'}</button>
+      </FormActionRow>
     </div> : <form onSubmit={prepare} className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-2">
         <div><label className="label" htmlFor="correction-asset">Asset</label>
@@ -97,7 +99,9 @@ export default function BalanceCorrectionForm({ position, revision, onRecorded, 
       <div><label className="label" htmlFor="correction-reason">Reason</label>
         <textarea id="correction-reason" className="input" maxLength={1000} rows={3} value={reason} onChange={(event) => setReason(event.target.value)} required />
       </div>
-      <button className="btn-secondary" type="submit">Review correction</button>
+      <FormActionRow onCancel={onCancel} disabled={saving}>
+        <button className="btn-primary min-w-0 flex-1 sm:flex-none" type="submit">Review correction</button>
+      </FormActionRow>
     </form>}
     <div className="border-t border-slate-200 pt-4 space-y-3">
       <h4 className="font-semibold">Correction audit history</h4>

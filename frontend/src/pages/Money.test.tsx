@@ -305,7 +305,7 @@ describe('Money — club assets', () => {
     expect(screen.getByText('Audited on: 3 Oct 2026')).toBeVisible();
     expect(screen.getByText('Stock updated: 4 Oct 2026')).toBeInTheDocument();
     expect(screen.getAllByText('On: 4 Oct 2026')).toHaveLength(2);
-    expect(screen.queryByText('Top up court credit')).not.toBeInTheDocument();
+    expect(screen.queryByText('Record court credit purchase')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Record shuttle purchase' })).not.toBeInTheDocument();
   });
 
@@ -315,13 +315,13 @@ describe('Money — club assets', () => {
     const user = userEvent.setup();
     const view = renderPage();
     await user.click(await screen.findByRole('tab', { name: 'Club assets' }));
-    expect(screen.getByText('Top up court credit')).toBeInTheDocument();
+    expect(screen.getByText('Record court credit purchase')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Record shuttle purchase', expanded: false })).toBeInTheDocument();
     mockAuth();
     view.rerender(<MemoryRouter><Money /></MemoryRouter>);
     expect(screen.getByRole('tab', { name: 'Club assets' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByText('$185.00')).toBeInTheDocument();
-    expect(screen.queryByText('Top up court credit')).not.toBeInTheDocument();
+    expect(screen.queryByText('Record court credit purchase')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Record shuttle purchase' })).not.toBeInTheDocument();
   });
 

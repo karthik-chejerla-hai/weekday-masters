@@ -24,7 +24,7 @@ test('asset details open by keyboard while values and warnings stay visible', as
   await page.keyboard.press('Enter');
   await expect(page.getByText('Audited on: 3 Oct 2026')).not.toBeVisible();
   await expect(page.getByRole('alert')).toBeVisible();
-  await expect(page.getByRole('button', { name: /Top up court credit|Record shuttle purchase|Audit bank balance/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Record court credit purchase|Record shuttle purchase|Audit bank balance/ })).toHaveCount(0);
   await expect(page.getByText('Balance corrections and history')).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
@@ -37,7 +37,7 @@ test.describe('Admin asset actions', () => {
 
   test('purchase forms cancel without writing and correction review remains available', async ({ page }) => {
     await page.goto('/money?tab=club');
-    for (const [action, field] of [['Top up court credit', 'Amount paid to the venue'], ['Record shuttle purchase', 'Shuttles']]) {
+    for (const [action, field] of [['Record court credit purchase', 'Amount paid to the venue'], ['Record shuttle purchase', 'Shuttles']]) {
       const opener = page.getByRole('button', { name: action, expanded: false });
       await expect(page.getByLabel(field, { exact: true })).toHaveCount(0);
       await opener.click();
@@ -61,7 +61,7 @@ test.describe('Admin asset actions', () => {
 
   test('forms follow their asset on mobile and span below the cards on desktop', async ({ page }) => {
     await page.goto('/money?tab=club');
-    const labels = ['Top up court credit', 'Record shuttle purchase', 'Audit bank balance'];
+    const labels = ['Record court credit purchase', 'Record shuttle purchase', 'Audit bank balance'];
     const buttons = labels.map(name => page.getByRole('button', { name, exact: true }));
     const desktop = page.viewportSize()!.width >= 1024;
     if (desktop) {
@@ -97,7 +97,7 @@ test.describe('Admin asset actions', () => {
   test('resizing keeps the single form entry and focus intact', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/money?tab=club');
-    const opener = page.getByRole('button', { name: 'Top up court credit', exact: true });
+    const opener = page.getByRole('button', { name: 'Record court credit purchase', exact: true });
     await opener.click();
     const amount = page.getByLabel('Amount paid to the venue');
     await amount.fill('25.50');
@@ -110,6 +110,43 @@ test.describe('Admin asset actions', () => {
     }
     await page.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(opener).toBeFocused();
+  });
+
+  test('primary and neutral cancel actions stay together, including bank review', async ({ page }) => {
+    await page.goto('/money?tab=club');
+    for (const width of [320, 390, 1280]) {
+      await page.setViewportSize({ width, height: 844 });
+      for (const action of ['Record court credit purchase', 'Record shuttle purchase', 'Audit bank balance']) {
+        const opener = page.getByRole('button', { name: action, exact: true });
+        await opener.click();
+        const region = page.getByRole('region', { name: action, exact: true });
+        const cancel = region.getByRole('button', { name: 'Cancel', exact: true });
+        const assertActions = async (name: string) => {
+          const primary = region.getByRole('button', { name, exact: true });
+          const primaryBox = (await primary.boundingBox())!;
+          const cancelBox = (await cancel.boundingBox())!;
+          expect(Math.abs(primaryBox.y - cancelBox.y)).toBeLessThan(2);
+          expect(cancelBox.x).toBeGreaterThanOrEqual(primaryBox.x + primaryBox.width);
+          const primaryBackground = await primary.evaluate(el => getComputedStyle(el).backgroundColor);
+          await expect(cancel).not.toHaveCSS('background-color', primaryBackground);
+          expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+        };
+        await assertActions(action === 'Audit bank balance' ? 'Review correction' : 'Record purchase');
+        if (action === 'Audit bank balance') {
+          const history = region.getByRole('heading', { name: 'Correction audit history' });
+          expect((await cancel.boundingBox())!.y).toBeLessThan((await history.boundingBox())!.y);
+          await page.getByLabel('Correct balance (AUD)').fill('40');
+          await page.getByLabel('Reason', { exact: true }).fill('Checked bank statement');
+          await region.getByRole('button', { name: 'Review correction' }).click();
+          await assertActions('Save correction');
+          await region.getByRole('button', { name: 'Back to edit' }).click();
+          await expect(page.getByLabel('Correct balance (AUD)')).toHaveValue('40');
+          await assertActions('Review correction');
+        }
+        await cancel.click();
+        await expect(opener).toBeFocused();
+      }
+    }
   });
 
   test('bank audit keeps review and retry, blocks switching during save, then closes', async ({ page }) => {
@@ -133,7 +170,7 @@ test.describe('Admin asset actions', () => {
     await expect(page.getByRole('alert')).toContainText('Please retry');
     fail = false;
     await page.getByRole('button', { name: 'Save correction' }).click();
-    await expect(page.getByRole('button', { name: 'Top up court credit', exact: true })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Record court credit purchase', exact: true })).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeDisabled();
     finish!();
     await expect(opener).toBeFocused();
@@ -155,12 +192,12 @@ test.describe('Admin asset actions', () => {
         return json(route, fail ? { error: 'Unavailable' } : { id: 'test-transaction' }, fail ? 503 : 200);
       });
       await page.goto('/money?tab=club');
-      const action = kind === 'court-credit' ? 'Top up court credit' : 'Record shuttle purchase';
+      const action = kind === 'court-credit' ? 'Record court credit purchase' : 'Record shuttle purchase';
       const opener = page.getByRole('button', { name: action, expanded: false });
       await opener.click();
       const field = page.getByLabel(kind === 'court-credit' ? 'Amount paid to the venue' : 'What they cost');
       await field.fill('25.50');
-      const submit = page.getByRole('region', { name: action }).getByRole('button', { name: kind === 'court-credit' ? 'Record top-up' : 'Record purchase' });
+      const submit = page.getByRole('region', { name: action }).getByRole('button', { name: 'Record purchase' });
       await submit.click();
       await expect(page.getByRole('alert')).toContainText('Could not record');
       await expect(field).toHaveValue('25.50');
