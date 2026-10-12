@@ -88,6 +88,9 @@ export const test = base.extend<Fixtures>({
         return route.abort();
       }
       if (!url.pathname.startsWith('/api/')) return route.continue();
+      if (route.request().method() === 'GET' && /^\/api\/admin\/users\/[^/]+\/push-notifications$/.test(url.pathname)) {
+        return json(route, { preferences: { ...preferences, user_id: url.pathname.split('/')[4] }, devices: [] });
+      }
       const key = `${route.request().method()} ${url.pathname}`;
       if (!(key in defaults)) {
         unexpected.push(key);

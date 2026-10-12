@@ -9,6 +9,7 @@ import type { User } from '../types';
 vi.mock('../services/api', () => ({
   api: {
     adminListMembers: vi.fn(),
+    getMemberPushStatus: vi.fn(),
     inviteMember: vi.fn(),
     updateMember: vi.fn(),
     removeMember: vi.fn(),
@@ -61,6 +62,7 @@ function renderPage() {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.adminListMembers).mockResolvedValue([]);
+  vi.mocked(api.getMemberPushStatus).mockResolvedValue({ preferences: null, devices: [] });
 });
 
 describe('the roll', () => {
@@ -89,14 +91,16 @@ describe('the roll', () => {
     expect(screen.getByRole('tab', { name: /members \(1\)/i })).toBeInTheDocument();
   });
 
-  it('shows the nickname the club uses, with the full name alongside it', async () => {
+  it('shows the nickname the club uses, with full identity inside details', async () => {
     vi.mocked(api.adminListMembers).mockResolvedValue([
       makeMember({ name: 'Priya Raman', nickname: 'Pri' }),
     ]);
     renderPage();
 
     expect(await screen.findByText('Pri')).toBeInTheDocument();
-    expect(screen.getByText('Priya Raman')).toBeInTheDocument();
+    expect(screen.getByText('Priya Raman')).not.toBeVisible();
+    await userEvent.click(screen.getByRole('button', { name: /details for pri/i }));
+    expect(screen.getByText('Priya Raman')).toBeVisible();
   });
 
   it('shows the first name by default, still with the full name to identify them by', async () => {
@@ -104,7 +108,9 @@ describe('the roll', () => {
     renderPage();
 
     expect(await screen.findByText('Priya')).toBeInTheDocument();
-    expect(screen.getByText('Priya Raman')).toBeInTheDocument();
+    expect(screen.getByText('Priya Raman')).not.toBeVisible();
+    await userEvent.click(screen.getByRole('button', { name: /details for pri/i }));
+    expect(screen.getByText('Priya Raman')).toBeVisible();
   });
 
   it('searches across name, nickname and email', async () => {
@@ -180,6 +186,7 @@ describe('editing a member', () => {
     const user = userEvent.setup();
     renderPage();
 
+    await user.click(await screen.findByRole('button', { name: /details for signed/i }));
     await user.click(await screen.findByRole('button', { name: /edit signed/i }));
 
     const email = screen.getByLabelText(/email/i);
@@ -207,6 +214,7 @@ describe('editing a member', () => {
     renderPage();
 
     await user.click(screen.getByRole('tab', { name: /not signed in/i }));
+    await user.click(await screen.findByRole('button', { name: /details for not/i }));
     await user.click(await screen.findByRole('button', { name: /edit not/i }));
 
     const email = screen.getByLabelText(/email/i);
@@ -233,6 +241,7 @@ describe('editing a member', () => {
     const user = userEvent.setup();
     renderPage();
 
+    await user.click(await screen.findByRole('button', { name: /details for onlyadmin/i }));
     await user.click(await screen.findByRole('button', { name: /edit onlyadmin/i }));
     const form = screen.getByRole('form', { name: /edit onlyadmin/i });
     await user.selectOptions(within(form).getByLabelText(/role/i), 'player');
@@ -250,7 +259,8 @@ describe('removing and reinstating', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.click(await screen.findByRole('button', { name: /remove signed/i }));
+    await user.click(await screen.findByRole('button', { name: /details for signed/i }));
+    await user.click(await screen.findByRole('button', { name: /remove member signed/i }));
 
     await waitFor(() => expect(api.removeMember).toHaveBeenCalledWith('user-1'));
     expect(await screen.findByRole('status')).toHaveTextContent(/history is kept/i);
@@ -269,7 +279,8 @@ describe('removing and reinstating', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.click(await screen.findByRole('button', { name: /remove signed/i }));
+    await user.click(await screen.findByRole('button', { name: /details for signed/i }));
+    await user.click(await screen.findByRole('button', { name: /remove member signed/i }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/\$25\.00/);
     // Nothing moved, so they are still a member.
@@ -285,6 +296,7 @@ describe('removing and reinstating', () => {
     renderPage();
 
     await user.click(await screen.findByRole('tab', { name: /removed \(1\)/i }));
+    await user.click(await screen.findByRole('button', { name: /details for signed/i }));
     await user.click(screen.getByRole('button', { name: /reinstate signed/i }));
 
     await waitFor(() => expect(api.reinstateMember).toHaveBeenCalledWith('user-1'));
