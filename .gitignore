@@ -64,3 +64,6 @@ infrastructure/*.tfstate
 infrastructure/*.tfstate.backup
 infrastructure/*.tfplan
 infrastructure/terraform.tfvars
+
+# PR screenshots are uploaded as attachments, never committed.
+/docs/review/*.png
