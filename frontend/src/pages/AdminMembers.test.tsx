@@ -9,6 +9,7 @@ import type { User } from '../types';
 vi.mock('../services/api', () => ({
   api: {
     adminListMembers: vi.fn(),
+    getMemberPushStatus: vi.fn(),
     inviteMember: vi.fn(),
     updateMember: vi.fn(),
     removeMember: vi.fn(),
@@ -61,6 +62,7 @@ function renderPage() {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.adminListMembers).mockResolvedValue([]);
+  vi.mocked(api.getMemberPushStatus).mockResolvedValue({ preferences: null, devices: [] });
 });
 
 describe('the roll', () => {

@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   ChevronDown,
+  Bell,
+  BellOff,
+  CircleHelp,
   UserPlus,
   Loader2,
   Pencil,
@@ -13,7 +16,7 @@ import {
   Shield,
   Search,
 } from 'lucide-react';
-import { api } from '../services/api';
+import { api, type MemberPushStatus } from '../services/api';
 import type { InviteMemberInput, User, UserRole } from '../types';
 import { displayName, isPendingInvite } from '../utils/members';
 import Avatar from '../components/ui/Avatar';
@@ -63,6 +66,8 @@ export default function AdminMembers() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const [pushStatuses, setPushStatuses] = useState<Record<string, MemberPushStatus | null>>({});
+
   const [tab, setTab] = useState<Tab>('members');
   const [query, setQuery] = useState('');
 
@@ -91,6 +96,18 @@ export default function AdminMembers() {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    let active = true;
+    for (const member of members) {
+      api.getMemberPushStatus(member.id).then(status => {
+        if (active) setPushStatuses(current => ({ ...current, [member.id]: status }));
+      }).catch(() => {
+        if (active) setPushStatuses(current => ({ ...current, [member.id]: null }));
+      });
+    }
+    return () => { active = false; };
+  }, [members]);
 
   /** Replaces one row in place, so an edit does not cost a full reload. */
   const replaceMember = (updated: User) =>
@@ -376,7 +393,7 @@ export default function AdminMembers() {
             {visible.map((member) => (
               <li key={member.id}>
                 <details className="group">
-                  <summary role="button" aria-label={`Details for ${displayName(member)}`} className="flex min-h-16 cursor-pointer list-none items-center gap-3 rounded-lg p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 [&::-webkit-details-marker]:hidden">
+                  <summary role="button" aria-label={`Details for ${displayName(member)}`} aria-describedby={`push-status-${member.id}`} className="flex min-h-16 cursor-pointer list-none items-center gap-3 rounded-lg p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 [&::-webkit-details-marker]:hidden">
                     <Avatar src={member.profile_picture} name={displayName(member)} />
                     <span className="min-w-0 flex-1">
                       <span className="block break-words font-medium text-slate-900">{displayName(member)}</span>
@@ -385,6 +402,7 @@ export default function AdminMembers() {
                         {member.membership_status === 'removed' ? <Badge variant="danger">Removed</Badge> : isPendingInvite(member) && <Badge variant="warning">Not signed in</Badge>}
                       </span>
                     </span>
+                    <PushStatusIcon member={member} status={pushStatuses[member.id]} />
                     <span className="flex shrink-0 items-center gap-1 text-sm font-medium text-primary-700">Details<ChevronDown aria-hidden="true" className="h-4 w-4 group-open:rotate-180" /></span>
                   </summary>
                   <div className="space-y-4 px-4 pb-4">
@@ -413,7 +431,7 @@ export default function AdminMembers() {
                         onInvitation={() => setInvitationId(invitationId === member.id ? null : member.id)}
                       />
                     )}
-                    <MemberPushPanel member={member} />
+                    <MemberPushPanel member={member} onStatus={(status) => setPushStatuses(current => ({ ...current, [member.id]: status }))} />
                     {invitationId === member.id && member.membership_status === 'approved' && isPendingInvite(member) && (
                       <InvitationPanel key={`${member.id}:${member.email}`} member={member} onClose={() => setInvitationId(null)} />
                     )}
@@ -426,6 +444,17 @@ export default function AdminMembers() {
       </div>
     </div>
   );
+}
+
+function PushStatusIcon({ member, status }: { member: User; status: MemberPushStatus | null | undefined }) {
+  const enabled = status?.preferences?.push_enabled;
+  const label = status === undefined ? 'Loading push setting' : status === null ? 'Push setting unavailable'
+    : enabled === undefined ? 'No saved push setting' : enabled ? 'Account push enabled' : 'Account push disabled';
+  const Icon = status === undefined ? Loader2 : enabled === undefined ? CircleHelp : enabled ? Bell : BellOff;
+  return <span id={`push-status-${member.id}`} role="img" aria-label={label} title={`${label}. Open Details for saved preferences and devices.`}
+    className={`shrink-0 ${enabled === true ? 'text-green-700' : 'text-slate-500'}`}>
+    <Icon aria-hidden="true" className={`h-5 w-5 ${status === undefined ? 'animate-spin' : ''}`} />
+  </span>;
 }
 
 function MemberRow({

@@ -1,4 +1,4 @@
-import { test, expect, members, json } from './support/fixtures';
+import { test, expect, members, preferences, json } from './support/fixtures';
 
 test.use({ identity: 'admin' });
 const longName = 'Alexandertheverylongdisplaynamethatmustwrap';
@@ -60,4 +60,30 @@ test('removal refusal stays visible and removed members can be restored', async 
   await page.getByRole('button', { name: 'Reinstate Blair' }).click();
   await expect(page.getByRole('status')).toContainText('back in the club');
   await expect(page.getByRole('tab', { name: 'Members (1)' })).toBeVisible();
+});
+
+
+test('closed rows show saved push states and detail refresh updates the icon', async ({ page }) => {
+  await page.route('**/api/admin/users', route => json(route, members));
+  let enabled = true;
+  await page.route('**/api/admin/users/*/push-notifications', route => {
+    const id = route.request().url().split('/').slice(-2)[0];
+    if (id === members[3].id) return json(route, { error: 'Unavailable' }, 503);
+    return json(route, { preferences: id === members[2].id ? null : { ...preferences, push_enabled: id === members[0].id && enabled }, devices: [] });
+  });
+  await page.goto('/admin/members');
+  await expect(page.getByRole('img', { name: 'Account push enabled', exact: true })).toHaveCount(1);
+  await expect(page.getByRole('img', { name: 'Account push disabled', exact: true })).toHaveCount(1);
+  await expect(page.getByRole('img', { name: 'No saved push setting', exact: true })).toBeVisible();
+  await expect(page.getByRole('img', { name: 'Push setting unavailable', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Push alerts and devices' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Details for Alex', exact: true }).click();
+  await page.getByRole('button', { name: 'Push alerts and devices', exact: true }).click();
+  await expect(page.getByText('Account push: On', { exact: true })).toBeVisible();
+  enabled = false;
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(page.getByText('Account push: Off', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Details for Alex', exact: true }).click();
+  await expect(page.getByRole('img', { name: 'Account push disabled', exact: true })).toHaveCount(2);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
