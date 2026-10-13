@@ -4,7 +4,7 @@ Check out branch `codex/notification-delivery` in a dedicated checkout/worktree 
 
 ## Objective for this run
 
-Implement **release 1 only**: accurate member push-registration status and actionable notification navigation/history. Complete setup task T001 insofar as it defines release 1's cutover, then T002–T011 in `specs/011-notification-delivery/tasks.md`. Deliver functioning code with relevant validation; go beyond a plan or explanation. Later releases have their own work and should remain unchecked.
+The owner now requests **all six releases**, one PR per release in one GitHub stack, with isolated worktrees/subagents and review before pushing. Start with release 1, T001–T011, then follow the release sequence. Read `implementation-progress.md` for current orchestration status. Use GPT 6 Luna for routine testing/CI monitoring. Do not merge the stack without an explicit instruction.
 
 ## Read first
 
@@ -43,6 +43,6 @@ Implement in the existing handler -> service -> DB structure. Frontend requests 
 
 Run applicable backend tests (`go test ./...`, database-backed cases with scratch TEST_DATABASE_URL when available), frontend lint/build/Vitest and targeted Playwright notification navigation/member-status tests. Do not deploy or send member notifications while implementing. Retain operational notification stops. Update completed task checkboxes only after implementation and validation.
 
-Do not launch other chats or send messages to other chats as part of this handoff. Parallel agents are unnecessary for this first run. Separate feature worktrees for releases 4–6 can be considered after release 3 lands with stable contracts.
+Use subagents and separate worktrees as the owner explicitly requests. Do not create unrelated sidebar chats. Parallelize non-overlapping files/modules; integrate shared files sequentially. After release 3 contracts stabilize, releases 4–6 can be authored independently and integrated in stack order.
 
-At completion, report changed behavior, test results/limitations, completed task IDs and any unresolved release 1 blocker. Show the final diff. Leave later releases untouched. A new PR or deployment is a separate action; this run's deliverable is release 1 code and validation in this worktree.
+At completion, report six PR links, gh stack identity, review outcomes, test/CI status and completed task IDs. Every implementation release must have all P1/P2 findings addressed before its implementation is pushed and its PR created. The owner explicitly authorizes pushing and creating the six PRs; no merge is requested.
