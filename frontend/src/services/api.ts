@@ -60,6 +60,11 @@ class ApiService {
     this.accessToken = token;
   }
 
+  async reportBrowserLogs(events: Array<{ source: string; error_type: string }>): Promise<void> {
+    if (!this.accessToken || events.length === 0) return;
+    await this.client.post('/telemetry/browser-logs', events);
+  }
+
   // Auth
   // The backend reads the Auth0 subject and email from the verified access token;
   // only display fields are sent here.
