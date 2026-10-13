@@ -1,10 +1,15 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/weekday-masters/backend/internal/assistant"
@@ -13,11 +18,33 @@ import (
 	"github.com/weekday-masters/backend/internal/handlers"
 	"github.com/weekday-masters/backend/internal/middleware"
 	"github.com/weekday-masters/backend/internal/services"
+	"github.com/weekday-masters/backend/internal/telemetry"
 )
 
 func main() {
+	if err := run(); err != nil {
+		log.Print(err)
+		os.Exit(1)
+	}
+}
+
+func run() (runErr error) {
 	// Load configuration
 	cfg := config.Load()
+	obs, err := telemetry.Start(context.Background())
+	if err != nil {
+		return fmt.Errorf("initialize telemetry: %w", err)
+	}
+	defer func() {
+		if runErr != nil {
+			log.Printf("Server failed: %v", runErr)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+		defer cancel()
+		if err := obs.Shutdown(ctx); err != nil {
+			log.Printf("flush telemetry: %v", err)
+		}
+	}()
 
 	// Set Gin mode
 	gin.SetMode(cfg.GinMode)
@@ -25,8 +52,17 @@ func main() {
 	// Connect to database. Schema migrations are NOT run here — they are applied by
 	// the separate `migrate` command as an explicit deploy step (see cmd/migrate).
 	if err := database.Connect(cfg.DatabaseURL); err != nil {
-		log.Fatal("Failed to connect to database:", err)
+		return fmt.Errorf("connect database: %w", err)
 	}
+
+	sqlDB, err := database.DB.DB()
+	if err != nil {
+		return err
+	}
+	if err := obs.ObserveDB(sqlDB); err != nil {
+		return err
+	}
+	defer sqlDB.Close()
 
 	// Initialize notification service first: the RSVP service uses it to tell players
 	// when they have been promoted off a session waitlist.
@@ -99,7 +135,13 @@ func main() {
 	}
 
 	// Setup router
-	r := gin.Default()
+	r := gin.New()
+	r.Use(obs.Middleware())
+	// Do not dump request headers or bodies into panic logs.
+	r.Use(gin.CustomRecoveryWithWriter(nil, func(c *gin.Context, recovered interface{}) {
+		log.Printf("HTTP handler panic\n%s", debug.Stack())
+		c.AbortWithStatus(http.StatusInternalServerError)
+	}))
 
 	// CORS middleware
 	r.Use(middleware.CORS(cfg.FrontendURL))
@@ -215,17 +257,25 @@ func main() {
 	// Handle graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(quit)
+	srv := &http.Server{Addr: ":" + cfg.Port, Handler: r, ReadHeaderTimeout: 10 * time.Second}
+	serverError := make(chan error, 1)
 
 	// Start server in goroutine
 	go func() {
 		log.Printf("Server starting on port %s", cfg.Port)
-		if err := r.Run(":" + cfg.Port); err != nil {
-			log.Fatal("Failed to start server:", err)
-		}
+		serverError <- srv.ListenAndServe()
 	}()
 
 	// Wait for shutdown signal
-	<-quit
+	select {
+	case <-quit:
+	case err := <-serverError:
+		if scheduler != nil {
+			scheduler.Stop()
+		}
+		return fmt.Errorf("server stopped: %w", err)
+	}
 	log.Println("Shutting down server...")
 
 	// Stop scheduler if running
@@ -233,5 +283,12 @@ func main() {
 		scheduler.Stop()
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		_ = srv.Close()
+		return err
+	}
 	log.Println("Server stopped")
+	return nil
 }

@@ -331,3 +331,10 @@ alone does not prove a token is registered or a notification reached the device.
 `push_sent` means FCM accepted at least one device delivery; it remains false when
 there are no tokens or all devices fail. No live notifications were sent during
 local verification.
+
+## Grafana Cloud observability
+
+See [OBSERVABILITY.md](OBSERVABILITY.md) for backend OTLP logs and metrics,
+Secret Manager credentials, GitHub deployment variables and Grafana verification.
+Export is disabled by default. Enabling it in production also selects
+instance-based Cloud Run billing to support background telemetry export.

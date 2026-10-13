@@ -78,7 +78,26 @@ jobs:
       - name: Deploy to Cloud Run
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OTEL_ENABLED: ${{ vars.OTEL_ENABLED || 'false' }}
+          OTEL_ENDPOINT: ${{ vars.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          OTEL_HEADERS_SECRET: ${{ vars.OTEL_HEADERS_SECRET }}
         run: |
+          telemetry_flags=(--set-env-vars="OTEL_ENABLED=${OTEL_ENABLED}")
+          if [[ "$OTEL_ENABLED" == "true" ]]; then
+            if [[ -z "$OTEL_ENDPOINT" || -z "$OTEL_HEADERS_SECRET" ]]; then
+              echo "OTEL requires OTEL_EXPORTER_OTLP_ENDPOINT and OTEL_HEADERS_SECRET repository variables" >&2
+              exit 1
+            fi
+            telemetry_flags+=(
+              --set-env-vars="OTEL_SERVICE_NAME=rally-api"
+              --set-env-vars="OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=production"
+              --set-env-vars="OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_ENDPOINT}"
+              --set-env-vars="OTEL_EXPORTER_OTLP_TIMEOUT=3000"
+              --set-env-vars="OTEL_METRIC_EXPORT_INTERVAL=30000"
+              --update-secrets="OTEL_EXPORTER_OTLP_HEADERS=${OTEL_HEADERS_SECRET}:latest"
+              --no-cpu-throttling
+            )
+          fi
           # A preview deploy on an open PR writes to this same service, so this
           # can lose an optimistic-concurrency race. See the script.
           .github/scripts/gcloud-retry-on-conflict.sh \
@@ -86,6 +105,7 @@ jobs:
             --project ${{ env.GCP_PROJECT_ID }} \
             --image ${{ env.IMAGE }} \
             --region ${{ env.GCP_REGION }} \
+            "${telemetry_flags[@]}" \
             --platform managed \
             --allow-unauthenticated \
             --set-env-vars="GIN_MODE=release" \
