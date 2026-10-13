@@ -64,8 +64,7 @@ func run() (runErr error) {
 	}
 	defer sqlDB.Close()
 
-	// Initialize notification service first: the RSVP service uses it to tell players
-	// when they have been promoted off a session waitlist.
+	// Initialize notifications independently of RSVP capacity and waitlist promotion.
 	notificationService := services.NewNotificationService(services.NotificationConfig{
 		Disabled:            cfg.NotificationsDisabled,
 		DisabledAllowEmail:  cfg.NotificationsDisabledAllowEmail,
@@ -85,7 +84,7 @@ func run() (runErr error) {
 	// Initialize services
 	auth0Service := services.NewAuth0Service(cfg.Auth0Domain)
 	sessionService := services.NewSessionService().WithNotifier(notificationService)
-	rsvpService := services.NewRSVPService(notificationService)
+	rsvpService := services.NewRSVPService()
 	// Removing a member gives their upcoming spots back, which is the RSVP
 	// service's job — it owns the session lock and the waitlist promotion.
 	userService := services.NewUserService(cfg.AdminEmail).WithRSVPs(rsvpService)
