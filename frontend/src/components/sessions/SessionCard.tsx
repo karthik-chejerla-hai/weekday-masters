@@ -28,6 +28,7 @@ export default function SessionCard({ session, venueName, courtNumber, timeForma
   const hasCustomTitle = session.title !== format(sessionDate, 'EEEE - dd MMM yyyy');
   const isDeadlinePassed = new Date() > new Date(session.rsvp_deadline);
   const isCancelled = session.status === 'cancelled';
+  const isCurrentSession = recordScore && !isCancelled;
   const confirmedRsvps = session.rsvps?.filter(r => r.status === 'in') || [];
   const waitingCount = session.rsvps?.filter(r => r.status === 'waitlisted').length || 0;
   const myRsvp = session.rsvps?.find(r => r.user_id === currentUserId);
@@ -57,23 +58,25 @@ export default function SessionCard({ session, venueName, courtNumber, timeForma
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-          <span className="font-medium text-slate-700">{confirmedRsvps.length} of {session.max_players} confirmed</span>
-          {isCancelled ? <Badge variant="danger">Cancelled</Badge> : <>
+          <span className="font-medium text-slate-700">{isCurrentSession ? `${confirmedRsvps.length} confirmed ${confirmedRsvps.length === 1 ? 'player' : 'players'}` : `${confirmedRsvps.length} of ${session.max_players} confirmed`}</span>
+          {!isCurrentSession && (isCancelled ? <Badge variant="danger">Cancelled</Badge> : <>
             {spotsLeft <= 0 ? <Badge variant="warning">Full{waitingCount > 0 ? ` · ${waitingCount} waiting` : ''}</Badge>
               : spotsLeft <= 2 && <Badge variant="warning">{spotsLeft} spots left</Badge>}
             {isDeadlinePassed ? <Badge variant="warning">RSVP Closed</Badge> : <Badge variant="success">RSVP open</Badge>}
-          </>}
+          </>)}
         </div>
-        <p className="mt-2 rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-900">
+        {!isCurrentSession && <p className="mt-2 rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-900">
           {isCancelled ? 'Your recorded RSVP: ' : 'Your RSVP: '}
           {myRsvp ? responseLabels[myRsvp.status] : 'Not responded'}
           {myRsvp?.status === 'waitlisted' && myRsvp.waitlist_position ? ` (#${myRsvp.waitlist_position})` : ''}
-        </p>
+        </p>}
 
         <div className="mt-3">
-          <PlayerRSVPChips rsvps={session.rsvps ?? []} />
+          {isCurrentSession && confirmedRsvps.length === 0
+            ? <p className="text-sm text-slate-500">No confirmed players yet</p>
+            : <PlayerRSVPChips rsvps={isCurrentSession ? confirmedRsvps : session.rsvps ?? []} />}
         </div>
-        {!isDeadlinePassed && !isCancelled && (
+        {!isCurrentSession && !isDeadlinePassed && !isCancelled && (
           <p className="mt-3 flex items-start gap-1.5 text-xs text-amber-800">
             <Timer className="h-4 w-4 shrink-0" aria-hidden="true" />
             <span>RSVP by {formatInTimeZone(session.rsvp_deadline, 'Australia/Sydney', 'EEE, d MMM')}</span>
