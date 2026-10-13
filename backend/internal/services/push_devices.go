@@ -143,7 +143,7 @@ func (s *NotificationService) enrollPushDevice(userID, installation uuid.UUID, t
 		}
 		err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("token = ?", token).First(&row).Error
 		if err == nil {
-			if row.UserID != userID || row.InstallationID != nil || row.RevokedAt != nil || row.InvalidatedAt != nil {
+			if row.UserID != userID || row.InstallationID != nil || row.RevokedAt != nil {
 				return ErrDeviceConflict
 			}
 			row.InstallationID = &installation
