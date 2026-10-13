@@ -123,6 +123,7 @@ jobs:
             --tag pr-${PR_NUMBER} \
             --allow-unauthenticated \
             --set-env-vars="GIN_MODE=release" \
+            --set-env-vars="OTEL_ENABLED=false" \
             --set-env-vars="NOTIFICATIONS_DISABLED=true" \
             --set-env-vars="NOTIFICATIONS_DISABLED_ALLOW_EMAIL=${{ secrets.ADMIN_EMAIL }}" \
             --set-env-vars="INVITATION_TEST_EMAILS_ENABLED=false" \

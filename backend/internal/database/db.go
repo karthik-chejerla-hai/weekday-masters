@@ -2,6 +2,7 @@ package database
 
 import (
 	"log"
+	"time"
 
 	"github.com/weekday-masters/backend/internal/models"
 	"gorm.io/driver/postgres"
@@ -14,7 +15,12 @@ var DB *gorm.DB
 func Connect(databaseURL string) error {
 	var err error
 	DB, err = gorm.Open(postgres.Open(databaseURL), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
+		Logger: logger.New(log.Default(), logger.Config{
+			SlowThreshold:        200 * time.Millisecond,
+			LogLevel:             logger.Info,
+			ParameterizedQueries: true,
+			Colorful:             false,
+		}),
 	})
 	if err != nil {
 		return err
