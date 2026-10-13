@@ -476,6 +476,12 @@ func (h *AdminHandler) AddPlayerRSVP(c *gin.Context) {
 		return
 	}
 
+	var member models.User
+	if err := database.DB.Where("id = ? AND membership_status = ?", userID, models.MembershipApproved).First(&member).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Player must be an approved member"})
+		return
+	}
+
 	rsvp, err := h.rsvpService.CreateOrUpdateRSVP(services.RSVPInput{
 		SessionID: sessionID,
 		UserID:    userID,
