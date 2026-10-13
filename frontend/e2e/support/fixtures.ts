@@ -70,6 +70,7 @@ export const test = base.extend<Fixtures>({
       'GET /api/assistant/status': { enabled: false },
       'GET /api/users/me/notifications': preferences,
       'GET /api/users/me/push-devices': [],
+      'POST /api/push-devices/legacy-revoke': { cleanup_required: false },
       'GET /api/accounts/me': { balance_cents: 5000, state: 'ok' },
       'GET /api/accounts/me/spend': { year: 2026, as_of: '2026-10-07', recorded_from: null,
         ytd_cents: 0, all_time_cents: 0, months: [] },

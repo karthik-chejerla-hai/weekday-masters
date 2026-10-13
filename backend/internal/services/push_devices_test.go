@@ -183,3 +183,75 @@ func TestInvalidatedEnrollmentCanRefreshWithoutRevivingRevocation(t *testing.T) 
 		t.Fatal(err)
 	}
 }
+
+func TestRevokeProofRecoveryDisclosesCounterOnlyAfterValidProof(t *testing.T) {
+	requireDB(t)
+	owner := newUser(t, "owner")
+	ns := &NotificationService{}
+	installation := uuid.New()
+	device, err := ns.EnrollPushDevice(owner.ID, installation, "address", deviceSecret, "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ns.RefreshPushDevice(owner.ID, device.ID, installation, "rotated", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = ns.RevokePushDeviceProof(installation, strings.Repeat("00", 32), 0)
+	var counter *DeviceGenerationConflictError
+	if !errors.Is(err, ErrDeviceNotFound) || errors.As(err, &counter) {
+		t.Fatal("invalid proof disclosed counter", err)
+	}
+	err = ns.RevokePushDeviceProof(installation, deviceSecret, 0)
+	if !errors.As(err, &counter) || counter.CurrentGeneration != 2 {
+		t.Fatal("valid lost-response proof could not recover", err)
+	}
+	if err := ns.RevokePushDeviceProof(installation, deviceSecret, counter.CurrentGeneration); err != nil {
+		t.Fatal(err)
+	}
+}
+func TestForeignLegacyCleanupPreservesSameOwnerAndAdoptedRows(t *testing.T) {
+	requireDB(t)
+	owner := newUser(t, "owner")
+	other := newUser(t, "other")
+	ns := &NotificationService{}
+	row := models.UserPushToken{UserID: owner.ID, Token: "legacy-address"}
+	if err := database.DB.Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	kept, err := ns.RevokeForeignLegacyToken(owner.ID, row.Token)
+	if err != nil || kept.CleanupRequired {
+		t.Fatal(kept, err)
+	}
+	retired, err := ns.RevokeForeignLegacyToken(other.ID, row.Token)
+	if err != nil || !retired.CleanupRequired {
+		t.Fatal(retired, err)
+	}
+	var stored models.UserPushToken
+	database.DB.First(&stored, "id = ?", row.ID)
+	if stored.UserID != owner.ID || stored.Token != row.Token || stored.RevokedAt == nil || stored.Generation != 2 || stored.InstallationID != nil {
+		t.Fatal("legacy token transferred or lost", stored)
+	}
+	if _, err := ns.RevokeForeignLegacyToken(other.ID, row.Token); err != nil {
+		t.Fatal(err)
+	}
+	database.DB.First(&stored, "id = ?", row.ID)
+	if stored.Generation != 2 {
+		t.Fatal("duplicate legacy cleanup advanced generation")
+	}
+	adopted, err := ns.EnrollPushDevice(owner.ID, uuid.New(), "adopted-address", deviceSecret, "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	untouched, err := ns.RevokeForeignLegacyToken(other.ID, "adopted-address")
+	if err != nil || untouched.CleanupRequired {
+		t.Fatal(untouched, err)
+	}
+	var healthy models.UserPushToken
+	if err := database.DB.First(&healthy, "id = ?", adopted.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if healthy.RevokedAt != nil {
+		t.Fatal("legacy endpoint revoked v2 installation")
+	}
+}
