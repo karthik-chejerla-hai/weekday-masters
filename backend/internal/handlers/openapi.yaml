@@ -126,59 +126,270 @@ paths:
           $ref: "#/components/responses/Unauthorized"
     put:
       tags: [Notifications]
-      summary: Update notification preferences
+      summary: Obsolete notification preference mutation
       operationId: updateNotificationPreferences
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdatePreferencesRequest"
+      description: Refresh the client to use device-only setup. This route never mutates preferences or registrations.
+      deprecated: true
       responses:
-        "200":
-          description: Updated preferences
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/UserNotificationPreferences"
-        "400":
-          $ref: "#/components/responses/BadRequest"
+        "409":
+          description: update_required; refresh Rally to manage this device
         "401":
           $ref: "#/components/responses/Unauthorized"
 
   /users/me/push-tokens:
     post:
       tags: [Notifications]
-      summary: Register FCM push token
+      summary: Obsolete push-token registration
       operationId: registerPushToken
+      description: Returns update_required without inserting, rotating or transferring tokens. Use explicit device enrollment.
+      deprecated: true
+      responses:
+        "409":
+          description: update_required; refresh Rally to manage this device
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      tags: [Notifications]
+      summary: Obsolete push-token deletion
+      operationId: unregisterPushToken
+      description: Returns update_required without removing tokens. Use scoped device revocation.
+      deprecated: true
+      responses:
+        "409":
+          description: update_required; refresh Rally to manage this device
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /users/me/push-devices:
+    get:
+      tags: [Notifications]
+      summary: List own push registrations
+      operationId: getPushDevices
+      description: Requires approved membership. Metadata includes active, revoked and invalidated records; never token or revoke secret.
+      responses:
+        "200":
+          description: Safe enrollment metadata
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PushEnrollment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Enrollment generation, proof or token ownership conflict
+        "500":
+          description: Setup temporarily unavailable
+
+  /users/me/push-devices/enroll:
+    post:
+      tags: [Notifications]
+      summary: Explicitly enable a browser installation
+      operationId: enrollPushDevice
+      description: Requires approved membership. Missing or foreign owned IDs return 404; stale generation or lifecycle conflicts return 409. Existing token ownership is never reassigned.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/RegisterTokenRequest"
+              $ref: "#/components/schemas/PushEnrollmentInput"
       responses:
         "200":
-          $ref: "#/components/responses/Message"
+          description: Safe enrollment metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PushEnrollment"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
-    delete:
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Enrollment generation, proof or token ownership conflict
+        "500":
+          description: Setup temporarily unavailable
+
+  /users/me/push-devices/adopt:
+    post:
       tags: [Notifications]
-      summary: Unregister FCM push token
-      description: If token is omitted, all tokens for the user are removed.
-      operationId: unregisterPushToken
+      summary: Attach metadata to an existing same-owner legacy token
+      operationId: adoptPushDevice
+      description: Requires approved membership. Missing or foreign owned IDs return 404; stale generation or lifecycle conflicts return 409. Existing token ownership is never reassigned.
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/UnregisterTokenRequest"
+              $ref: "#/components/schemas/PushEnrollmentInput"
       responses:
         "200":
-          $ref: "#/components/responses/Message"
+          description: Safe enrollment metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PushEnrollment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Enrollment generation, proof or token ownership conflict
+        "500":
+          description: Setup temporarily unavailable
+
+  /users/me/push-devices/{id}/registration:
+    put:
+      tags: [Notifications]
+      summary: Refresh a non-revoked owned enrollment
+      operationId: refreshPushDevice
+      description: Requires approved membership. Missing or foreign owned IDs return 404; stale generation or lifecycle conflicts return 409. Existing token ownership is never reassigned.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushRefreshInput"
+      responses:
+        "200":
+          description: Safe enrollment metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PushEnrollment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Enrollment generation, proof or token ownership conflict
+        "500":
+          description: Setup temporarily unavailable
+
+  /users/me/push-devices/{id}:
+    delete:
+      tags: [Notifications]
+      summary: Disable one owned installation
+      operationId: revokePushDevice
+      description: Requires approved membership. Missing or foreign owned IDs return 404; stale generation or lifecycle conflicts return 409. Existing token ownership is never reassigned.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushRevokeInput"
+      responses:
+        "204":
+          description: Revoked, or already revoked idempotent retry
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Enrollment generation, proof or token ownership conflict
+        "500":
+          description: Setup temporarily unavailable
+
+  /push-devices/revoke-proof:
+    post:
+      tags: [Notifications]
+      summary: Revoke former browser enrollment using device proof
+      operationId: revokePushDeviceProof
+      description: Authenticated revoke-only exception. Approval is not required; valid 256-bit device proof and generation can retire the former browser enrollment after account switching. Returns no registration or owner details.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushProofRevokeInput"
+      responses:
+        "204":
+          description: Revoked, or already revoked idempotent retry
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Valid proof but stale generation. Only after proof verification, details.current_generation permits bounded retry inside a persisted cleanup intent.
+        "500":
+          description: Setup temporarily unavailable
+
+  /push-devices/legacy-revoke:
+    post:
+      tags: [Notifications]
+      summary: Revoke a foreign unadopted legacy browser address
+      operationId: revokeForeignLegacyToken
+      description: Authentication required, including pending or removed new accounts. FCM address possession permits revoke-only cleanup for installation_id NULL. Same-owner active rows and adopted v2 installations remain unchanged. Returns no identity or address.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+                  minLength: 1
+                  maxLength: 4096
+                  writeOnly: true
+      responses:
+        "200":
+          description: Whether Firebase address cleanup must finish before sign-in completes
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [cleanup_required]
+                properties:
+                  cleanup_required:
+                    type: boolean
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          description: Cleanup temporarily unavailable
 
   /users/me/notifications/history:
     get:
@@ -2683,6 +2894,91 @@ components:
         attempted_devices:
           type: integer
           minimum: 1
+
+    PushEnrollment:
+      type: object
+      required: [id, installation_id, generation, device_name, state]
+      properties:
+        id:
+          type: string
+          format: uuid
+        installation_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null for preserved legacy registrations whose browsers have not adopted metadata
+        generation:
+          type: integer
+          format: int64
+          minimum: 1
+        device_name:
+          type: string
+        state:
+          type: string
+          enum: [active, revoked, invalidated]
+    PushEnrollmentInput:
+      type: object
+      required: [installation_id, token, revocation_secret]
+      properties:
+        installation_id:
+          type: string
+          format: uuid
+        token:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        revocation_secret:
+          type: string
+          pattern: '^[0-9a-fA-F]{64}$'
+          writeOnly: true
+        generation:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+        device_name:
+          type: string
+          maxLength: 200
+    PushRefreshInput:
+      type: object
+      required: [installation_id, token, generation]
+      properties:
+        installation_id:
+          type: string
+          format: uuid
+        token:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        generation:
+          type: integer
+          format: int64
+          minimum: 1
+    PushRevokeInput:
+      type: object
+      required: [generation]
+      properties:
+        generation:
+          type: integer
+          format: int64
+          minimum: 1
+    PushProofRevokeInput:
+      type: object
+      required: [installation_id, revocation_secret]
+      properties:
+        installation_id:
+          type: string
+          format: uuid
+        revocation_secret:
+          type: string
+          pattern: '^[0-9a-fA-F]{64}$'
+          writeOnly: true
+        generation:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+          description: Zero permits recovery after a lost enrollment or adoption response; current counter is disclosed only after proof verification
 
     Notification:
       type: object
