@@ -121,7 +121,7 @@ func TestCreateSession_CalculatesCapacityFromCourts(t *testing.T) {
 	}
 }
 
-func TestCreateSession_SetsTheRSVPDeadlineThreeDaysBefore(t *testing.T) {
+func TestCreateSession_SetsTheRSVPDeadline48ElapsedHoursBefore(t *testing.T) {
 	h := newHarness(t)
 	admin := makeAdmin(t)
 
@@ -134,36 +134,17 @@ func TestCreateSession_SetsTheRSVPDeadlineThreeDaysBefore(t *testing.T) {
 		"courts":       2,
 	}).expect(http.StatusCreated).decode(&session)
 
-	deadline := session.RSVPDeadline.In(utils.SydneyLocation)
-	wantDay := session.SessionDate.In(utils.SydneyLocation).AddDate(0, 0, -3)
-
-	if deadline.Year() != wantDay.Year() || deadline.YearDay() != wantDay.YearDay() {
-		t.Fatalf("expected the deadline on %s, got %s", wantDay.Format("2006-01-02"), deadline.Format("2006-01-02"))
-	}
-	if h, m, sec := deadline.Clock(); h != 23 || m != 59 || sec != 59 {
-		t.Fatalf("expected the deadline at end of day Sydney time, got %s", deadline.Format("15:04:05"))
+	if session.StartsAt.Sub(session.RSVPDeadline) != 48*time.Hour {
+		t.Fatalf("deadline must precede resolved start by 48h: %+v", session)
 	}
 }
 
-func TestCreateSession_AcceptsAnExplicitRSVPDeadline(t *testing.T) {
+func TestCreateSession_RejectsObsoleteCustomDeadline(t *testing.T) {
 	h := newHarness(t)
 	admin := makeAdmin(t)
-
-	want := utils.NowInSydney().AddDate(0, 0, 6).Truncate(time.Second)
-
-	var session models.Session
-	h.as(admin).post("/api/admin/sessions", map[string]any{
-		"title":         "Friday Social",
-		"session_date":  sydneyDate(14),
-		"start_time":    "18:00",
-		"end_time":      "20:00",
-		"courts":        2,
-		"rsvp_deadline": want.Format(time.RFC3339),
-	}).expect(http.StatusCreated).decode(&session)
-
-	if !session.RSVPDeadline.Equal(want) {
-		t.Fatalf("expected the deadline %s, got %s",
-			want.Format(time.RFC3339), session.RSVPDeadline.Format(time.RFC3339))
+	response := h.as(admin).post("/api/admin/sessions", map[string]any{"title": "Friday", "session_date": sydneyDate(14), "start_time": "18:00", "end_time": "20:00", "courts": 2, "rsvp_deadline": utils.NowInSydney().AddDate(0, 0, 6).Format(time.RFC3339)}).expect(http.StatusBadRequest)
+	if !strings.Contains(string(response.Body), "fixed at 48 hours") {
+		t.Fatalf("missing update-required explanation: %s", response.Body)
 	}
 }
 
@@ -227,22 +208,11 @@ func TestUpdateSession_RejectsAMalformedRSVPDeadline(t *testing.T) {
 	}).expect(http.StatusBadRequest)
 }
 
-func TestUpdateSession_AppliesAnExplicitRSVPDeadline(t *testing.T) {
+func TestUpdateSession_RejectsObsoleteCustomDeadline(t *testing.T) {
 	h := newHarness(t)
 	admin := makeAdmin(t)
 	session := makeSession(t, admin.ID, 2)
-
-	want := utils.NowInSydney().AddDate(0, 0, 4).Truncate(time.Second)
-
-	var updated models.Session
-	h.as(admin).put("/api/admin/sessions/"+session.ID.String(), map[string]any{
-		"rsvp_deadline": want.Format(time.RFC3339),
-	}).expect(http.StatusOK).decode(&updated)
-
-	if !updated.RSVPDeadline.Equal(want) {
-		t.Fatalf("expected the deadline %s, got %s",
-			want.Format(time.RFC3339), updated.RSVPDeadline.Format(time.RFC3339))
-	}
+	h.as(admin).put("/api/admin/sessions/"+session.ID.String(), map[string]any{"rsvp_deadline": utils.NowInSydney().AddDate(0, 0, 4).Format(time.RFC3339)}).expect(http.StatusBadRequest)
 }
 
 func TestCreateSession_RejectsIncompleteAndOutOfRangeRequests(t *testing.T) {

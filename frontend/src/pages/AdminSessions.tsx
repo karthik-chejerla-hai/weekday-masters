@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, Calendar, Trash2, Loader2, XCircle, X } from 'lucide-react';
-import { format, parseISO, subDays } from 'date-fns';
-import { formatInTimeZone } from 'date-fns-tz';
+import { format, parseISO } from 'date-fns';
 import { api } from '../services/api';
 import type { Session, CreateSessionInput, TimeFormat } from '../types';
 import { formatSessionTimeRange } from '../utils/session-display';
@@ -49,13 +48,6 @@ export default function AdminSessions() {
     occurrences: 4,
   });
 
-  // Deadline customisation state
-  const [useCustomDeadline, setUseCustomDeadline] = useState(false);
-  const [deadlineDatetime, setDeadlineDatetime] = useState(''); // for one-off (datetime-local value)
-  const [deadlineDaysBefore, setDeadlineDaysBefore] = useState(3); // for recurring
-  const [deadlineTime, setDeadlineTime] = useState('23:59'); // for recurring
-  const [deadlineError, setDeadlineError] = useState('');
-
   // Auto-generate title based on date
   const generateTitle = (dateStr: string) => {
     if (!dateStr) return '';
@@ -80,39 +72,8 @@ export default function AdminSessions() {
     }
   };
 
-  const computeRsvpDeadline = (): string | undefined => {
-    if (!useCustomDeadline) return undefined;
-
-    if (formData.is_recurring) {
-      // Compute deadline relative to the first session date
-      if (!formData.session_date) return undefined;
-      const sessionDate = new Date(formData.session_date);
-      const deadlineDate = subDays(sessionDate, deadlineDaysBefore);
-      const [hh, mm] = deadlineTime.split(':').map(Number);
-      deadlineDate.setHours(hh, mm, 59, 0);
-      // Format as RFC3339 in Sydney timezone
-      return formatInTimeZone(deadlineDate, 'Australia/Sydney', "yyyy-MM-dd'T'HH:mm:ssXXX");
-    } else {
-      // One-off: use the datetime-local value directly
-      if (!deadlineDatetime) return undefined;
-      const dt = new Date(deadlineDatetime);
-      return formatInTimeZone(dt, 'Australia/Sydney', "yyyy-MM-dd'T'HH:mm:ssXXX");
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setDeadlineError('');
-
-    // Client-side deadline validation
-    if (useCustomDeadline) {
-      const deadline = computeRsvpDeadline();
-      if (deadline && new Date(deadline) < new Date()) {
-        setDeadlineError('RSVP deadline cannot be in the past');
-        return;
-      }
-    }
-
     setIsSubmitting(true);
     try {
       const input: CreateSessionInput = {
@@ -122,7 +83,6 @@ export default function AdminSessions() {
           ? new Date(formData.session_date).getDay()
           : undefined,
         occurrences: formData.is_recurring ? formData.occurrences : undefined,
-        rsvp_deadline: computeRsvpDeadline(),
       };
       await api.createSession(input);
       setShowForm(false);
@@ -136,10 +96,6 @@ export default function AdminSessions() {
         is_recurring: false,
         occurrences: 4,
       });
-      setUseCustomDeadline(false);
-      setDeadlineDatetime('');
-      setDeadlineDaysBefore(3);
-      setDeadlineTime('23:59');
       await loadSessions();
     } catch (error) {
       console.error('Failed to create session:', error);
@@ -220,7 +176,7 @@ export default function AdminSessions() {
                   type="radio"
                   name="session_type"
                   checked={!formData.is_recurring}
-                  onChange={() => { setFormData({ ...formData, is_recurring: false }); setDeadlineError(''); }}
+                  onChange={() => { setFormData({ ...formData, is_recurring: false }); }}
                   className="w-4 h-4 text-primary-600"
                 />
                 <span className="text-sm text-slate-700">One-off Session</span>
@@ -230,7 +186,7 @@ export default function AdminSessions() {
                   type="radio"
                   name="session_type"
                   checked={formData.is_recurring}
-                  onChange={() => { setFormData({ ...formData, is_recurring: true }); setDeadlineError(''); }}
+                  onChange={() => { setFormData({ ...formData, is_recurring: true }); }}
                   className="w-4 h-4 text-primary-600"
                 />
                 <span className="text-sm text-slate-700">Recurring Weekly</span>
@@ -312,63 +268,7 @@ export default function AdminSessions() {
             />
           </div>
 
-          {/* RSVP Deadline */}
-          <div>
-            <label className="flex items-center gap-2 cursor-pointer mb-2">
-              <input
-                type="checkbox"
-                checked={useCustomDeadline}
-                onChange={(e) => setUseCustomDeadline(e.target.checked)}
-                className="w-4 h-4 text-primary-600 rounded"
-              />
-              <span className="text-sm font-medium text-slate-700">Custom RSVP Deadline</span>
-              <span className="text-xs text-slate-400">(default: 3 days before at 23:59)</span>
-            </label>
-
-            {useCustomDeadline && (
-              <div className="grid sm:grid-cols-2 gap-4 pl-6">
-                {formData.is_recurring ? (
-                  <>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Days Before Session</label>
-                      <select
-                        value={deadlineDaysBefore}
-                        onChange={(e) => setDeadlineDaysBefore(parseInt(e.target.value))}
-                        className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      >
-                        {[1, 2, 3, 4, 5, 6, 7].map((n) => (
-                          <option key={n} value={n}>{n} day{n > 1 ? 's' : ''} before</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Deadline Time</label>
-                      <input
-                        type="time"
-                        value={deadlineTime}
-                        onChange={(e) => setDeadlineTime(e.target.value)}
-                        className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <div className="sm:col-span-2">
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Deadline Date & Time</label>
-                    <input
-                      type="datetime-local"
-                      value={deadlineDatetime}
-                      onChange={(e) => setDeadlineDatetime(e.target.value)}
-                      className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-
-            {deadlineError && (
-              <p className="text-sm text-red-600 mt-1 pl-6">{deadlineError}</p>
-            )}
-          </div>
+          <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">RSVP closes 48 hours before the session starts. Short-notice sessions may already be closed to player RSVPs.</p>
 
           <div className="flex gap-3 pt-2">
             <button
