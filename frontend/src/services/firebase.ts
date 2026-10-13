@@ -1,5 +1,5 @@
 import { initializeApp, FirebaseApp } from 'firebase/app';
-import { getMessaging, getToken, onMessage, isSupported, Messaging } from 'firebase/messaging';
+import { getMessaging, getToken, deleteToken, onMessage, isSupported, Messaging } from 'firebase/messaging';
 
 // Firebase configuration from environment variables
 const firebaseConfig = {
@@ -151,4 +151,15 @@ export const getNotificationPermission = (): NotificationPermission | 'unsupport
     return 'unsupported';
   }
   return Notification.permission;
+};
+
+// Silent refresh never opens a permission prompt.
+export const getExistingPushToken = async (): Promise<string | null> => {
+  if (getNotificationPermission() !== 'granted') return null;
+  return requestNotificationPermission();
+};
+export const deletePushToken = async (): Promise<void> => {
+  const msg = await initializeMessaging();
+  if (!msg) throw new Error('Could not clean up the browser push registration.');
+  if (!(await deleteToken(msg))) throw new Error('Browser push cleanup failed.');
 };
