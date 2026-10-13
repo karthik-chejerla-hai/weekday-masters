@@ -8,6 +8,8 @@ required for backend application telemetry. Export is off until `OTEL_ENABLED=tr
 - Existing Go `log` messages, including notification and scheduler messages.
 - GORM query logs through the same bridge, with query parameters omitted.
 - HTTP request logs with method, route template, status and duration.
+- Authenticated browser error events (`console.error`, uncaught errors and
+  unhandled promise rejections), recorded by category and JavaScript error type.
 - Request counts and duration histograms by method, route and response status.
 - Go heap allocation and goroutine count.
 - Database pool connections by used/idle state and cumulative connection waits.
@@ -17,10 +19,12 @@ HTTP logging omits raw URLs, query strings, headers and bodies; unmatched paths 
 one `unmatched` label. Existing service messages can contain member UUIDs and error
 details. Query parameter masking does not redact database error text.
 
-This covers the API process, not browser console output, migration/seed commands,
-Cloud Run platform logs/CPU metrics, Neon server metrics or distributed traces.
-Those require separate integrations. SDK versions are pinned to support this
-repository's Go 1.22 build and CI toolchain.
+This covers the API process and selected browser error categories, not raw
+browser console output, individual browser messages or stack traces,
+migration/seed commands, Cloud Run platform logs/CPU metrics, Neon server
+metrics or distributed traces. Browser telemetry requires a signed-in user and
+sends no message text, stack, URL, request data or user identifier. SDK
+versions are pinned to support this repository's Go 1.22 build and CI toolchain.
 
 ## 1. Get Grafana's connection settings
 
@@ -58,6 +62,12 @@ In Grafana Explore, choose the Logs data source and query:
 
 ```logql
 {service_name="rally-api"} |= "HTTP"
+```
+
+Browser error categories are available with:
+
+```logql
+{service_name="rally-api"} |= "Browser client error"
 ```
 
 In the Metrics data source, look for:
