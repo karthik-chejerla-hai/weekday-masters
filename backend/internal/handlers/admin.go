@@ -5,7 +5,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -267,7 +266,7 @@ type CreateSessionRequest struct {
 	IsRecurring        bool    `json:"is_recurring"`
 	RecurringDayOfWeek *int    `json:"recurring_day_of_week"`
 	Occurrences        *int    `json:"occurrences"`   // Number of recurring sessions to create
-	RSVPDeadline       *string `json:"rsvp_deadline"` // Optional ISO datetime (RFC3339)
+	RSVPDeadline       *string `json:"rsvp_deadline"` // Obsolete input; provided values are rejected
 }
 
 // CreateSession creates a new session
@@ -304,12 +303,8 @@ func (h *AdminHandler) CreateSession(c *gin.Context) {
 	}
 
 	if req.RSVPDeadline != nil {
-		deadline, err := time.Parse(time.RFC3339, *req.RSVPDeadline)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid RSVP deadline format. Use RFC3339 (e.g. 2026-04-08T23:59:59+11:00)"})
-			return
-		}
-		input.RSVPDeadline = &deadline
+		c.JSON(http.StatusBadRequest, gin.H{"error": services.ErrFixedRSVPDeadline.Error()})
+		return
 	}
 
 	session, err := h.sessionService.CreateSession(input)
@@ -330,7 +325,7 @@ type UpdateSessionRequest struct {
 	EndTime      *string `json:"end_time"`     // HH:MM
 	Courts       *int    `json:"courts"`
 	Status       *string `json:"status"`
-	RSVPDeadline *string `json:"rsvp_deadline"` // Optional ISO datetime (RFC3339)
+	RSVPDeadline *string `json:"rsvp_deadline"` // Obsolete input; provided values are rejected
 }
 
 // UpdateSession updates a session
@@ -355,6 +350,10 @@ func (h *AdminHandler) UpdateSession(c *gin.Context) {
 		EndTime:     req.EndTime,
 		Courts:      req.Courts,
 	}
+	if req.Status != nil {
+		status := models.SessionStatus(*req.Status)
+		input.Status = &status
+	}
 
 	if req.SessionDate != nil {
 		sessionDate, err := utils.ParseDateInSydney(*req.SessionDate)
@@ -366,17 +365,8 @@ func (h *AdminHandler) UpdateSession(c *gin.Context) {
 	}
 
 	if req.RSVPDeadline != nil {
-		deadline, err := time.Parse(time.RFC3339, *req.RSVPDeadline)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid RSVP deadline format. Use RFC3339 (e.g. 2026-04-08T23:59:59+11:00)"})
-			return
-		}
-		input.RSVPDeadline = &deadline
-	}
-
-	if req.Status != nil {
-		status := models.SessionStatus(*req.Status)
-		input.Status = &status
+		c.JSON(http.StatusBadRequest, gin.H{"error": services.ErrFixedRSVPDeadline.Error()})
+		return
 	}
 
 	session, err := h.sessionService.UpdateSession(id, input)

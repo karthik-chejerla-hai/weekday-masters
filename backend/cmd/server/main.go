@@ -92,18 +92,6 @@ func run() (runErr error) {
 	// service's job — it owns the session lock and the waitlist promotion.
 	userService := services.NewUserService(cfg.AdminEmail).WithRSVPs(rsvpService)
 
-	// Initialize scheduler for notification cron jobs
-	var scheduler *services.SchedulerService
-	if !cfg.NotificationsDisabled {
-		scheduler = services.NewSchedulerService(services.SchedulerConfig{
-			NotificationService:    notificationService,
-			SessionReminderHours24: cfg.SessionReminderHours24,
-			SessionReminderHours12: cfg.SessionReminderHours12,
-			DeadlineReminderHours:  cfg.DeadlineReminderHours,
-		})
-		scheduler.Start()
-	}
-
 	// Refresh recurring sessions on startup
 	if err := sessionService.RefreshRecurringSessions(); err != nil {
 		log.Println("Warning: Failed to refresh recurring sessions:", err)
@@ -274,17 +262,9 @@ func run() (runErr error) {
 	select {
 	case <-quit:
 	case err := <-serverError:
-		if scheduler != nil {
-			scheduler.Stop()
-		}
 		return fmt.Errorf("server stopped: %w", err)
 	}
 	log.Println("Shutting down server...")
-
-	// Stop scheduler if running
-	if scheduler != nil {
-		scheduler.Stop()
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()

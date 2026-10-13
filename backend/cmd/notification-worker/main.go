@@ -39,6 +39,11 @@ func main() {
 	})
 	// Preview worker does not inherit the API's diagnostic email allowlist.
 	router := handlers.NewNotificationWorkerRouter(audience, schedulerEmail, idtoken.Validate, func(ctx context.Context) (any, error) {
+		scan, err := notifications.QueueDueRSVPReminders(ctx, time.Now().UTC(), 100)
+		emitWorkerHealth("rsvp_reminder_scan", scan, err)
+		if err != nil {
+			return nil, err
+		}
 		result, err := notifications.ProcessNotificationWork(ctx, 100)
 		emitWorkerHealth("notification_drain", result, err)
 		return result, err

@@ -50,7 +50,7 @@ export default function NotificationSettings({ isAdmin = false }: { isAdmin?: bo
   }
   return <section id="push-notifications" className="card p-6 space-y-4">
     <h3 className="text-lg font-semibold flex items-center gap-2"><Bell className="w-5 h-5" />Push notifications</h3>
-    <p className="text-sm text-slate-600">Push includes RSVP reminders, session charges, balance alerts and admin announcements. All supported push alerts are included.</p>
+    <p className="text-sm text-slate-600">Push includes RSVP reminders, session charges, balance alerts and admin announcements. RSVP reminders arrive 96 and 60 hours before a session when you have not responded. RSVPs close 48 hours before the start.</p>
     {loading ? <p role="status">Checking this device…</p> : <p role="status">{registered ? 'Push set up on this device' : 'Push is not set up on this device'}</p>}
     {!supported && <p>Push is unavailable here. On iPhone or iPad, add Rally to your Home Screen first.</p>}
     {permission === 'denied' && <p>Notifications are blocked. Allow them in your browser settings, then return here.</p>}

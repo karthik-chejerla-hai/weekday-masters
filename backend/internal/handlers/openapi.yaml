@@ -540,7 +540,7 @@ paths:
     post:
       tags: [RSVP]
       summary: Create RSVP for a session
-      description: Requires approved membership. Subject to 3-day deadline enforcement.
+      description: Requires approved membership. RSVPs close exactly 48 elapsed hours before the resolved session start (Australia/Sydney). Existing closed windows remain closed.
       operationId: createRSVP
       parameters:
         - $ref: "#/components/parameters/SessionId"
@@ -2998,7 +2998,7 @@ components:
           format: uuid
         notification_type:
           type: string
-          enum: [session_reminder, rsvp_deadline, waitlist_update, admin_announcement, balance_low, balance_negative]
+          enum: [rsvp_reminder, session_reminder, rsvp_deadline, waitlist_update, admin_announcement, balance_low, balance_negative]
         title:
           type: string
         body:

@@ -20,6 +20,7 @@ import (
 
 type SessionService struct {
 	notifier *NotificationService
+	now      func() time.Time
 }
 
 func (s *SessionService) WithNotifier(notifier *NotificationService) *SessionService {
@@ -30,6 +31,15 @@ func (s *SessionService) WithNotifier(notifier *NotificationService) *SessionSer
 func NewSessionService() *SessionService {
 	return &SessionService{}
 }
+
+func (s *SessionService) currentTime() time.Time {
+	if s.now != nil {
+		return s.now()
+	}
+	return utils.NowInSydney()
+}
+
+var ErrFixedRSVPDeadline = errors.New("RSVP deadline is fixed at 48 hours before session start")
 
 type CreateSessionInput struct {
 	Title              string
@@ -42,7 +52,7 @@ type CreateSessionInput struct {
 	RecurringDayOfWeek *int
 	Occurrences        *int
 	CreatedBy          uuid.UUID
-	RSVPDeadline       *time.Time // Optional custom deadline; defaults to 3 days before session
+	RSVPDeadline       *time.Time // Retained only to reject obsolete custom-deadline callers
 }
 
 // CreateSession creates a new session
@@ -51,16 +61,16 @@ func (s *SessionService) CreateSession(input CreateSessionInput) (*models.Sessio
 		return nil, errors.New("courts must be between 1 and 3")
 	}
 
-	// Determine RSVP deadline. Only an explicitly supplied deadline is validated:
-	// the 3-day default lands in the past for short-notice sessions, and admins
-	// must still be able to create those.
-	rsvpDeadline := utils.CalculateRSVPDeadline(input.SessionDate)
 	if input.RSVPDeadline != nil {
-		if input.RSVPDeadline.Before(utils.NowInSydney()) {
-			return nil, errors.New("RSVP deadline cannot be in the past")
-		}
-		rsvpDeadline = *input.RSVPDeadline
+		return nil, ErrFixedRSVPDeadline
 	}
+	startsAt, endsAt, err := utils.ResolveSessionTimes(input.SessionDate, input.StartTime, input.EndTime)
+	if err != nil {
+		return nil, err
+	}
+	// Short-notice sessions may already have a closed window; admins can still
+	// create them and use the existing admin RSVP exception.
+	rsvpDeadline := utils.CalculateRSVPDeadline(startsAt)
 
 	session := models.Session{
 		Title:              input.Title,
@@ -71,6 +81,8 @@ func (s *SessionService) CreateSession(input CreateSessionInput) (*models.Sessio
 		Courts:             input.Courts,
 		MaxPlayers:         models.MaxPlayersForCourts(input.Courts),
 		RSVPDeadline:       rsvpDeadline,
+		StartsAt:           &startsAt,
+		EndsAt:             &endsAt,
 		IsRecurring:        input.IsRecurring,
 		RecurringDayOfWeek: input.RecurringDayOfWeek,
 		Status:             models.SessionStatusOpen,
@@ -99,20 +111,6 @@ func (s *SessionService) generateRecurringSessions(parent *models.Session, occur
 		return nil
 	}
 
-	// Derive the relative deadline offset from the parent session.
-	// This preserves any custom deadline the admin set on the parent.
-	parentDateSyd := parent.SessionDate.In(utils.SydneyLocation)
-	parentDeadlineSyd := parent.RSVPDeadline.In(utils.SydneyLocation)
-
-	// Count whole days in UTC: subtracting two Sydney midnights across a DST
-	// boundary yields 71 or 73 hours and would truncate to the wrong offset.
-	sessionDay := time.Date(parentDateSyd.Year(), parentDateSyd.Month(), parentDateSyd.Day(), 0, 0, 0, 0, time.UTC)
-	deadlineDay := time.Date(parentDeadlineSyd.Year(), parentDeadlineSyd.Month(), parentDeadlineSyd.Day(), 0, 0, 0, 0, time.UTC)
-	daysBefore := int(sessionDay.Sub(deadlineDay).Hours() / 24)
-	deadlineHour := parentDeadlineSyd.Hour()
-	deadlineMin := parentDeadlineSyd.Minute()
-	deadlineSec := parentDeadlineSyd.Second()
-
 	// Start from the next week after the parent session
 	nextDate := parent.SessionDate.AddDate(0, 0, 7)
 
@@ -128,13 +126,11 @@ func (s *SessionService) generateRecurringSessions(parent *models.Session, occur
 			// Generate title for this occurrence in format "Day - DD MMM YYYY"
 			childTitle := nextDate.Format("Monday - 02 Jan 2006")
 
-			// Compute child deadline using the same relative offset as the parent
-			childDateSyd := nextDate.In(utils.SydneyLocation)
-			childDeadline := time.Date(
-				childDateSyd.Year(), childDateSyd.Month(), childDateSyd.Day()-daysBefore,
-				deadlineHour, deadlineMin, deadlineSec, 0,
-				utils.SydneyLocation,
-			)
+			startsAt, endsAt, err := utils.ResolveSessionTimes(nextDate, parent.StartTime, parent.EndTime)
+			if err != nil {
+				return err
+			}
+			childDeadline := utils.CalculateRSVPDeadline(startsAt)
 
 			child := models.Session{
 				Title:             childTitle,
@@ -145,6 +141,8 @@ func (s *SessionService) generateRecurringSessions(parent *models.Session, occur
 				Courts:            parent.Courts,
 				MaxPlayers:        parent.MaxPlayers,
 				RSVPDeadline:      childDeadline,
+				StartsAt:          &startsAt,
+				EndsAt:            &endsAt,
 				IsRecurring:       false,
 				RecurringParentID: &parent.ID,
 				Status:            models.SessionStatusOpen,
@@ -233,11 +231,14 @@ type UpdateSessionInput struct {
 	EndTime      *string
 	Courts       *int
 	Status       *models.SessionStatus
-	RSVPDeadline *time.Time // Optional; if set, overrides auto-calculated deadline
+	RSVPDeadline *time.Time // Retained only to reject obsolete custom-deadline callers
 }
 
 // UpdateSession updates a session
 func (s *SessionService) UpdateSession(id uuid.UUID, input UpdateSessionInput) (*models.Session, error) {
+	if input.RSVPDeadline != nil {
+		return nil, ErrFixedRSVPDeadline
+	}
 	var session models.Session
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&session, "id = ?", id).Error; err != nil {
@@ -246,8 +247,21 @@ func (s *SessionService) UpdateSession(id uuid.UUID, input UpdateSessionInput) (
 		if session.Status == models.SessionStatusCancelled {
 			return errors.New("cancelled sessions cannot be edited")
 		}
+		if session.Status == models.SessionStatusClosed && input.Status != nil && *input.Status == models.SessionStatusOpen {
+			return errors.New("closed RSVP windows cannot be reopened")
+		}
 		if input.Status != nil && *input.Status != models.SessionStatusOpen && *input.Status != models.SessionStatusClosed {
 			return errors.New("use the cancel action to cancel a session")
+		}
+
+		now := s.currentTime()
+		oldStart := session.StartsAt
+		windowWasOpen := session.Status == models.SessionStatusOpen && session.RSVPDeadline.After(now) && oldStart != nil && oldStart.After(now)
+		var settlements int64
+		if windowWasOpen {
+			if err := tx.Model(&models.Settlement{}).Where("session_id = ?", session.ID).Count(&settlements).Error; err != nil {
+				return err
+			}
 		}
 
 		if input.Title != nil {
@@ -258,16 +272,6 @@ func (s *SessionService) UpdateSession(id uuid.UUID, input UpdateSessionInput) (
 		}
 		if input.SessionDate != nil {
 			session.SessionDate = *input.SessionDate
-			// Only auto-recalculate deadline if no explicit deadline is provided
-			if input.RSVPDeadline == nil {
-				session.RSVPDeadline = utils.CalculateRSVPDeadline(*input.SessionDate)
-			}
-		}
-		if input.RSVPDeadline != nil {
-			if input.RSVPDeadline.Before(utils.NowInSydney()) {
-				return errors.New("RSVP deadline cannot be in the past")
-			}
-			session.RSVPDeadline = *input.RSVPDeadline
 		}
 		if input.StartTime != nil {
 			session.StartTime = *input.StartTime
@@ -286,6 +290,16 @@ func (s *SessionService) UpdateSession(id uuid.UUID, input UpdateSessionInput) (
 			session.Status = *input.Status
 		}
 
+		startsAt, endsAt, err := utils.ResolveSessionTimes(session.SessionDate, session.StartTime, session.EndTime)
+		if err != nil {
+			return err
+		}
+		session.StartsAt, session.EndsAt = &startsAt, &endsAt
+		if windowWasOpen && settlements == 0 && !startsAt.Equal(*oldStart) {
+			session.RSVPDeadline = utils.CalculateRSVPDeadline(startsAt)
+		}
+		// Already closed, started/historical or settled windows stay closed
+		// even when the date moves forward or status is explicitly reopened.
 		session.UpdatedAt = time.Now()
 
 		return tx.Save(&session).Error
@@ -320,6 +334,93 @@ func (s *SessionService) DeleteSession(id uuid.UUID) error {
 		}
 		if rsvpCount > 0 {
 			return errors.New("this session has RSVPs; use the cancel action to notify members")
+		}
+		// A reminder scan may already have materialized stages and queued events
+		// for this RSVP-free session. Keep member history, but prevent undelivered
+		// reminder intents from firing after the session is removed.
+		var reminderNotificationIDs []uuid.UUID
+		if err := tx.Model(&models.Notification{}).
+			Where("notification_type = ? AND data::jsonb ->> 'session_id' = ?", models.NotificationRSVPReminder, id.String()).
+			Pluck("id", &reminderNotificationIDs).Error; err != nil {
+			return err
+		}
+		if len(reminderNotificationIDs) > 0 {
+			var outboxIDs []uuid.UUID
+			if err := tx.Model(&models.NotificationOutbox{}).Where("notification_id IN ?", reminderNotificationIDs).Pluck("id", &outboxIDs).Error; err != nil {
+				return err
+			}
+			if len(outboxIDs) > 0 {
+				// Match the dispatcher lock order (outbox, then attempts) and
+				// stabilize the worker lease before changing any per-device state.
+				var outboxes []models.NotificationOutbox
+				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id IN ?", outboxIDs).Order("id ASC").Find(&outboxes).Error; err != nil {
+					return err
+				}
+				for _, outbox := range outboxes {
+					if err := tx.Model(&models.NotificationDeliveryAttempt{}).
+						Where("outbox_id = ? AND state IN ?", outbox.ID, []models.DeliveryState{models.DeliveryPending, models.DeliveryTransient}).
+						Updates(map[string]any{"state": models.DeliverySuppressed, "last_error_code": "session_deleted"}).Error; err != nil {
+						return err
+					}
+					if outbox.State == models.DeliveryPending || outbox.State == models.DeliveryTransient {
+						var attempts []models.NotificationDeliveryAttempt
+						if err := tx.Where("outbox_id = ?", outbox.ID).Find(&attempts).Error; err != nil {
+							return err
+						}
+						accepted, uncertain, failed, suppressed, expired := 0, 0, 0, 0, 0
+						for _, attempt := range attempts {
+							switch attempt.State {
+							case models.DeliveryAccepted:
+								accepted++
+							case models.DeliveryUncertain:
+								uncertain++
+							case models.DeliveryFailed:
+								failed++
+							case models.DeliverySuppressed:
+								suppressed++
+							case models.DeliveryExpired:
+								expired++
+							}
+						}
+						state := models.DeliverySuppressed
+						switch {
+						case accepted > 0 && uncertain+failed+suppressed+expired > 0:
+							state = models.DeliveryPartial
+						case accepted > 0:
+							state = models.DeliveryCompleted
+						case uncertain > 0:
+							state = models.DeliveryUncertain
+						case failed > 0:
+							state = models.DeliveryFailed
+						case expired > 0:
+							state = models.DeliveryExpired
+						}
+						if err := tx.Model(&models.NotificationOutbox{}).Where("id = ?", outbox.ID).
+							Updates(map[string]any{"state": state, "last_error_code": "session_deleted"}).Error; err != nil {
+							return err
+						}
+					} else if outbox.State == models.DeliveryClaimed {
+						// A live worker may be inside provider I/O with no DB lock.
+						// Keep its lease whenever a send crossed the durable boundary;
+						// it must record acceptance/uncertainty or lease recovery must.
+						var inFlightOrTerminal int64
+						if err := tx.Model(&models.NotificationDeliveryAttempt{}).
+							Where("outbox_id = ? AND state IN ?", outbox.ID, []models.DeliveryState{models.DeliverySending, models.DeliveryAccepted, models.DeliveryUncertain}).
+							Count(&inFlightOrTerminal).Error; err != nil {
+							return err
+						}
+						if inFlightOrTerminal == 0 {
+							if err := tx.Model(&models.NotificationOutbox{}).Where("id = ? AND state = ? AND lease_owner = ? AND lease_generation = ?", outbox.ID, models.DeliveryClaimed, outbox.LeaseOwner, outbox.LeaseGeneration).
+								Updates(map[string]any{"state": models.DeliverySuppressed, "last_error_code": "session_deleted"}).Error; err != nil {
+								return err
+							}
+						}
+					}
+				}
+			}
+		}
+		if err := tx.Where("session_id = ?", id).Delete(&models.RSVPReminderStage{}).Error; err != nil {
+			return err
 		}
 		return tx.Delete(&session).Error
 	})

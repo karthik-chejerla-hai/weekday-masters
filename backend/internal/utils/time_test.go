@@ -5,31 +5,31 @@ import (
 	"time"
 )
 
-func TestCalculateRSVPDeadline(t *testing.T) {
-	// A Sunday session on 2026-03-15 at 18:00 Sydney time
-	sessionDate := time.Date(2026, 3, 15, 18, 0, 0, 0, SydneyLocation)
-
-	deadline := CalculateRSVPDeadline(sessionDate)
-
-	// Deadline should be 3 days earlier: Thursday 2026-03-12 23:59:59
-	if deadline.Year() != 2026 || deadline.Month() != 3 || deadline.Day() != 12 {
-		t.Fatalf("expected deadline date to be 2026-03-12, got %v", deadline.Format("2006-01-02"))
-	}
-	if deadline.Hour() != 23 || deadline.Minute() != 59 || deadline.Second() != 59 {
-		t.Fatalf("expected deadline time to be 23:59:59, got %02d:%02d:%02d", deadline.Hour(), deadline.Minute(), deadline.Second())
-	}
-	if deadline.Location().String() != SydneyLocation.String() {
-		t.Fatalf("expected location %v, got %v", SydneyLocation, deadline.Location())
-	}
-}
-
-func TestCalculateRSVPDeadline_AcrossMonthBoundary(t *testing.T) {
-	// 2nd of March session -> Deadline is 3 days before (February 27 in a non-leap year)
-	sessionDate := time.Date(2026, 3, 2, 10, 0, 0, 0, SydneyLocation)
-	deadline := CalculateRSVPDeadline(sessionDate)
-
-	if deadline.Year() != 2026 || deadline.Month() != 2 || deadline.Day() != 27 {
-		t.Fatalf("expected deadline date to be 2026-02-27, got %v", deadline.Format("2006-01-02"))
+func TestCalculateRSVPDeadlineElapsedHours(t *testing.T) {
+	for _, date := range []string{"2026-03-02", "2026-10-05", "2026-04-06"} {
+		t.Run(date, func(t *testing.T) {
+			day, err := ParseDateInSydney(date)
+			if err != nil {
+				t.Fatal(err)
+			}
+			start, _, err := ResolveSessionTimes(day, "18:00", "20:00")
+			if err != nil {
+				t.Fatal(err)
+			}
+			deadline := CalculateRSVPDeadline(start)
+			if start.Sub(deadline) != 48*time.Hour {
+				t.Fatalf("deadline is not 48 elapsed hours before start: %v", deadline)
+			}
+			if deadline.Location() != SydneyLocation {
+				t.Fatal("deadline lost Sydney display zone")
+			}
+			if date == "2026-10-05" && deadline.Hour() != 17 {
+				t.Fatalf("spring DST wall clock should be 17:00, got %v", deadline)
+			}
+			if date == "2026-04-06" && deadline.Hour() != 19 {
+				t.Fatalf("autumn DST wall clock should be 19:00, got %v", deadline)
+			}
+		})
 	}
 }
 
