@@ -3023,7 +3023,7 @@ components:
           format: uuid
         notification_type:
           type: string
-          enum: [rsvp_reminder, session_reminder, rsvp_deadline, waitlist_update, admin_announcement, balance_low, balance_negative]
+          enum: [rsvp_reminder, session_reminder, rsvp_deadline, waitlist_update, admin_announcement, balance_low, balance_negative, session_charge, session_charge_reversed]
         title:
           type: string
         body:
@@ -3637,6 +3637,10 @@ components:
         - $ref: "#/components/schemas/SettlementPreview"
         - type: object
           properties:
+            settlement_id:
+              type: string
+              format: uuid
+              description: Identifies this historical settlement version for later review.
             imported:
               $ref: "#/components/schemas/ImportedSession"
             session:
