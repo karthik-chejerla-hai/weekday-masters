@@ -69,12 +69,12 @@
 - [x] T038 [US4] Add exact aggregation/zero-cost/negative-zero-1999-2000/snapshot/rollback/concurrent-confirmation/provider-failure tests in `backend/internal/services/settlement_service_test.go` and `backend/internal/services/expense_service_test.go`.
 - [x] T039 [US4] Verify direct split receipt rendering and normal settlement UI success during delivery failure in `frontend/e2e/notification-navigation.spec.ts`.
 
-## Release 5: US5 — Manual balance nudges
+## Release 5: US4 and US5 — Session charges and balance nudges
 
-- [ ] T040 [US5] Refactor `backend/internal/services/notification_service.go` SendBalanceNudge for shared classification, transaction-safe balance read/request identity/outbox insertion and manual-only cooldown; recheck balance eligibility in `backend/internal/services/notification_dispatcher.go`.
-- [ ] T041 [US5] Return precise nudge outcomes in `backend/internal/handlers/notifications.go`; update `frontend/src/services/api.ts`, `frontend/src/pages/AdminMembers.tsx` and `frontend/src/components/money/BalancesList.tsx` with fixed-threshold eligibility and queued/suppressed feedback.
-- [ ] T042 [P] [US5] Test nudge request/cooldown concurrency, fixed threshold and suppression in `backend/internal/services/notification_service_test.go` and `backend/internal/handlers/notifications_test.go`.
-- [ ] T043 [P] [US5] Test manual nudge eligibility and truthful outcomes in `frontend/src/pages/AdminMembers.test.tsx` and `frontend/src/components/money/BalancesList.test.tsx`.
+- [x] T040 [US5] Refactor `backend/internal/services/notification_service.go` SendBalanceNudge for shared classification, transaction-safe balance read/request identity/outbox insertion and manual-only cooldown; recheck balance eligibility in `backend/internal/services/notification_dispatcher.go`.
+- [x] T041 [US5] Return precise nudge outcomes in `backend/internal/handlers/notifications.go`; update `frontend/src/services/api.ts`, `frontend/src/pages/AdminMembers.tsx` and `frontend/src/components/money/BalancesList.tsx` with fixed-threshold eligibility and queued/suppressed feedback.
+- [x] T042 [P] [US5] Test nudge request/cooldown concurrency, fixed threshold and suppression in `backend/internal/services/notification_service_test.go` and `backend/internal/handlers/notifications_test.go`.
+- [x] T043 [P] [US5] Test manual nudge eligibility and truthful outcomes in `frontend/src/pages/AdminMembers.test.tsx` and `frontend/src/components/money/BalancesList.test.tsx`.
 
 ## Release 6: US6 — Announcements and cancellations
 
