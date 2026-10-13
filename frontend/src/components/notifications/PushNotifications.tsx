@@ -1,3 +1,4 @@
+import { isDeviceSetupStorageChange } from '../../services/push-device';
 import { useEffect, useState } from 'react';
 import { BellRing, Loader2, X } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
@@ -63,11 +64,12 @@ export default function PushNotifications() {
     const changed = () => setSettingsVersion((version) => version + 1);
     window.addEventListener('notification-settings-changed', changed);
     window.addEventListener('focus', changed);
-    window.addEventListener('storage', changed);
+    const storageChanged = (event: StorageEvent) => { if (isDeviceSetupStorageChange(event)) changed(); };
+    window.addEventListener('storage', storageChanged);
     return () => {
       window.removeEventListener('notification-settings-changed', changed);
       window.removeEventListener('focus', changed);
-      window.removeEventListener('storage', changed);
+      window.removeEventListener('storage', storageChanged);
     };
   }, []);
 

@@ -24,7 +24,7 @@ it('permission prompt happens only from explicit enable', async () => {
 });
 it('respects explicit disable across refresh and other tabs', async () => {
  const unsubscribe=vi.fn();vi.mocked(notificationService.setupForegroundHandler).mockReturnValue(unsubscribe);show();await waitFor(() => expect(notificationService.setupForegroundHandler).toHaveBeenCalled());
- vi.mocked(notificationService.isDeviceDisabled).mockReturnValue(true);act(() => window.dispatchEvent(new Event('storage')));
+ vi.mocked(notificationService.isDeviceDisabled).mockReturnValue(true);act(() => window.dispatchEvent(new Event('notification-settings-changed')));
  await waitFor(() => expect(unsubscribe).toHaveBeenCalled());expect(screen.queryByRole('button',{name:'Enable on this device'})).not.toBeInTheDocument();
 });
 it('does not repeatedly prompt after explicit disable even if permission resets', async () => {
