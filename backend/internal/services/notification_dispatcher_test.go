@@ -101,6 +101,48 @@ func processDelivery(t *testing.T, d *NotificationDispatcher) {
 	}
 }
 
+func createNotificationWorkHealthRow(t *testing.T, user models.User, state models.DeliveryState, due, next, expires time.Time) {
+	t.Helper()
+	notice := models.Notification{UserID: user.ID, NotificationType: models.NotificationAdminAnnouncement, Title: "Health check", Body: "Fixture", Data: "{}"}
+	if err := database.DB.Create(&notice).Error; err != nil {
+		t.Fatal(err)
+	}
+	row := models.NotificationOutbox{NotificationID: notice.ID, EventKey: uuid.NewString(), DueAt: due, NextAttemptAt: next, ExpiresAt: expires, State: state}
+	if err := database.DB.Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCheckNotificationWorkHealthCountsOverdueWorkOnly(t *testing.T) {
+	requireDB(t)
+	user := newUser(t, "health-check")
+	now := time.Now().UTC().Truncate(time.Second)
+	health, err := CheckNotificationWorkHealth(context.Background(), now)
+	if err != nil || health == nil || health.Overdue != 0 {
+		t.Fatalf("empty queue was unhealthy: health=%+v err=%v", health, err)
+	}
+	oldDue := now.Add(-10 * time.Minute)
+	expires := now.Add(time.Hour)
+	threshold := now.Add(-5 * time.Minute)
+	createNotificationWorkHealthRow(t, user, models.DeliveryPending, oldDue, threshold, expires)
+	createNotificationWorkHealthRow(t, user, models.DeliveryPending, oldDue, threshold.Add(time.Second), expires)        // retry is still fresh
+	createNotificationWorkHealthRow(t, user, models.DeliveryPending, now.Add(time.Second), now.Add(-time.Hour), expires) // not due
+	createNotificationWorkHealthRow(t, user, models.DeliverySuppressed, oldDue, threshold.Add(-time.Hour), expires)
+	createNotificationWorkHealthRow(t, user, models.DeliveryCompleted, oldDue, threshold.Add(-time.Hour), expires)
+
+	health, err = CheckNotificationWorkHealth(context.Background(), now)
+	if err == nil || health == nil || health.Overdue != 1 {
+		t.Fatalf("exact five-minute boundary not counted: health=%+v err=%v", health, err)
+	}
+
+	createNotificationWorkHealthRow(t, user, models.DeliveryClaimed, oldDue, threshold.Add(-time.Second), expires)
+	createNotificationWorkHealthRow(t, user, models.DeliveryPending, oldDue, threshold.Add(-time.Hour), now.Add(-time.Second)) // expired but unfinished work remains an operational backlog
+	health, err = CheckNotificationWorkHealth(context.Background(), now)
+	if err == nil || health == nil || health.Overdue != 3 {
+		t.Fatalf("overdue pending/claimed backlog mismatch: health=%+v err=%v", health, err)
+	}
+}
+
 func TestDeliveryOutboxConcurrentAtomicIdentityAndRollback(t *testing.T) {
 	_, clock, _, user := deliveryFixture(t)
 	var group sync.WaitGroup
