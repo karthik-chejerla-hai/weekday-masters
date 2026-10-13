@@ -350,9 +350,46 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: Enrollment generation, proof or token ownership conflict
+          description: Valid proof but stale generation. Only after proof verification, details.current_generation permits bounded retry inside a persisted cleanup intent.
         "500":
           description: Setup temporarily unavailable
+
+  /push-devices/legacy-revoke:
+    post:
+      tags: [Notifications]
+      summary: Revoke a foreign unadopted legacy browser address
+      operationId: revokeForeignLegacyToken
+      description: Authentication required, including pending or removed new accounts. FCM address possession permits revoke-only cleanup for installation_id NULL. Same-owner active rows and adopted v2 installations remain unchanged. Returns no identity or address.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+                  minLength: 1
+                  maxLength: 4096
+                  writeOnly: true
+      responses:
+        "200":
+          description: Whether Firebase address cleanup must finish before sign-in completes
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [cleanup_required]
+                properties:
+                  cleanup_required:
+                    type: boolean
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          description: Cleanup temporarily unavailable
 
   /users/me/notifications/history:
     get:
@@ -2933,7 +2970,7 @@ components:
           minimum: 1
     PushProofRevokeInput:
       type: object
-      required: [installation_id, revocation_secret, generation]
+      required: [installation_id, revocation_secret]
       properties:
         installation_id:
           type: string
@@ -2945,7 +2982,9 @@ components:
         generation:
           type: integer
           format: int64
-          minimum: 1
+          minimum: 0
+          default: 0
+          description: Zero permits recovery after a lost enrollment or adoption response; current counter is disclosed only after proof verification
 
     Notification:
       type: object

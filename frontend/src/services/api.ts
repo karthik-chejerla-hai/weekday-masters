@@ -303,6 +303,10 @@ class ApiService {
   async revokePushDevice(id: string, generation: number): Promise<void> {
     await this.client.delete(`/users/me/push-devices/${id}`, { data: { generation } });
   }
+  async revokeForeignLegacyToken(token: string): Promise<{ cleanup_required: boolean }> {
+    return (await this.client.post<{ cleanup_required: boolean }>('/push-devices/legacy-revoke', { token })).data;
+  }
+
   async revokePushDeviceProof(installation_id: string, revocation_secret: string, generation: number): Promise<void> {
     await this.client.post('/push-devices/revoke-proof', { installation_id, revocation_secret, generation });
   }
