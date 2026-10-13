@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -38,7 +39,13 @@ func main() {
 	})
 	// Preview worker does not inherit the API's diagnostic email allowlist.
 	router := handlers.NewNotificationWorkerRouter(audience, schedulerEmail, idtoken.Validate, func(ctx context.Context) (any, error) {
-		return notifications.ProcessNotificationWork(ctx, 100)
+		result, err := notifications.ProcessNotificationWork(ctx, 100)
+		emitWorkerHealth("notification_drain", result, err)
+		return result, err
+	}, func(ctx context.Context) (any, error) {
+		result, err := services.CheckNotificationWorkHealth(ctx, time.Now().UTC())
+		emitWorkerHealth("notification_backlog_health", result, err)
+		return result, err
 	})
 	server := &http.Server{Addr: ":" + cfg.Port, Handler: router, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 60 * time.Second}
 	done := make(chan os.Signal, 1)
@@ -54,4 +61,14 @@ func main() {
 	if err := server.Shutdown(ctx); err != nil {
 		log.Print("Notification worker shutdown timed out")
 	}
+}
+
+// Only safe aggregate counters are logged; provider/DB errors and member data
+// never reach operational logs or scheduled HTTP responses.
+func emitWorkerHealth(event string, result any, err error) {
+	severity := "INFO"
+	if err != nil {
+		severity = "ERROR"
+	}
+	_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"severity": severity, "event": event, "result": result, "failed": err != nil})
 }

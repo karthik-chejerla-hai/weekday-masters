@@ -85,6 +85,11 @@ func Migrate() error {
 	if err := backfillClubSettings(); err != nil {
 		return err
 	}
+	if err := RunNotificationMigration(DB, "notification-fixed-balance-threshold-v1", func(tx *gorm.DB, _ time.Time) error {
+		return tx.Model(&models.Club{}).Where("low_balance_threshold_cents <> ?", models.NotificationBalanceThresholdCents).Update("low_balance_threshold_cents", models.NotificationBalanceThresholdCents).Error
+	}); err != nil {
+		return err
+	}
 
 	if err := SeedClubAccounts(); err != nil {
 		return err

@@ -8,7 +8,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/weekday-masters/backend/internal/database"
 	"github.com/weekday-masters/backend/internal/middleware"
 	"github.com/weekday-masters/backend/internal/models"
 	"github.com/weekday-masters/backend/internal/services"
@@ -420,11 +419,7 @@ func parseOccurredAt(value string) (time.Time, error) {
 }
 
 func lowBalanceThreshold() (int64, error) {
-	var club models.Club
-	if err := database.DB.First(&club).Error; err != nil {
-		return 0, err
-	}
-	return club.LowBalanceThresholdCents, nil
+	return models.NotificationBalanceThresholdCents, nil
 }
 
 // --- club position (admin only) -------------------------------------------

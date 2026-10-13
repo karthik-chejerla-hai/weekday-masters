@@ -34,7 +34,7 @@ export default function Money() {
   const [balances, setBalances] = useState<PlayerBalance[]>([]);
   const [revision, setRevision] = useState(0);
   const [positionError, setPositionError] = useState(false);
-  const [lowThreshold, setLowThreshold] = useState(2000);
+  const lowThreshold = 2000;
   const [position, setPosition] = useState<ClubPosition | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -42,15 +42,12 @@ export default function Money() {
   const load = useCallback(async () => {
     setError(null);
     setPositionError(false);
-    const [balanceList, club, clubPosition] = await Promise.allSettled([
-      api.listBalances(), api.getClub(), api.getClubPosition(),
+    const [balanceList, clubPosition] = await Promise.allSettled([
+      api.listBalances(), api.getClubPosition(),
     ]);
     if (balanceList.status === 'fulfilled') setBalances(balanceList.value);
     if (balanceList.status === 'rejected') {
       setError('Could not load balances. Please try again.');
-    }
-    if (club.status === 'fulfilled' && typeof club.value?.low_balance_threshold_cents === 'number') {
-      setLowThreshold(club.value.low_balance_threshold_cents);
     }
     if (clubPosition.status === 'fulfilled' && clubPosition.value) {
       setPosition(clubPosition.value);

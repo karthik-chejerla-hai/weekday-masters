@@ -91,7 +91,7 @@ func run() (runErr error) {
 
 	// Initialize scheduler for notification cron jobs
 	var scheduler *services.SchedulerService
-	if notificationService.IsEnabled() {
+	if !cfg.NotificationsDisabled {
 		scheduler = services.NewSchedulerService(services.SchedulerConfig{
 			NotificationService:    notificationService,
 			SessionReminderHours24: cfg.SessionReminderHours24,

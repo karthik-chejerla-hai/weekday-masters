@@ -72,7 +72,10 @@ jobs:
             --remove-tags pr-${{ github.event.pull_request.number }}
 
       - name: Delete the private preview scheduler and worker
+        id: worker-cleanup
+        continue-on-error: true
         env:
+          NOTIFICATION_WORKER_ENABLED: ${{ vars.NOTIFICATION_WORKER_ENABLED }}
           NOTIFICATION_WORKER_SERVICE: rally-notifications-pr-${{ github.event.pull_request.number }}
           NOTIFICATION_SCHEDULER_EMAIL: ${{ vars.NOTIFICATION_SCHEDULER_EMAIL }}
         run: bash .github/scripts/notification-worker.sh cleanup
@@ -122,6 +125,10 @@ jobs:
         run: |
           source .github/scripts/hosting-channels.sh
           failed=0
+          if [[ '${{ steps.worker-cleanup.outcome }}' == 'failure' ]]; then
+            echo '::error::Private worker cleanup failed; public cleanup has still been attempted.'
+            failed=1
+          fi
 
           if gcloud run services describe ${{ env.BACKEND_SERVICE_NAME }} \
                --project ${{ env.GCP_PROJECT_ID }} \

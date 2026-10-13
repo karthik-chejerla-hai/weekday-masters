@@ -10,13 +10,27 @@ if [[ "$action" == "cleanup" && "$NOTIFICATION_WORKER_SERVICE" != *-pr-* ]]; the
   echo "Cleanup requires a preview worker name" >&2; exit 1
 fi
 if [[ "$action" == "cleanup" ]]; then
+  # When never opted in, do not require Scheduler API/IAM. Detect an existing
+  # worker anyway so disabling the feature flag cannot strand provisioned jobs.
+  if [[ "${NOTIFICATION_WORKER_ENABLED:-false}" != "true" ]]; then
+    diagnostic=$(mktemp)
+    if gcloud run services describe "$NOTIFICATION_WORKER_SERVICE" --project="$GCP_PROJECT_ID" --region="$GCP_REGION" >/dev/null 2>"$diagnostic"; then
+      rm -f "$diagnostic"
+    elif grep -q 'NOT_FOUND' "$diagnostic"; then
+      rm -f "$diagnostic"; exit 0
+    else
+      cat "$diagnostic" >&2; rm -f "$diagnostic"; exit 1
+    fi
+  fi
   # Closed previews may never have opted into worker creation. Treat only
   # NOT_FOUND as absent; permissions/network failures must not claim success.
-  for resource in scheduler run; do
+  for resource in scheduler health run; do
+    current_job="$worker_job"
+    [[ "$resource" != "health" ]] || current_job="${NOTIFICATION_WORKER_SERVICE}-health"
     diagnostic=$(mktemp)
-    if [[ "$resource" == "scheduler" ]]; then
-      if gcloud scheduler jobs describe "$worker_job" --project="$GCP_PROJECT_ID" --location="$GCP_REGION" > /dev/null 2>"$diagnostic"; then
-        gcloud scheduler jobs delete "$worker_job" --project="$GCP_PROJECT_ID" --location="$GCP_REGION" --quiet
+    if [[ "$resource" != "run" ]]; then
+      if gcloud scheduler jobs describe "$current_job" --project="$GCP_PROJECT_ID" --location="$GCP_REGION" > /dev/null 2>"$diagnostic"; then
+        gcloud scheduler jobs delete "$current_job" --project="$GCP_PROJECT_ID" --location="$GCP_REGION" --quiet
       elif ! grep -q 'NOT_FOUND' "$diagnostic"; then cat "$diagnostic" >&2; rm -f "$diagnostic"; exit 1; fi
     else
       if gcloud run services describe "$NOTIFICATION_WORKER_SERVICE" --project="$GCP_PROJECT_ID" --region="$GCP_REGION" > /dev/null 2>"$diagnostic"; then
@@ -59,10 +73,21 @@ worker_url=$(gcloud run services describe "$NOTIFICATION_WORKER_SERVICE" --proje
 scheduler_flags=(--project="$GCP_PROJECT_ID" --location="$GCP_REGION" --schedule='* * * * *' --time-zone=Australia/Sydney \
   --uri="${worker_url}/internal/notifications/run" --http-method=POST --oidc-service-account-email="$NOTIFICATION_SCHEDULER_EMAIL" \
   --oidc-token-audience="$NOTIFICATION_WORKER_AUDIENCE" --attempt-deadline=60s --max-retry-attempts=3 --quiet)
-if gcloud scheduler jobs describe "$worker_job" --project="$GCP_PROJECT_ID" --location="$GCP_REGION" >/dev/null 2>"$diagnostic"; then
-  gcloud scheduler jobs update http "$worker_job" "${scheduler_flags[@]}"
-elif grep -q 'NOT_FOUND' "$diagnostic"; then
-  gcloud scheduler jobs create http "$worker_job" "${scheduler_flags[@]}"
-else
-  cat "$diagnostic" >&2; exit 1
-fi
+ensure_scheduler_job() {
+  local job_name="$1"
+  shift
+  if gcloud scheduler jobs describe "$job_name" --project="$GCP_PROJECT_ID" --location="$GCP_REGION" >/dev/null 2>"$diagnostic"; then
+    gcloud scheduler jobs update http "$job_name" "$@"
+  elif grep -q 'NOT_FOUND' "$diagnostic"; then
+    gcloud scheduler jobs create http "$job_name" "$@"
+  else
+    cat "$diagnostic" >&2; return 1
+  fi
+}
+ensure_scheduler_job "$worker_job" "${scheduler_flags[@]}"
+# Separate execution records expose failed drain invocations and persistent
+# backlog independently; health never sends push or initializes a provider.
+health_flags=(--project="$GCP_PROJECT_ID" --location="$GCP_REGION" --schedule='*/5 * * * *' --time-zone=Australia/Sydney \
+ --uri="${worker_url}/internal/notifications/health" --http-method=POST --oidc-service-account-email="$NOTIFICATION_SCHEDULER_EMAIL" \
+ --oidc-token-audience="$NOTIFICATION_WORKER_AUDIENCE" --attempt-deadline=60s --max-retry-attempts=0 --quiet)
+ensure_scheduler_job "${NOTIFICATION_WORKER_SERVICE}-health" "${health_flags[@]}"

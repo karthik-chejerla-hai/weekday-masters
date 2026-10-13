@@ -36,6 +36,9 @@ type NotificationDispatcher struct {
 	DB       *gorm.DB
 	Provider DeliveryProvider
 	Now      func() time.Time
+	// PolicyOnly drains terminal stop decisions without initializing a provider.
+	// It is internal and only set for an unconditional deployment stop.
+	policyOnly bool
 	// Policy returns a terminal suppression code or an operational database error.
 	Policy func(*gorm.DB, models.Notification, time.Time) (string, error)
 }
@@ -60,7 +63,7 @@ func (d *NotificationDispatcher) now() time.Time {
 // ProcessNotificationWork is a bounded worker entry point; trigger scanning is
 // owned by the scheduler and caller. It performs no provider I/O under DB locks.
 func (s *NotificationService) ProcessNotificationWork(ctx context.Context, batchSize int) (*DeliveryRunSummary, error) {
-	d := NotificationDispatcher{DB: database.DB, Provider: notificationFCMProvider{s}, Policy: s.queueDeliveryPolicy}
+	d := NotificationDispatcher{DB: database.DB, Provider: notificationFCMProvider{s}, Policy: s.queueDeliveryPolicy, policyOnly: s.disabled && s.disabledAllowEmail == ""}
 	return d.Process(ctx, batchSize)
 }
 func (d *NotificationDispatcher) Process(ctx context.Context, batchSize int) (*DeliveryRunSummary, error) {
@@ -74,10 +77,10 @@ func (d *NotificationDispatcher) Process(ctx context.Context, batchSize int) (*D
 	for i := 0; i < batchSize; i++ {
 		// Provider initialization is an operational worker concern. It must
 		// never claim/suppress durable intent created by a separate API process.
-		if d.Provider == nil {
+		if !d.policyOnly && d.Provider == nil {
 			return summary, ErrPushUnavailable
 		}
-		if availability, ok := d.Provider.(interface{ Available() bool }); ok && !availability.Available() {
+		if availability, ok := d.Provider.(interface{ Available() bool }); !d.policyOnly && ok && !availability.Available() {
 			return summary, ErrPushUnavailable
 		}
 		if err := ctx.Err(); err != nil {
@@ -211,6 +214,9 @@ func (d *NotificationDispatcher) processClaim(ctx context.Context, outbox *model
 		}
 		if !started {
 			continue
+		}
+		if d.policyOnly {
+			return "", errors.New("stopped worker attempted delivery")
 		}
 		// TTL must be recomputed on every retry from the remaining event lifetime.
 		ttl := outbox.ExpiresAt.Sub(d.now())
@@ -492,6 +498,19 @@ func (s *NotificationService) queueDeliveryPolicy(tx *gorm.DB, notification mode
 		return "invalid_event_data", nil
 	}
 	if notification.NotificationType == models.NotificationSessionReminder || notification.NotificationType == models.NotificationRSVPDeadline {
+		// Fence legacy origin/dispatch against the exclusive Release 4 migration
+		// lock. A scan already in flight cannot enqueue deliverable old reminders.
+		if err := tx.Exec("SELECT pg_advisory_xact_lock_shared(hashtextextended(?, 0))", "notification-migration:notification-rsvp-48h-v1").Error; err != nil {
+			return "", err
+		}
+		var cutovers int64
+		if err := tx.Model(&models.NotificationMigrationRecord{}).Where("version = ?", "notification-rsvp-48h-v1").Count(&cutovers).Error; err != nil {
+			return "", err
+		}
+		if cutovers > 0 {
+			return "legacy_reminder_retired", nil
+		}
+
 		id, err := uuid.Parse(data["session_id"])
 		if err != nil {
 			return "invalid_session", nil
@@ -504,7 +523,7 @@ func (s *NotificationService) queueDeliveryPolicy(tx *gorm.DB, notification mode
 		if err != nil {
 			return "", err
 		}
-		if session.Status != models.SessionStatusOpen || !session.StartsAt.After(now) {
+		if session.Status != models.SessionStatusOpen || session.StartsAt == nil || !session.StartsAt.After(now) {
 			return "session_unavailable", nil
 		}
 		var count int64
