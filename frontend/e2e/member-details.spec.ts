@@ -99,7 +99,7 @@ test('closed rows show saved push states and detail refresh updates the icon', a
   await expect(page.getByRole('button', { name: 'Push alerts and devices' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Details for Alex', exact: true }).click();
   await page.getByRole('button', { name: 'Push alerts and devices', exact: true }).click();
-  await expect(page.getByText('All supported push alerts are included on registered devices.')).toBeVisible();
+  await expect(page.getByText('Registered devices receive RSVP reminders, session charges, balance alerts and admin announcements.')).toBeVisible();
   await expect(page.getByText('Saved delivery choices', { exact: true })).toHaveCount(0);
   await expect(page.getByText('1 registered device', { exact: true })).toBeVisible();
   await expect(page.getByText('Alex browser', { exact: true })).toBeVisible();
