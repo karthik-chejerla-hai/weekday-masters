@@ -12,6 +12,7 @@ import (
 	"github.com/weekday-masters/backend/internal/database"
 	"github.com/weekday-masters/backend/internal/models"
 	"github.com/weekday-masters/backend/internal/testsupport"
+	"gorm.io/gorm"
 )
 
 // These tests exercise real SQL — transaction boundaries and row locks are the whole
@@ -163,4 +164,15 @@ func summaryOf(t *testing.T, rs *RSVPService, sessionID uuid.UUID) *RSVPSummary 
 		t.Fatalf("failed to read summary: %v", err)
 	}
 	return summary
+}
+
+func (n *recordingNotifier) QueueNotificationWithin(tx *gorm.DB, notification *models.Notification, key string, due, expires time.Time) (*models.NotificationOutbox, error) {
+	outbox, err := QueueNotificationWithin(tx, notification, key, due, expires)
+	if err != nil {
+		return nil, err
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.sent = append(n.sent, sentNotification{UserID: notification.UserID, Type: notification.NotificationType, Title: notification.Title})
+	return outbox, nil
 }

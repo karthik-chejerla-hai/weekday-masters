@@ -280,7 +280,8 @@ func (h *NotificationHandler) MarkNotificationRead(c *gin.Context) {
 }
 
 // SendBalanceNudge asks one low-balance member to top up. It always creates an
-// in-app history item; push_sent tells the admin whether FCM accepted delivery.
+// in-app history item. request_id makes retries safe; delivery_state describes
+// queued or terminal outcomes without claiming receipt by the member.
 func (h *NotificationHandler) SendBalanceNudge(c *gin.Context) {
 	actor, err := middleware.GetUserFromContext(c)
 	if err != nil {
@@ -293,7 +294,19 @@ func (h *NotificationHandler) SendBalanceNudge(c *gin.Context) {
 		return
 	}
 
-	result, err := h.notificationService.SendBalanceNudge(c.Request.Context(), userID, actor.ID)
+	var request struct {
+		RequestID string `json:"request_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "request_id_required", "message": services.ErrNudgeRequestRequired.Error()})
+		return
+	}
+	requestID, parseErr := uuid.Parse(request.RequestID)
+	if parseErr != nil || requestID == uuid.Nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "request_id_required", "message": services.ErrNudgeRequestRequired.Error()})
+		return
+	}
+	result, err := h.notificationService.SendBalanceNudge(c.Request.Context(), userID, actor.ID, requestID)
 	if err == nil {
 		c.JSON(http.StatusCreated, result)
 		return
@@ -301,6 +314,8 @@ func (h *NotificationHandler) SendBalanceNudge(c *gin.Context) {
 
 	var cooldown *services.BalanceNudgeCooldownError
 	switch {
+	case errors.Is(err, services.ErrNudgeRequestConflict):
+		c.JSON(http.StatusConflict, gin.H{"code": "request_id_conflict", "message": err.Error()})
 	case errors.Is(err, services.ErrMemberNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"code": "member_not_found", "message": "Member not found."})
 	case errors.As(err, &cooldown):

@@ -22,3 +22,8 @@ it.each(['/sessions/11111111-1111-4111-8111-111111111111/settlement', '/notifica
 it.each(['//outside.example', '/sessions/invalid', '/money?next=https://evil', '/admin'])('rejects unsafe or unexpected OAuth return %s', path => {
  handleAuthRedirect({ returnTo: path }); expect(window.location.pathname).toBe('/');
 });
+it('preserves the original settlement query through sign-in', () => {
+ const path = '/sessions/11111111-1111-4111-8111-111111111111/settlement?settlement_id=22222222-2222-4222-8222-222222222222';
+ handleAuthRedirect({ returnTo: path });
+ expect(window.location.pathname + window.location.search).toBe(path);
+});

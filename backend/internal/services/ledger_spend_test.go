@@ -205,8 +205,12 @@ func TestPersonalSpendNativeGuestsReversalsAndReplacement(t *testing.T) {
 	check(host.ID, 0, 0)
 	replacement := settle()
 	check(host.ID, hostCharge, 1)
-	// The generic transaction reversal path does not mark the settlement row.
-	if _, err := f.ledger.ReverseTransaction(replacement.TransactionID, "correction", f.admin.ID); err != nil {
+	// A session correction must use the atomic origin path so ledger, split
+	// state and notification intent cannot diverge.
+	if _, err := f.ledger.ReverseTransaction(replacement.TransactionID, "correction", f.admin.ID); err == nil {
+		t.Fatal("generic reversal bypassed settlement state")
+	}
+	if _, err := f.settlement.ReverseSettlement(replacement.ID, "correction", f.admin.ID); err != nil {
 		t.Fatal(err)
 	}
 	check(host.ID, 0, 0)

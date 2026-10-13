@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { api } from '../services/api';
@@ -15,6 +15,8 @@ import type { SettlementView } from '../types';
  */
 export default function SessionSettlement() {
   const { id } = useParams<{ id: string }>();
+  const [search] = useSearchParams();
+  const settlementId = search.get('settlement_id') || undefined;
   const [view, setView] = useState<SettlementView | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -23,12 +25,12 @@ export default function SessionSettlement() {
     if (!id) return;
     let active = true;
     setIsLoading(true); setError(null); setView(null);
-    api.getSessionSettlement(id)
+    api.getSessionSettlement(id, settlementId)
       .then(result => { if (active) setView(result); })
       .catch((e: { response?: { status?: number } }) => { if (active) setError(e.response?.status === 404 ? 'This split is unavailable. The session may not have been settled, or may no longer exist.' : 'Could not load this split. Please try again.'); })
       .finally(() => { if (active) setIsLoading(false); });
     return () => { active = false; };
-  }, [id]);
+  }, [id, settlementId]);
 
   if (isLoading) {
     return (
