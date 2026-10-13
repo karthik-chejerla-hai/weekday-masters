@@ -71,3 +71,32 @@ test.describe('admin self-test', () => {
   await expect(page.getByText('Test notification accepted by 1 of 1 registered devices.')).toBeVisible();
  });
 });
+
+for (const identity of ['member', 'pending'] as const) {
+ test.describe(`first legacy account switch to ${identity}`, () => {
+  test.use({ identity });
+  test('retires foreign unadopted token before completing sign-in without enrolling', async ({ page }) => {
+   await page.route('**/src/services/firebase.ts', route => route.fulfill({ contentType: 'application/javascript', body: `let token = 'former-legacy-token';
+    export const isFirebaseConfigured = () => true;
+    export const getNotificationPermission = () => 'granted';
+    export const requestNotificationPermission = async () => token;
+    export const getExistingPushToken = async () => token;
+    export const deletePushToken = async () => { token = 'new-browser-address'; window.__legacyDeleted = true; };
+    export const onForegroundMessage = () => () => {};` }));
+   let retireCalls = 0;
+   await page.route('**/api/push-devices/legacy-revoke', async route => {
+    expect(route.request().postDataJSON()).toEqual({ token: 'former-legacy-token' });
+    const pending = await page.evaluate(() => JSON.parse(localStorage.getItem('rally:push-installation:v2') || '{}'));
+    expect(pending.legacyCleanupToken).toBe('former-legacy-token');retireCalls++;await json(route, { cleanup_required: true });
+   });
+   await page.route('**/api/users/me/push-devices/adopt', route => json(route, { error: 'No legacy token' }, 404));
+   await page.goto(identity === 'pending' ? '/' : '/profile');
+   if (identity === 'pending') await expect(page).toHaveURL(/\/pending$/);
+   else await expect(page.getByRole('button', { name: 'Enable on this device' })).toBeVisible();
+   expect(retireCalls).toBe(1);
+   expect(await page.evaluate(() => (window as unknown as { __legacyDeleted?: boolean }).__legacyDeleted)).toBe(true);
+   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('rally:push-installation:v2') || '{}'));
+   expect(saved.owner).toBe('member-1');expect(saved.device).toBeUndefined();expect(saved.legacyCleanupToken).toBeUndefined();
+  });
+ });
+}

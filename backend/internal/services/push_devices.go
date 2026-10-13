@@ -16,6 +16,43 @@ import (
 var ErrDeviceConflict = errors.New("device registration changed; refresh setup before trying again")
 var ErrDeviceNotFound = errors.New("device registration unavailable")
 
+// Returned only after the revoke-only device proof has been verified. It
+// discloses a counter, never owner identity, addresses or enrollment metadata.
+type DeviceGenerationConflictError struct{ CurrentGeneration int64 }
+
+func (e *DeviceGenerationConflictError) Error() string { return ErrDeviceConflict.Error() }
+func (e *DeviceGenerationConflictError) Unwrap() error { return ErrDeviceConflict }
+
+type LegacyPushCleanupResult struct {
+	CleanupRequired bool `json:"cleanup_required"`
+}
+
+// Legacy token possession permits revoke-only cleanup during the first account
+// switch after rollout. Same-owner rows are preserved; adopted installations
+// cannot be modified through this compatibility cleanup endpoint.
+func (s *NotificationService) RevokeForeignLegacyToken(actorID uuid.UUID, token string) (*LegacyPushCleanupResult, error) {
+	result := &LegacyPushCleanupResult{}
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		var row models.UserPushToken
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("token = ? AND installation_id IS NULL", token).First(&row).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if row.UserID == actorID && row.RevokedAt == nil {
+			return nil
+		}
+		result.CleanupRequired = true
+		if row.RevokedAt != nil {
+			return nil
+		}
+		return tx.Model(&row).Updates(map[string]interface{}{"revoked_at": time.Now(), "generation": gorm.Expr("generation + 1")}).Error
+	})
+	return result, err
+}
+
 type PushEnrollment struct {
 	ID             uuid.UUID  `json:"id"`
 	InstallationID *uuid.UUID `json:"installation_id"`
@@ -188,7 +225,7 @@ func (s *NotificationService) RevokePushDeviceProof(installation uuid.UUID, secr
 			return nil
 		}
 		if row.Generation != generation {
-			return ErrDeviceConflict
+			return &DeviceGenerationConflictError{CurrentGeneration: row.Generation}
 		}
 		now := time.Now()
 		return tx.Model(&row).Updates(map[string]interface{}{"revoked_at": now, "generation": row.Generation + 1}).Error

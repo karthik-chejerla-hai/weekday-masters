@@ -19,6 +19,7 @@ func (h *NotificationHandler) RegisterDeviceRoutes(protected *gin.RouterGroup) {
 	// Authenticated revoke-only exception: pending/removed new accounts must be
 	// able to retire the former browser registration without the former JWT.
 	protected.POST("/push-devices/revoke-proof", h.RevokePushDeviceProof)
+	protected.POST("/push-devices/legacy-revoke", h.RevokeForeignLegacyToken)
 }
 
 type pushDeviceRequest struct {
@@ -32,6 +33,11 @@ type pushDeviceRequest struct {
 func deviceError(c *gin.Context, err error) {
 	if errors.Is(err, services.ErrDeviceNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"code": "device_not_found", "message": "Device registration unavailable."})
+		return
+	}
+	var generationConflict *services.DeviceGenerationConflictError
+	if errors.As(err, &generationConflict) {
+		c.JSON(http.StatusConflict, gin.H{"code": "device_generation_changed", "message": "Device registration changed. Retry cleanup.", "details": gin.H{"current_generation": generationConflict.CurrentGeneration}})
 		return
 	}
 	if errors.Is(err, services.ErrDeviceConflict) {
@@ -142,7 +148,7 @@ func (h *NotificationHandler) RevokePushDeviceProof(c *gin.Context) {
 	var req struct {
 		InstallationID uuid.UUID `json:"installation_id" binding:"required"`
 		Secret         string    `json:"revocation_secret" binding:"required,len=64"`
-		Generation     int64     `json:"generation" binding:"required,min=1"`
+		Generation     int64     `json:"generation" binding:"min=0"`
 	}
 	if c.ShouldBindJSON(&req) != nil {
 		c.Status(http.StatusBadRequest)
@@ -160,4 +166,25 @@ func (h *NotificationHandler) ObsoletePushMutation(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusConflict, gin.H{"code": "update_required", "message": "Refresh Rally to manage notifications on this device."})
+}
+
+func (h *NotificationHandler) RevokeForeignLegacyToken(c *gin.Context) {
+	actor, err := middleware.GetUserFromContext(c)
+	if err != nil {
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+	var req struct {
+		Token string `json:"token" binding:"required,max=4096"`
+	}
+	if c.ShouldBindJSON(&req) != nil {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+	result, err := h.notificationService.RevokeForeignLegacyToken(actor.ID, req.Token)
+	if err != nil {
+		deviceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }
