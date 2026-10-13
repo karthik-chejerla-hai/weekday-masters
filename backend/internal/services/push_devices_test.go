@@ -255,3 +255,30 @@ func TestForeignLegacyCleanupPreservesSameOwnerAndAdoptedRows(t *testing.T) {
 		t.Fatal("legacy endpoint revoked v2 installation")
 	}
 }
+
+func TestInvalidatedLegacyAdoptionRetainsInvalidationUntilHealthyRefresh(t *testing.T) {
+	requireDB(t)
+	owner := newUser(t, "owner")
+	ns := &NotificationService{}
+	now := time.Now()
+	row := models.UserPushToken{UserID: owner.ID, Token: "invalid-legacy-address", InvalidatedAt: &now, Generation: 2}
+	if err := database.DB.Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	installation := uuid.New()
+	adopted, err := ns.AdoptPushDevice(owner.ID, installation, row.Token, deviceSecret)
+	if err != nil || adopted.State != "invalidated" || adopted.ID != row.ID || adopted.Generation != 2 {
+		t.Fatal(adopted, err)
+	}
+	var stored models.UserPushToken
+	if err := database.DB.First(&stored, "id = ?", row.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.UserID != owner.ID || stored.InvalidatedAt == nil || stored.Token != row.Token {
+		t.Fatal("metadata adoption revived or reassigned invalid token")
+	}
+	healthy, err := ns.RefreshPushDevice(owner.ID, row.ID, installation, "new-healthy-address", adopted.Generation)
+	if err != nil || healthy.State != "active" || healthy.Generation != 3 {
+		t.Fatal(healthy, err)
+	}
+}

@@ -1,3 +1,4 @@
+import { isDeviceSetupStorageChange } from '../../services/push-device';
 import { useState, useEffect, useCallback } from 'react';
 import { Bell, Loader2, Send } from 'lucide-react';
 import { notificationService } from '../../services/notifications';
@@ -21,8 +22,9 @@ export default function NotificationSettings({ isAdmin = false }: { isAdmin?: bo
   }, [userID]);
   useEffect(() => {
     void refresh(); const changed = () => { void refresh(); };
-    window.addEventListener('focus', changed); window.addEventListener('storage', changed);
-    return () => { window.removeEventListener('focus', changed); window.removeEventListener('storage', changed); };
+    const storageChanged = (event: StorageEvent) => { if (isDeviceSetupStorageChange(event)) changed(); };
+    window.addEventListener('focus', changed); window.addEventListener('storage', storageChanged);
+    return () => { window.removeEventListener('focus', changed); window.removeEventListener('storage', storageChanged); };
   }, [refresh]);
   async function change(enable: boolean) {
     if (!userID) return;
