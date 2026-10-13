@@ -13,6 +13,7 @@ interface SessionCardProps {
   courtNumber?: number;
   timeFormat?: TimeFormat;
   featured?: boolean;
+  recordScore?: boolean;
   currentUserId?: string;
 }
 
@@ -20,7 +21,7 @@ const responseLabels: Record<RSVPStatus, string> = {
   in: 'Confirmed', maybe: 'Tentative', out: 'Not attending', waitlisted: 'Waitlisted',
 };
 
-export default function SessionCard({ session, venueName, courtNumber, timeFormat, featured = false, currentUserId }: SessionCardProps) {
+export default function SessionCard({ session, venueName, courtNumber, timeFormat, featured = false, recordScore = false, currentUserId }: SessionCardProps) {
   const sessionDate = parseISO(session.session_date);
   const dateLabel = format(sessionDate, 'EEEE, d MMMM yyyy');
   // Recurring sessions use this date-only title. Preserve every custom title.
@@ -78,8 +79,12 @@ export default function SessionCard({ session, venueName, courtNumber, timeForma
             <span>RSVP by {formatInTimeZone(session.rsvp_deadline, 'Australia/Sydney', 'EEE, d MMM')}</span>
           </p>
         )}
-        <p className="mt-2 text-xs text-slate-500">Open session for details</p>
+        {!recordScore && <p className="mt-2 text-xs text-slate-500">Open session for details</p>}
       </Link>
+      {recordScore && !isCancelled && <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 p-4 sm:p-5">
+        <Link to={`/sessions/${session.id}/games`} className="btn-primary min-h-11 flex-1 sm:flex-none">Record score</Link>
+        <Link to={`/sessions/${session.id}`} className="inline-flex min-h-11 items-center px-2 text-sm font-semibold text-primary-700 underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-700 focus-visible:ring-offset-2">Session details</Link>
+      </div>}
     </article>
   );
 }
