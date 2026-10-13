@@ -1,11 +1,8 @@
 package services
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -430,14 +427,13 @@ const MaxCancellationReasonLength = 1000
 
 // CancelSession retains the schedule and attendance history. The session lock
 // serializes cancellation with RSVP, editing and settlement. Notifications are
-// persisted in the same transaction, then delivered only by the winning request.
+// persisted with durable delivery intent in the same transaction.
 func (s *SessionService) CancelSession(id uuid.UUID, reason string, actorID uuid.UUID) (*models.Session, error) {
 	reason = strings.TrimSpace(reason)
 	if utf8.RuneCountInString(reason) > MaxCancellationReasonLength {
 		return nil, errors.New("cancellation reason must be at most 1000 characters")
 	}
 	var session models.Session
-	var notifications []models.Notification
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&session, "id = ?", id).Error; err != nil {
 			return err
@@ -481,41 +477,11 @@ func (s *SessionService) CancelSession(id uuid.UUID, reason string, actorID uuid
 		if err := tx.Save(&session).Error; err != nil {
 			return err
 		}
-		if err := tx.Create(&announcement).Error; err != nil {
-			return err
-		}
-		var members []models.User
-		if err := tx.Select("id").Where("membership_status = ?", models.MembershipApproved).Find(&members).Error; err != nil {
-			return err
-		}
-		data, _ := json.Marshal(map[string]string{
-			"type":            string(models.NotificationAdminAnnouncement),
-			"announcement_id": announcement.ID.String(),
-			"session_id":      id.String(),
-		})
-		for _, member := range members {
-			notifications = append(notifications, models.Notification{
-				UserID: member.ID, NotificationType: models.NotificationAdminAnnouncement,
-				Title: announcement.Title, Body: announcement.Body, Data: string(data),
-			})
-		}
-		if len(notifications) > 0 {
-			return tx.Create(&notifications).Error
-		}
-		return nil
+		_, err = NewAnnouncementService(s.notifier).publishWithin(tx, actorID, "session-cancelled:"+id.String(), nil, announcement.Title, announcement.Body, &id)
+		return err
 	})
 	if err != nil {
 		return nil, err
-	}
-	if s.notifier != nil && len(notifications) > 0 {
-		// A disconnected client must not cancel delivery after the write commits.
-		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-		defer cancel()
-		for i := range notifications {
-			if err := s.notifier.deliverNotification(ctx, &notifications[i]); err != nil {
-				log.Printf("Failed to deliver cancellation notification %s: %v", notifications[i].ID, err)
-			}
-		}
 	}
 	return &session, nil
 }

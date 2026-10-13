@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"errors"
 	"gorm.io/gorm"
 	"net/http"
@@ -9,9 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/weekday-masters/backend/internal/database"
 	"github.com/weekday-masters/backend/internal/middleware"
-	"github.com/weekday-masters/backend/internal/models"
 	"github.com/weekday-masters/backend/internal/services"
 )
 
@@ -336,59 +333,42 @@ func (h *NotificationHandler) SendBalanceNudge(c *gin.Context) {
 	}
 }
 
-// SendAnnouncementRequest represents the request to send an admin announcement
-type SendAnnouncementRequest struct {
-	Title string `json:"title" binding:"required"`
-	Body  string `json:"body" binding:"required"`
+// RegisterAnnouncementRoutes shares approved-admin authorization with tests.
+func (h *NotificationHandler) RegisterAnnouncementRoutes(protected *gin.RouterGroup) {
+	admin := protected.Group("/admin", middleware.RequireApproved(), middleware.RequireAdmin())
+	admin.POST("/announcements", h.SendAnnouncement)
 }
 
-// SendAnnouncement sends an announcement to all approved members (admin only)
+type SendAnnouncementRequest struct {
+	RequestID uuid.UUID `json:"request_id" binding:"required"`
+	Title     string    `json:"title" binding:"required"`
+	Body      string    `json:"body" binding:"required"`
+}
+
 func (h *NotificationHandler) SendAnnouncement(c *gin.Context) {
-	user, err := middleware.GetUserFromContext(c)
+	actor, err := middleware.GetUserFromContext(c)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
 		return
 	}
-
 	var req SendAnnouncementRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if c.ShouldBindJSON(&req) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_announcement", "message": "A request ID, title and message are required."})
 		return
 	}
-
-	// Create announcement record
-	announcement := models.Announcement{
-		Title:     req.Title,
-		Body:      req.Body,
-		CreatedBy: user.ID,
-	}
-	if err := database.DB.Create(&announcement).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create announcement"})
+	publication, err := services.NewAnnouncementService(h.notificationService).Publish(actor.ID, req.RequestID, req.Title, req.Body)
+	if err == nil {
+		c.JSON(http.StatusCreated, publication)
 		return
 	}
-
-	// Get all approved members
-	var members []models.User
-	if err := database.DB.Where("membership_status = ?", models.MembershipApproved).Find(&members).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get members"})
-		return
+	switch {
+	case errors.Is(err, services.ErrAnnouncementRequestConflict):
+		c.JSON(http.StatusConflict, gin.H{"code": "announcement_request_conflict", "message": err.Error()})
+	case errors.Is(err, services.ErrAnnouncementInvalid):
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_announcement", "message": err.Error()})
+	case errors.Is(err, services.ErrAnnouncementNotAllowed):
+		c.JSON(http.StatusForbidden, gin.H{"code": "announcement_not_allowed", "message": err.Error()})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"code": "announcement_unavailable", "message": "Could not confirm publication. Retry the same message."})
 	}
-
-	// Send notifications to all members
-	userIDs := make([]uuid.UUID, len(members))
-	for i, m := range members {
-		userIDs[i] = m.ID
-	}
-
-	ctx := context.Background()
-	h.notificationService.SendBulkNotification(
-		ctx,
-		userIDs,
-		models.NotificationAdminAnnouncement,
-		req.Title,
-		req.Body,
-		map[string]string{"type": "admin_announcement", "announcement_id": announcement.ID.String()},
-	)
-
-	c.JSON(http.StatusCreated, announcement)
 }

@@ -178,6 +178,7 @@ func run() (runErr error) {
 			protected.POST("/users/me/push-tokens", notificationHandler.ObsoletePushMutation)
 			protected.DELETE("/users/me/push-tokens", notificationHandler.ObsoletePushMutation)
 			notificationHandler.RegisterHistoryRoutes(protected)
+			notificationHandler.RegisterAnnouncementRoutes(protected)
 			notificationHandler.RegisterDeviceRoutes(protected)
 
 			// These routes require approved membership
@@ -240,7 +241,6 @@ func run() (runErr error) {
 				admin.POST("/settlements/:id/reverse", settlementHandler.ReverseSettlement)
 
 				// Announcements
-				admin.POST("/announcements", notificationHandler.SendAnnouncement)
 			}
 		}
 	}
