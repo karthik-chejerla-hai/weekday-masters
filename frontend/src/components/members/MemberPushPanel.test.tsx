@@ -29,7 +29,7 @@ it('loads only on request and reports device setup independently of saved accoun
   expect(screen.getByText('Phone')).toBeInTheDocument();
   expect(screen.getByText('Unnamed browser 2')).toBeInTheDocument();
   expect(screen.queryByText('Balance alerts')).not.toBeInTheDocument();
-  expect(screen.getByText('All supported push alerts are included on registered devices.')).toBeInTheDocument();
+  expect(screen.getByText('Registered devices receive RSVP reminders, session charges, balance alerts and admin announcements.')).toBeInTheDocument();
   expect(screen.queryByText(/Account push is off/)).not.toBeInTheDocument();
   expect(screen.getByText(/does not confirm current phone or browser settings/)).toBeInTheDocument();
   vi.mocked(api.getMemberPushStatus).mockResolvedValue({ preferences: null, devices: [] });

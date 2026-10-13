@@ -1,6 +1,6 @@
 # Validation Guide
 
-These scenarios validate future implementation; no notification code was changed by this planning task.
+This guide covers the six forward-only implementation releases for issue 81. Use synthetic members and a disposable database for local checks. Pull-request preview runs validate schema migration and deploy the stopped notification worker without sending member push alerts.
 
 ## Prerequisites
 
@@ -19,7 +19,7 @@ npm run build
 npm test -- --run
 ```
 
-Use the repository’s Playwright script/configuration for new E2E cases; inspect `frontend/package.json` rather than invent a runner command. Add outbox/device tables to truncation before running database tests.
+Use the Playwright script/configuration in `frontend/package.json` for browser cases. Add outbox/device tables to truncation before running database tests.
 
 ## Independent demonstrations
 
@@ -34,4 +34,6 @@ Use the repository’s Playwright script/configuration for new E2E cases; inspec
 
 ## Deployment rehearsal
 
-In a synthetic preview environment, verify private worker authentication (anonymous/member calls fail), least-privilege scheduler invocation, minute cadence, stop controls, transient retries, backlog expiry and logs without tokens. Rehearse explicit migration and old/new client compatibility before production rollout. Configure an independent alert for failed scheduler runs, overdue outbox work or terminal/uncertain provider attempts; the worker cannot be its own sole outage monitor.
+Each pull request's Preview Deploy workflow provisions an isolated preview branch, runs the explicit migration, seeds synthetic fixtures, deploys the API with notification delivery stopped, and deploys a private worker with its own OIDC audience. The preview Hosting channel is separate from production. The workflow is not an invitation to send a real member push; use the fake provider for delivery assertions and keep the global stop in preview.
+
+Before enabling delivery in any environment, verify anonymous/member calls cannot invoke the worker, only the configured scheduler identity can invoke it, and the one-minute schedule, retry/expiry behavior, stop controls and overdue/terminal health monitoring are active. Inspect logs for aggregate counts and error codes only; never log tokens or revocation proofs. Re-run migrations to verify idempotence and check old clients receive the forward-compatible update-required response where specified. Production activation and real-device self-tests are separate operational actions and are not part of routine PR validation.
