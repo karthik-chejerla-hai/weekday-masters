@@ -1,6 +1,7 @@
 package services
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -189,6 +190,39 @@ func TestDeleteSession_WithAndWithoutRSVPs(t *testing.T) {
 	}
 	if found.Status != models.SessionStatusOpen {
 		t.Fatalf("expected session to remain open, got %s", found.Status)
+	}
+}
+
+func TestDeleteSession_RemovesReminderStagesAndSuppressesPendingIntents(t *testing.T) {
+	_, ss, _ := newTestServices(t)
+	creator := newUser(t, "admin")
+	session := newSession(t, ss, creator.ID, 1)
+	now := utils.NowInSydney()
+	stage := models.RSVPReminderStage{SessionID: session.ID, Stage: 1, State: models.RSVPReminderPending, StartsAt: *session.StartsAt, DueAt: now, ExpiresAt: session.RSVPDeadline}
+	if err := database.DB.Create(&stage).Error; err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(map[string]string{"type": "rsvp_reminder", "session_id": session.ID.String()})
+	notification := models.Notification{UserID: creator.ID, NotificationType: models.NotificationRSVPReminder, Title: "RSVP", Body: "Please respond", Data: string(data)}
+	if err := database.DB.Create(&notification).Error; err != nil {
+		t.Fatal(err)
+	}
+	outbox := models.NotificationOutbox{NotificationID: notification.ID, EventKey: "rsvp-reminder-test", DueAt: now, ExpiresAt: now.Add(time.Hour), State: models.DeliveryPending, NextAttemptAt: now}
+	if err := database.DB.Create(&outbox).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := ss.DeleteSession(session.ID); err != nil {
+		t.Fatalf("delete should clean up reminder rows: %v", err)
+	}
+	var stageCount, notificationCount int64
+	database.DB.Model(&models.RSVPReminderStage{}).Where("session_id = ?", session.ID).Count(&stageCount)
+	database.DB.Model(&models.Notification{}).Where("id = ?", notification.ID).Count(&notificationCount)
+	var persisted models.NotificationOutbox
+	if err := database.DB.First(&persisted, "id = ?", outbox.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stageCount != 0 || notificationCount != 1 || persisted.State != models.DeliverySuppressed {
+		t.Fatalf("expected stages removed, history retained and intent suppressed; stages=%d history=%d state=%s", stageCount, notificationCount, persisted.State)
 	}
 }
 

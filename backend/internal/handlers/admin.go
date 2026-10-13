@@ -350,6 +350,10 @@ func (h *AdminHandler) UpdateSession(c *gin.Context) {
 		EndTime:     req.EndTime,
 		Courts:      req.Courts,
 	}
+	if req.Status != nil {
+		status := models.SessionStatus(*req.Status)
+		input.Status = &status
+	}
 
 	if req.SessionDate != nil {
 		sessionDate, err := utils.ParseDateInSydney(*req.SessionDate)

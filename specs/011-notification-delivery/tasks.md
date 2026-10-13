@@ -54,12 +54,12 @@
 
 ## Release 4: US3 — RSVP reminders and deadlines
 
-- [ ] T029 [US3] Replace default deadline arithmetic and recurring/date/start-time edit behavior in `backend/internal/utils/time.go` and `backend/internal/services/session_service.go`; retire new custom-deadline input controls in `backend/internal/handlers/sessions.go` and `frontend/src/pages/AdminSessions.tsx` normalizing all still-open upcoming deadlines to 48h and preserving already-closed windows.
-- [ ] T030 [US3] Add cutoff-based backfill of all still-open upcoming deadlines including custom ones and skipped past reminder stages in `backend/cmd/migrate/main.go`; preserve closed/cancelled/historical deadlines.
-- [ ] T031 [US3] Replace attendance/deadline schedules with due-stage scanner and unique no-RSVP recipient events in `backend/internal/services/scheduler_service.go`; revalidate immediately before delivery through `backend/internal/services/notification_dispatcher.go`.
-- [ ] T032 [US3] Remove old reminder configuration/cron startup and update exposed copy in `backend/internal/config/config.go`, `backend/cmd/server/main.go`, `frontend/src/components/notifications/PushNotifications.tsx` and `frontend/src/components/notifications/NotificationSettings.tsx`.
-- [ ] T033 [P] [US3] Add elapsed-hour/DST/default recurring/edit and all-open-window normalization and closed-window preservation tests in `backend/internal/utils/time_test.go` and `backend/internal/services/session_service_test.go`.
-- [ ] T034 [P] [US3] Add deterministic reminder boundary/response/concurrent-worker/outage/reschedule/cancellation/stop tests in `backend/internal/services/scheduler_service_test.go`.
+- [x] T029 [US3] Replace default deadline arithmetic and recurring/date/start-time edit behavior in `backend/internal/utils/time.go` and `backend/internal/services/session_service.go`; retire new custom-deadline input controls in `backend/internal/handlers/sessions.go` and `frontend/src/pages/AdminSessions.tsx` normalizing all still-open upcoming deadlines to 48h and preserving already-closed windows.
+- [x] T030 [US3] Add cutoff-based backfill of all still-open upcoming deadlines including custom ones and skipped past reminder stages in `backend/cmd/migrate/main.go`; preserve closed/cancelled/historical deadlines.
+- [x] T031 [US3] Replace attendance/deadline schedules with due-stage scanner and unique no-RSVP recipient events in `backend/internal/services/scheduler_service.go`; revalidate immediately before delivery through `backend/internal/services/notification_dispatcher.go`.
+- [x] T032 [US3] Remove old reminder configuration/cron startup and update exposed copy in `backend/internal/config/config.go`, `backend/cmd/server/main.go`, `frontend/src/components/notifications/PushNotifications.tsx` and `frontend/src/components/notifications/NotificationSettings.tsx`.
+- [x] T033 [P] [US3] Add elapsed-hour/DST/default recurring/edit and all-open-window normalization and closed-window preservation tests in `backend/internal/utils/time_test.go` and `backend/internal/services/session_service_test.go`.
+- [x] T034 [P] [US3] Add deterministic reminder boundary/response/concurrent-worker/outage/reschedule/cancellation/stop tests in `backend/internal/services/rsvp_reminder_scanner_test.go` and `backend/internal/services/notification_dispatcher_test.go`.
 
 ## Release 5: US4 — Charges and reversal corrections
 

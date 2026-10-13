@@ -277,6 +277,18 @@ func TestUpdateSession_ChangesTitleAndRecalculatesCapacity(t *testing.T) {
 	}
 }
 
+func TestUpdateSession_ClosesRSVPWindow(t *testing.T) {
+	h := newHarness(t)
+	admin := makeAdmin(t)
+	session := makeSession(t, admin.ID, 2)
+	var updated models.Session
+	h.as(admin).put("/api/admin/sessions/"+session.ID.String(), map[string]any{"status": "closed"}).
+		expect(http.StatusOK).decode(&updated)
+	if updated.Status != models.SessionStatusClosed {
+		t.Fatalf("expected the RSVP window to close, got %q", updated.Status)
+	}
+}
+
 func TestUpdateSession_RejectsAnInvalidID(t *testing.T) {
 	h := newHarness(t)
 	admin := makeAdmin(t)

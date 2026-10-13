@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"firebase.google.com/go/v4/messaging"
 	"github.com/google/uuid"
@@ -337,6 +338,119 @@ func TestDeliveryPolicyRecheckedBeforeEveryDevice(t *testing.T) {
 	processDelivery(t, d)
 	if len(provider.calls) != 1 || outboxState(t, outbox.ID) != models.DeliveryPartial {
 		t.Fatalf("stop did not suppress unsent devices: %v", provider.calls)
+	}
+}
+
+func TestDeleteSessionPreservesInFlightReminderOutcome(t *testing.T) {
+	d, clock, provider, user := deliveryFixture(t)
+	device := addDeliveryDevice(t, user, "blocked-provider")
+	ss := NewSessionService()
+	session := newSession(t, ss, user.ID, 1)
+	data, err := json.Marshal(map[string]string{"type": "rsvp_reminder", "session_id": session.ID.String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	notification := models.Notification{UserID: user.ID, NotificationType: models.NotificationRSVPReminder, Title: "RSVP", Body: "Please respond", Data: string(data)}
+	if err := database.DB.Create(&notification).Error; err != nil {
+		t.Fatal(err)
+	}
+	stage := models.RSVPReminderStage{SessionID: session.ID, Stage: 1, State: models.RSVPReminderPublished, StartsAt: *session.StartsAt, DueAt: clock.now(), ExpiresAt: session.RSVPDeadline}
+	if err := database.DB.Create(&stage).Error; err != nil {
+		t.Fatal(err)
+	}
+	outbox := models.NotificationOutbox{NotificationID: notification.ID, EventKey: "delete-inflight-reminder", DueAt: clock.now(), ExpiresAt: clock.now().Add(time.Hour), State: models.DeliveryPending, NextAttemptAt: clock.now()}
+	if err := database.DB.Create(&outbox).Error; err != nil {
+		t.Fatal(err)
+	}
+	started, release := make(chan struct{}), make(chan struct{})
+	provider.hook = func(token string) {
+		if token == "blocked-provider" {
+			close(started)
+			<-release
+		}
+	}
+	workerDone := make(chan error, 1)
+	go func() {
+		_, err := d.Process(context.Background(), 1)
+		workerDone <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("worker did not reach provider call")
+	}
+	if err := ss.DeleteSession(session.ID); err != nil {
+		close(release)
+		t.Fatalf("session delete failed during provider call: %v", err)
+	}
+	if state := outboxState(t, outbox.ID); state != models.DeliveryClaimed {
+		close(release)
+		t.Fatalf("in-flight outbox must retain its lease, got %s", state)
+	}
+	close(release)
+	select {
+	case err := <-workerDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("worker did not finish after provider was released")
+	}
+	var attempt models.NotificationDeliveryAttempt
+	if err := database.DB.Where("outbox_id = ? AND enrollment_id = ?", outbox.ID, device.ID).First(&attempt).Error; err != nil {
+		t.Fatal(err)
+	}
+	if attempt.State != models.DeliveryAccepted || outboxState(t, outbox.ID) != models.DeliveryCompleted {
+		t.Fatalf("in-flight acceptance was not recorded: attempt=%s outbox=%s", attempt.State, outboxState(t, outbox.ID))
+	}
+}
+
+func TestDeleteSessionKeepsPartialAcceptedReminderOutcome(t *testing.T) {
+	d, clock, provider, user := deliveryFixture(t)
+	addDeliveryDevice(t, user, "accepted")
+	addDeliveryDevice(t, user, "retry")
+	provider.results["retry"] = []DeliveryProviderResult{{State: models.DeliveryTransient, Code: "temporary"}}
+	ss := NewSessionService()
+	session := newSession(t, ss, user.ID, 1)
+	data, err := json.Marshal(map[string]string{"type": "rsvp_reminder", "session_id": session.ID.String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	notification := models.Notification{UserID: user.ID, NotificationType: models.NotificationRSVPReminder, Title: "RSVP", Body: "Please respond", Data: string(data)}
+	if err := database.DB.Create(&notification).Error; err != nil {
+		t.Fatal(err)
+	}
+	outbox := models.NotificationOutbox{NotificationID: notification.ID, EventKey: "delete-partial-reminder", DueAt: clock.now(), ExpiresAt: clock.now().Add(time.Hour), State: models.DeliveryPending, NextAttemptAt: clock.now()}
+	if err := database.DB.Create(&outbox).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Process(context.Background(), 1); err != nil {
+		t.Fatal(err)
+	}
+	if state := outboxState(t, outbox.ID); state != models.DeliveryPending {
+		t.Fatalf("expected transient retry to leave event pending, got %s", state)
+	}
+	if err := ss.DeleteSession(session.ID); err != nil {
+		t.Fatal(err)
+	}
+	if state := outboxState(t, outbox.ID); state != models.DeliveryPartial {
+		t.Fatalf("deletion hid the accepted device outcome, got %s", state)
+	}
+	var attempts []models.NotificationDeliveryAttempt
+	if err := database.DB.Where("outbox_id = ?", outbox.ID).Find(&attempts).Error; err != nil {
+		t.Fatal(err)
+	}
+	accepted, suppressed := 0, 0
+	for _, attempt := range attempts {
+		if attempt.State == models.DeliveryAccepted {
+			accepted++
+		}
+		if attempt.State == models.DeliverySuppressed {
+			suppressed++
+		}
+	}
+	if accepted != 1 || suppressed != 1 {
+		t.Fatalf("expected accepted and suppressed device history, got accepted=%d suppressed=%d", accepted, suppressed)
 	}
 }
 func TestNotificationMigrationVersionCutoffAndRollback(t *testing.T) {

@@ -335,6 +335,93 @@ func (s *SessionService) DeleteSession(id uuid.UUID) error {
 		if rsvpCount > 0 {
 			return errors.New("this session has RSVPs; use the cancel action to notify members")
 		}
+		// A reminder scan may already have materialized stages and queued events
+		// for this RSVP-free session. Keep member history, but prevent undelivered
+		// reminder intents from firing after the session is removed.
+		var reminderNotificationIDs []uuid.UUID
+		if err := tx.Model(&models.Notification{}).
+			Where("notification_type = ? AND data::jsonb ->> 'session_id' = ?", models.NotificationRSVPReminder, id.String()).
+			Pluck("id", &reminderNotificationIDs).Error; err != nil {
+			return err
+		}
+		if len(reminderNotificationIDs) > 0 {
+			var outboxIDs []uuid.UUID
+			if err := tx.Model(&models.NotificationOutbox{}).Where("notification_id IN ?", reminderNotificationIDs).Pluck("id", &outboxIDs).Error; err != nil {
+				return err
+			}
+			if len(outboxIDs) > 0 {
+				// Match the dispatcher lock order (outbox, then attempts) and
+				// stabilize the worker lease before changing any per-device state.
+				var outboxes []models.NotificationOutbox
+				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id IN ?", outboxIDs).Order("id ASC").Find(&outboxes).Error; err != nil {
+					return err
+				}
+				for _, outbox := range outboxes {
+					if err := tx.Model(&models.NotificationDeliveryAttempt{}).
+						Where("outbox_id = ? AND state IN ?", outbox.ID, []models.DeliveryState{models.DeliveryPending, models.DeliveryTransient}).
+						Updates(map[string]any{"state": models.DeliverySuppressed, "last_error_code": "session_deleted"}).Error; err != nil {
+						return err
+					}
+					if outbox.State == models.DeliveryPending || outbox.State == models.DeliveryTransient {
+						var attempts []models.NotificationDeliveryAttempt
+						if err := tx.Where("outbox_id = ?", outbox.ID).Find(&attempts).Error; err != nil {
+							return err
+						}
+						accepted, uncertain, failed, suppressed, expired := 0, 0, 0, 0, 0
+						for _, attempt := range attempts {
+							switch attempt.State {
+							case models.DeliveryAccepted:
+								accepted++
+							case models.DeliveryUncertain:
+								uncertain++
+							case models.DeliveryFailed:
+								failed++
+							case models.DeliverySuppressed:
+								suppressed++
+							case models.DeliveryExpired:
+								expired++
+							}
+						}
+						state := models.DeliverySuppressed
+						switch {
+						case accepted > 0 && uncertain+failed+suppressed+expired > 0:
+							state = models.DeliveryPartial
+						case accepted > 0:
+							state = models.DeliveryCompleted
+						case uncertain > 0:
+							state = models.DeliveryUncertain
+						case failed > 0:
+							state = models.DeliveryFailed
+						case expired > 0:
+							state = models.DeliveryExpired
+						}
+						if err := tx.Model(&models.NotificationOutbox{}).Where("id = ?", outbox.ID).
+							Updates(map[string]any{"state": state, "last_error_code": "session_deleted"}).Error; err != nil {
+							return err
+						}
+					} else if outbox.State == models.DeliveryClaimed {
+						// A live worker may be inside provider I/O with no DB lock.
+						// Keep its lease whenever a send crossed the durable boundary;
+						// it must record acceptance/uncertainty or lease recovery must.
+						var inFlightOrTerminal int64
+						if err := tx.Model(&models.NotificationDeliveryAttempt{}).
+							Where("outbox_id = ? AND state IN ?", outbox.ID, []models.DeliveryState{models.DeliverySending, models.DeliveryAccepted, models.DeliveryUncertain}).
+							Count(&inFlightOrTerminal).Error; err != nil {
+							return err
+						}
+						if inFlightOrTerminal == 0 {
+							if err := tx.Model(&models.NotificationOutbox{}).Where("id = ? AND state = ? AND lease_owner = ? AND lease_generation = ?", outbox.ID, models.DeliveryClaimed, outbox.LeaseOwner, outbox.LeaseGeneration).
+								Updates(map[string]any{"state": models.DeliverySuppressed, "last_error_code": "session_deleted"}).Error; err != nil {
+								return err
+							}
+						}
+					}
+				}
+			}
+		}
+		if err := tx.Where("session_id = ?", id).Delete(&models.RSVPReminderStage{}).Error; err != nil {
+			return err
+		}
 		return tx.Delete(&session).Error
 	})
 }
