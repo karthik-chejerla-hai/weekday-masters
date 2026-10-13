@@ -1,28 +1,61 @@
-import { useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { api } from '../../services/api';
 import { parseDollarsToCents } from './format';
+import PositionPanel from './PositionPanel';
+import BalanceCorrectionForm from './BalanceCorrectionForm';
+import FormActionRow from './FormActionRow';
+import type { ClubPosition } from '../../types';
 
-interface AssetPurchaseFormsProps {
-  onRecorded: () => void;
+const actions = ['Record court credit purchase', 'Record shuttle purchase', 'Audit bank balance'];
+
+/** One form follows its card on mobile and spans below the card row on desktop. */
+export default function AssetPurchaseForms({ position, revision, onRecorded }: {
+  position: ClubPosition; revision: number; onRecorded: () => void;
+}) {
+  const [active, setActive] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState<{ asset: number; message: string } | null>(null);
+  const panelId = useId();
+  const panel = useRef<HTMLDivElement>(null);
+  const openers = useRef<Array<HTMLButtonElement | null>>([]);
+  const returnTo = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (active !== null) panel.current?.querySelector<HTMLElement>('select, input, textarea')?.focus();
+    else if (returnTo.current !== null) {
+      openers.current[returnTo.current]?.focus();
+      returnTo.current = null;
+    }
+  }, [active]);
+
+  const close = () => { returnTo.current = active; setActive(null); };
+  const recorded = () => {
+    if (active !== null) setSuccess({ asset: active, message: active === 0 ? 'Court credit purchase recorded.' : active === 1 ? 'Shuttle purchase recorded.' : 'Balance correction recorded.' });
+    setSaving(false);
+    close();
+    onRecorded();
+  };
+
+  return <PositionPanel position={position} formAssetIndex={active ?? success?.asset} actions={actions.map((label, index) => (
+    <button key={label} ref={element => { openers.current[index] = element; }} type="button"
+      className="btn-outline w-full" aria-expanded={active === index} aria-controls={panelId} disabled={saving}
+      onClick={() => { setSuccess(null); if (active === index) close(); else setActive(index); }}>
+      {label}
+    </button>
+  ))}>
+    {(active !== null || success) && <>
+      {success && <p role="status" className="text-sm text-green-800">{success.message}</p>}
+      <div id={panelId} ref={panel} role="region" aria-label={active === null ? 'Asset form' : actions[active]} hidden={active === null} className="space-y-3">
+        {active === 0 && <CourtCreditForm onRecorded={recorded} onSavingChange={setSaving} onCancel={close} />}
+        {active === 1 && <ShuttlePurchaseForm onRecorded={recorded} onSavingChange={setSaving} onCancel={close} />}
+        {active === 2 && <BalanceCorrectionForm position={position} revision={revision} initialAsset="bank"
+          onRecorded={onRecorded} onSaved={recorded} onSavingChange={setSaving} onCancel={close} />}
+      </div>
+    </>}
+  </PositionPanel>;
 }
 
-/**
- * Recording what the club bought.
- *
- * Neither of these moves a player balance — they convert cash into something the
- * club will consume later. Keeping them next to the position is deliberate: the
- * moment you notice credit is short is the moment you want to top it up.
- */
-export default function AssetPurchaseForms({ onRecorded }: AssetPurchaseFormsProps) {
-  return (
-    <div className="space-y-4">
-      <CourtCreditForm onRecorded={onRecorded} />
-      <ShuttlePurchaseForm onRecorded={onRecorded} />
-    </div>
-  );
-}
-
-function CourtCreditForm({ onRecorded }: { onRecorded: () => void }) {
+function CourtCreditForm({ onRecorded, onSavingChange, onCancel }: { onRecorded: () => void; onSavingChange: (saving: boolean) => void; onCancel: () => void }) {
   // The venue sells credit in fixed blocks, so this is almost always $100.
   const [amount, setAmount] = useState('100.00');
   const [isSaving, setIsSaving] = useState(false);
@@ -34,6 +67,7 @@ function CourtCreditForm({ onRecorded }: { onRecorded: () => void }) {
     if (!Number.isFinite(cents) || cents <= 0) return;
 
     setIsSaving(true);
+    onSavingChange(true);
     setError(null);
     try {
       await api.recordCourtCredit(cents, 'Venue account top-up');
@@ -42,12 +76,13 @@ function CourtCreditForm({ onRecorded }: { onRecorded: () => void }) {
       setError('Could not record that top-up.');
     } finally {
       setIsSaving(false);
+      onSavingChange(false);
     }
   };
 
   return (
     <form onSubmit={handleSubmit} className="card p-4 space-y-3">
-      <h3 className="font-semibold text-slate-900">Top up court credit</h3>
+      <h3 className="font-semibold text-slate-900">Record court credit purchase</h3>
       <div>
         <label className="label" htmlFor="court-credit-amount">Amount paid to the venue</label>
         <input
@@ -60,15 +95,17 @@ function CourtCreditForm({ onRecorded }: { onRecorded: () => void }) {
           onChange={(e) => setAmount(e.target.value)}
         />
       </div>
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      <button type="submit" className="btn-primary w-full" disabled={isSaving}>
-        {isSaving ? 'Recording…' : 'Record top-up'}
-      </button>
+      {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+      <FormActionRow onCancel={onCancel} disabled={isSaving}>
+        <button type="submit" className="btn-primary min-w-0 flex-1 sm:flex-none" disabled={isSaving}>
+          {isSaving ? 'Recording…' : 'Record purchase'}
+        </button>
+      </FormActionRow>
     </form>
   );
 }
 
-function ShuttlePurchaseForm({ onRecorded }: { onRecorded: () => void }) {
+function ShuttlePurchaseForm({ onRecorded, onSavingChange, onCancel }: { onRecorded: () => void; onSavingChange: (saving: boolean) => void; onCancel: () => void }) {
   const [units, setUnits] = useState('12');
   const [amount, setAmount] = useState('50.00');
   const [isSaving, setIsSaving] = useState(false);
@@ -81,6 +118,7 @@ function ShuttlePurchaseForm({ onRecorded }: { onRecorded: () => void }) {
     if (!Number.isFinite(cents) || cents <= 0 || !Number.isInteger(count) || count <= 0) return;
 
     setIsSaving(true);
+    onSavingChange(true);
     setError(null);
     try {
       await api.recordShuttlePurchase(count, cents, 'Shuttle purchase');
@@ -89,12 +127,13 @@ function ShuttlePurchaseForm({ onRecorded }: { onRecorded: () => void }) {
       setError('Could not record that purchase.');
     } finally {
       setIsSaving(false);
+      onSavingChange(false);
     }
   };
 
   return (
     <form onSubmit={handleSubmit} className="card p-4 space-y-3">
-      <h3 className="font-semibold text-slate-900">Record shuttles bought</h3>
+      <h3 className="font-semibold text-slate-900">Record shuttle purchase</h3>
       <p className="text-xs text-slate-500">
         Buying at a different price blends the average. What is already in the bag keeps the
         value it was bought at.
@@ -124,10 +163,12 @@ function ShuttlePurchaseForm({ onRecorded }: { onRecorded: () => void }) {
           />
         </div>
       </div>
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      <button type="submit" className="btn-primary w-full" disabled={isSaving}>
-        {isSaving ? 'Recording…' : 'Record purchase'}
-      </button>
+      {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+      <FormActionRow onCancel={onCancel} disabled={isSaving}>
+        <button type="submit" className="btn-primary min-w-0 flex-1 sm:flex-none" disabled={isSaving}>
+          {isSaving ? 'Recording…' : 'Record purchase'}
+        </button>
+      </FormActionRow>
     </form>
   );
 }

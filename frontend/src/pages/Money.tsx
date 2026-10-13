@@ -9,7 +9,6 @@ import TopupForm from '../components/money/TopupForm';
 import FormDisclosure from '../components/money/FormDisclosure';
 import PositionPanel from '../components/money/PositionPanel';
 import AssetPurchaseForms from '../components/money/AssetPurchaseForms';
-import BalanceCorrectionForm from '../components/money/BalanceCorrectionForm';
 import SpendAnalytics from '../components/money/SpendAnalytics';
 import type { ClubPosition, PlayerBalance } from '../types';
 
@@ -134,9 +133,9 @@ export default function Money() {
             Could not load club assets.
             <button className="ml-2 font-semibold underline" onClick={() => void load()}>Try again</button>
           </div>}
-          {position && <PositionPanel position={position} />}
-          {isAdmin && position && !position.assets_pending && <AssetPurchaseForms onRecorded={load} />}
-          {isAdmin && position && !positionError && !position.assets_pending && <BalanceCorrectionForm position={position} revision={revision} onRecorded={load} />}
+          {position && (isAdmin && !positionError && !position.assets_pending
+            ? <AssetPurchaseForms position={position} revision={revision} onRecorded={load} />
+            : <PositionPanel position={position} />)}
         </div>
       )}
     </div>
