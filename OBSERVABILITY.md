@@ -23,7 +23,8 @@ This covers the API process and selected browser error categories, not raw
 browser console output, individual browser messages or stack traces,
 migration/seed commands, Cloud Run platform logs/CPU metrics, Neon server
 metrics or distributed traces. Browser telemetry requires a signed-in user and
-sends no message text, stack, URL, request data or user identifier. SDK
+sends no message text, stack, URL, request data or user identifier. Each user
+has a 40-event burst allowance, refilling at 60 events per minute. SDK
 versions are pinned to support this repository's Go 1.22 build and CI toolchain.
 
 ## 1. Get Grafana's connection settings
