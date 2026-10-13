@@ -41,6 +41,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
+      - name: Test private notification worker deployment protocol
+        run: bash .github/scripts/notification-worker.test.sh
+
       - name: Test registry retention filters
         run: bash .github/scripts/registry-retention.test.sh
 

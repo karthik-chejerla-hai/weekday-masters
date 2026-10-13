@@ -44,8 +44,9 @@ func (s *SchedulerService) Start() {
 	// Run every hour at minute 0 to check for reminders
 	// This runs at :00 of each hour
 	_, err := s.cron.AddFunc("0 0 * * * *", func() {
-		s.checkSessionReminders()
-		s.checkDeadlineReminders()
+		if err := s.RunOnce(context.Background()); err != nil {
+			log.Printf("Legacy reminder scan failed: %v", err)
+		}
 	})
 	if err != nil {
 		log.Printf("Failed to add cron job: %v", err)
@@ -65,26 +66,26 @@ func (s *SchedulerService) Stop() {
 }
 
 // checkSessionReminders checks for sessions that need reminders sent
-func (s *SchedulerService) checkSessionReminders() {
+func (s *SchedulerService) checkSessionReminders(ctx context.Context) {
 	now := utils.NowInSydney()
 	log.Printf("Checking session reminders at %s", now.Format("2006-01-02 15:04"))
 
 	// Check for 24h reminders
-	s.sendSessionRemindersForWindow(now, s.reminderHours24, "24h")
+	s.sendSessionRemindersForWindow(ctx, now, s.reminderHours24, "24h")
 
 	// Check for 12h reminders
-	s.sendSessionRemindersForWindow(now, s.reminderHours12, "12h")
+	s.sendSessionRemindersForWindow(ctx, now, s.reminderHours12, "12h")
 }
 
 // sendSessionRemindersForWindow sends reminders for sessions starting within a time window
-func (s *SchedulerService) sendSessionRemindersForWindow(now time.Time, hoursAhead int, label string) {
+func (s *SchedulerService) sendSessionRemindersForWindow(ctx context.Context, now time.Time, hoursAhead int, label string) {
 	// Calculate the target time window (e.g., 24h from now, within a 1-hour window)
 	windowStart := now.Add(time.Duration(hoursAhead) * time.Hour)
 	windowEnd := windowStart.Add(1 * time.Hour)
 
 	// Find sessions starting within this window
 	var sessions []models.Session
-	err := database.DB.Where(
+	err := database.DB.WithContext(ctx).Where(
 		"session_date = ? AND status = ?",
 		windowStart.Format("2006-01-02"),
 		models.SessionStatusOpen,
@@ -104,18 +105,17 @@ func (s *SchedulerService) sendSessionRemindersForWindow(now time.Time, hoursAhe
 		}
 
 		if sessionStart.After(windowStart) && sessionStart.Before(windowEnd) {
-			s.sendSessionReminders(session, label)
+			s.sendSessionReminders(ctx, session, label)
 		}
 	}
 }
 
 // sendSessionReminders sends reminders to all users who have RSVP'd to a session
-func (s *SchedulerService) sendSessionReminders(session models.Session, label string) {
-	ctx := context.Background()
+func (s *SchedulerService) sendSessionReminders(ctx context.Context, session models.Session, label string) {
 
 	// Get all RSVPs with status "in" for this session
 	var rsvps []models.RSVP
-	err := database.DB.Where("session_id = ? AND status = ?", session.ID, models.RSVPStatusIn).Find(&rsvps).Error
+	err := database.DB.WithContext(ctx).Where("session_id = ? AND status = ?", session.ID, models.RSVPStatusIn).Find(&rsvps).Error
 	if err != nil {
 		log.Printf("Error fetching RSVPs for session %s: %v", session.ID, err)
 		return
@@ -134,6 +134,7 @@ func (s *SchedulerService) sendSessionReminders(session models.Session, label st
 		data := map[string]string{
 			"type":       string(models.NotificationSessionReminder),
 			"session_id": session.ID.String(),
+			"stage":      label,
 		}
 
 		if err := s.notificationService.SendNotification(ctx, rsvp.UserID, models.NotificationSessionReminder, title, body, data); err != nil {
@@ -145,9 +146,8 @@ func (s *SchedulerService) sendSessionReminders(session models.Session, label st
 }
 
 // checkDeadlineReminders checks for sessions with approaching RSVP deadlines
-func (s *SchedulerService) checkDeadlineReminders() {
+func (s *SchedulerService) checkDeadlineReminders(ctx context.Context) {
 	now := utils.NowInSydney()
-	ctx := context.Background()
 
 	// Calculate the deadline window (e.g., deadlines within the next 6 hours)
 	windowStart := now
@@ -155,7 +155,7 @@ func (s *SchedulerService) checkDeadlineReminders() {
 
 	// Find sessions with deadlines in this window that are still open
 	var sessions []models.Session
-	err := database.DB.Where(
+	err := database.DB.WithContext(ctx).Where(
 		"rsvp_deadline > ? AND rsvp_deadline <= ? AND status = ?",
 		windowStart,
 		windowEnd,
@@ -176,7 +176,7 @@ func (s *SchedulerService) checkDeadlineReminders() {
 func (s *SchedulerService) sendDeadlineReminders(ctx context.Context, session models.Session) {
 	// Get all approved members
 	var users []models.User
-	err := database.DB.Where("membership_status = ?", models.MembershipApproved).Find(&users).Error
+	err := database.DB.WithContext(ctx).Where("membership_status = ?", models.MembershipApproved).Find(&users).Error
 	if err != nil {
 		log.Printf("Error fetching users for deadline reminders: %v", err)
 		return
@@ -184,7 +184,7 @@ func (s *SchedulerService) sendDeadlineReminders(ctx context.Context, session mo
 
 	// Get existing RSVPs for this session
 	var existingRSVPs []models.RSVP
-	database.DB.Where("session_id = ?", session.ID).Find(&existingRSVPs)
+	database.DB.WithContext(ctx).Where("session_id = ?", session.ID).Find(&existingRSVPs)
 
 	// Build map of users who have already RSVP'd
 	rsvpUserMap := make(map[uuid.UUID]bool)
@@ -239,4 +239,25 @@ func (s *SchedulerService) parseSessionDateTime(session models.Session) (time.Ti
 		return time.Time{}, fmt.Errorf("session %s has unusable times: %w", session.ID, err)
 	}
 	return startsAt, nil
+}
+
+// RunOnce keeps the legacy producer active through Release 3. The persisted
+// Release 4 cutover marker stops every surviving API revision on its next tick.
+func (s *SchedulerService) RunOnce(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	var count int64
+	if err := database.DB.WithContext(ctx).Table("notification_migration_records").Where("version = ?", "notification-rsvp-48h-v1").Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	s.checkSessionReminders(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.checkDeadlineReminders(ctx)
+	return ctx.Err()
 }

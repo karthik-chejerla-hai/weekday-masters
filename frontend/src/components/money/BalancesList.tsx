@@ -49,7 +49,7 @@ export default function BalancesList({ balances, lowThresholdCents, currentUserI
         ...current,
         [balance.user_id]: {
           state: 'sent',
-          message: result.push_sent
+          message: result.delivery_state === 'pending' || result.push_sent
             ? `Push nudge queued for ${balance.name}.`
             : `${balance.name} will see the nudge in Rally; push is unavailable or disabled.`,
         },

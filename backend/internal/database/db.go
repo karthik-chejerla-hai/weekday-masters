@@ -62,9 +62,11 @@ func Migrate() error {
 		return err
 	}
 
-	// Additive lifecycle schema only: existing IDs, token addresses, owners,
-	// timestamps and preference flags are not rewritten or translated.
+	// Additive lifecycle schema only; retain every existing token and owner.
 	if err := applyPushDeviceConstraints(); err != nil {
+		return err
+	}
+	if err := MigrateNotificationDeliverySchema(DB); err != nil {
 		return err
 	}
 
@@ -81,6 +83,11 @@ func Migrate() error {
 	}
 
 	if err := backfillClubSettings(); err != nil {
+		return err
+	}
+	if err := RunNotificationMigration(DB, "notification-fixed-balance-threshold-v1", func(tx *gorm.DB, _ time.Time) error {
+		return tx.Model(&models.Club{}).Where("low_balance_threshold_cents <> ?", models.NotificationBalanceThresholdCents).Update("low_balance_threshold_cents", models.NotificationBalanceThresholdCents).Error
+	}); err != nil {
 		return err
 	}
 
