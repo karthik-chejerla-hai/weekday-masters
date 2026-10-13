@@ -1,6 +1,6 @@
 # Notification Contracts (proposed)
 
-All member routes require authentication and approved membership. Admin diagnostics/actions additionally require approved-admin status. Preserve existing API envelope conventions; update OpenAPI and singleton frontend client together.
+All member setup/history routes require authentication and approved membership. The revoke-only proof route is an authenticated exception described below. Admin diagnostics/actions additionally require approved-admin status. Preserve existing API envelope conventions; update OpenAPI and singleton frontend client together.
 
 ## Push setup
 
@@ -40,3 +40,21 @@ Reuse existing paged history/read endpoints; add authorized own-event detail ret
 ## Private worker
 
 `POST /internal/notifications/run` on a separately deployed private Cloud Run service. Cloud Scheduler identity has only invoke permission on this worker; no public access and no member/admin JWT substitution. Bounded scan/dispatch result reports scanned, claimed, accepted, suppressed, retried, uncertain and failed counts without raw tokens/financial payloads in logs. Repeated/concurrent invocation is safe. Deployment/club stops retain their authority. Explicit diagnostic self-test exception remains limited to the signed-in admin and does not bypass normal delivery policy.
+
+## Release 2 concrete enrollment protocol
+
+Existing `user_push_tokens` rows retain their ID, token and owner. Shared `database.Migrate` adds nullable `installation_id` (unique), `generation` (positive int64, default 1), hidden SHA-256 `revocation_hash`, `revoked_at` and `invalidated_at`. No opt-out migration or business backfill runs. Repeated migrations preserve lifecycle state. Active send/status counts exclude revoked and invalidated rows; old flags are inert.
+
+`GET /api/users/me/push-devices` returns an array of `{id, installation_id, generation, device_name, state}`. State is `active`, `revoked` or `invalidated`; legacy installations are null. Tokens and revocation proofs are never returned.
+
+`POST /api/users/me/push-devices/enroll` accepts `{installation_id: UUID, token: string, revocation_secret: 64 hex characters, generation: integer, device_name?: string}`. Generation zero means a new installation. Existing installations require the caller owner, device proof and current generation before any state change. Explicit enrollment alone can revive revocation; token rotations/re-enrollment increment the counter. Identical active-address retries do not change state. Globally unique tokens/installations cannot be reassigned to another account.
+
+`POST /api/users/me/push-devices/adopt` uses the same input, automatically adding metadata only to an existing same-owner active legacy token. It never creates an absent enrollment or revives a tombstone. A browser with existing permission can adopt without a permission prompt. Unvisited legacy tokens remain deliverable.
+
+`PUT /api/users/me/push-devices/:id/registration` accepts `{installation_id, token, generation}`. The caller must own the row/installation, revocation must be absent, and token changes require the current generation. Invalidated addresses may be refreshed; explicit revocation cannot. Identical active-address retry is idempotent. `DELETE /api/users/me/push-devices/:id` accepts `{generation}` and revokes only the caller’s installation; the counter advances, while an already-revoked retry succeeds without further mutation.
+
+`POST /api/push-devices/revoke-proof` accepts `{installation_id, revocation_secret, generation}` and returns 204 only on valid proof or its already-revoked retry. Authentication is required; approval is deliberately not required so a pending/removed new account can retire the former browser enrollment after its JWT is unavailable. This endpoint can only revoke; it reads/returns no ownership or registration data and cannot enroll, refresh or transfer a device. Incorrect proof and unknown IDs both return 404. Stale generations return 409; retry may not revoke a later re-enrollment.
+
+Other-member/missing owned IDs return 404. Invalid request shape returns 400; stale generation/state/proof on enrollment returns 409; unapproved setup/history returns 403; backend failures return 500. Old preference PUT and push-token POST/DELETE return `409 {code: "update_required", message: "Refresh Rally to manage notifications on this device."}` without mutation; old reads remain available as inert compatibility data.
+
+The browser persists a random installation ID and 256-bit revoke secret, serializes operations with Web Locks where supported, and listens for cross-tab storage changes. Ordinary logout preserves the record. Account switching first revokes the former enrollment using the device proof, then deletes the Firebase address and generates a new installation/proof. A new account must explicitly enable; old rows are not transferred. Failed cleanup retains retry state and blocks sign-in completion rather than reporting success. Old tabs cannot automatically reclaim a different account’s installation. Explicit disable persists independently of browser permission and cannot be undone by startup restoration or old clients.

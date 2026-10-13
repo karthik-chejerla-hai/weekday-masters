@@ -134,14 +134,6 @@ func (s *NotificationService) SendTestPush(ctx context.Context, userID uuid.UUID
 		return nil, ErrBalanceNudgeNotAllowed
 	}
 
-	prefs, err := s.GetUserPreferences(userID)
-	if err != nil {
-		return nil, err
-	}
-	if !prefs.PushEnabled {
-		return nil, ErrPushDisabledForUser
-	}
-
 	return s.sendPushNotificationWithResult(
 		ctx,
 		userID,
@@ -321,11 +313,6 @@ func (s *NotificationService) deliverNotification(ctx context.Context, notificat
 		return fmt.Errorf("failed to get user: %w", err)
 	}
 
-	prefs, err := s.GetUserPreferences(userID)
-	if err != nil {
-		return fmt.Errorf("failed to get preferences: %w", err)
-	}
-
 	if user.MembershipStatus != models.MembershipApproved {
 		return nil
 	}
@@ -341,7 +328,7 @@ func (s *NotificationService) deliverNotification(ctx context.Context, notificat
 	data["type"] = string(notification.NotificationType)
 	data["notification_id"] = notification.ID.String()
 	data["destination_path"] = NotificationDestination(data)
-	if prefs.IsPushEnabledForType(notification.NotificationType) && s.fcmEnabled && !notification.PushSent {
+	if s.fcmEnabled && !notification.PushSent {
 		if err := s.sendPushNotification(ctx, userID, notification.Title, notification.Body, data); err != nil {
 			log.Printf("Failed to send push to user %s: %v", userID, err)
 		} else {
@@ -377,7 +364,7 @@ func (s *NotificationService) sendPushNotificationWithResult(
 
 	// Get all push tokens for user
 	var tokens []models.UserPushToken
-	if err := database.DB.Where("user_id = ?", userID).Find(&tokens).Error; err != nil {
+	if err := database.DB.Where("user_id = ? AND revoked_at IS NULL AND invalidated_at IS NULL", userID).Find(&tokens).Error; err != nil {
 		return nil, err
 	}
 
@@ -420,8 +407,8 @@ func (s *NotificationService) sendPushNotificationWithResult(
 	for i, result := range response.Responses {
 		if !result.Success {
 			if messaging.IsRegistrationTokenNotRegistered(result.Error) {
-				database.DB.Delete(&models.UserPushToken{}, "token = ?", tokenStrings[i])
-				log.Printf("Removed invalid FCM token for user %s", userID)
+				database.DB.Model(&models.UserPushToken{}).Where("id = ? AND token = ? AND generation = ?", tokens[i].ID, tokens[i].Token, tokens[i].Generation).Update("invalidated_at", time.Now())
+				log.Printf("Invalidated FCM registration for user %s", userID)
 			}
 		}
 	}
@@ -529,7 +516,7 @@ func (s *NotificationService) RegisterPushToken(userID uuid.UUID, token, deviceN
 	// Settings and app startup can register the same device concurrently.
 	return database.DB.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "token"}},
-		DoUpdates: clause.AssignmentColumns([]string{"user_id", "device_name", "last_used_at"}),
+		DoNothing: true,
 	}).Create(&tokenRow).Error
 }
 
