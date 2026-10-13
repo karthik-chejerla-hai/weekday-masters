@@ -72,6 +72,14 @@ func (d *NotificationDispatcher) Process(ctx context.Context, batchSize int) (*D
 	}
 	summary := &DeliveryRunSummary{}
 	for i := 0; i < batchSize; i++ {
+		// Provider initialization is an operational worker concern. It must
+		// never claim/suppress durable intent created by a separate API process.
+		if d.Provider == nil {
+			return summary, ErrPushUnavailable
+		}
+		if availability, ok := d.Provider.(interface{ Available() bool }); ok && !availability.Available() {
+			return summary, ErrPushUnavailable
+		}
 		if err := ctx.Err(); err != nil {
 			return summary, err
 		}
@@ -298,8 +306,32 @@ func (d *NotificationDispatcher) finishAttempt(ctx context.Context, outbox *mode
 			result.State = models.DeliveryUncertain
 			result.Code = "unknown_provider_outcome"
 		}
-		changes := map[string]any{"state": result.State, "last_error_code": result.Code}
 		now := d.now()
+		if result.InvalidRegistration && result.State == models.DeliveryFailed {
+			// A definite rejection is safe to retry at a newer healthy address.
+			// Keep ownership and generation fencing: a rotated enrollment must
+			// not be invalidated by the old address's result, nor an event sent
+			// to a replacement owner. Acceptance and uncertainty stay terminal.
+			invalidation := tx.Model(&models.UserPushToken{}).
+				Where("id = ? AND user_id = ? AND generation = ? AND token = ? AND revoked_at IS NULL AND invalidated_at IS NULL", device.ID, device.UserID, device.Generation, device.Token).
+				Updates(map[string]any{"invalidated_at": now, "generation": gorm.Expr("generation + 1")})
+			if invalidation.Error != nil {
+				return invalidation.Error
+			}
+			if invalidation.RowsAffected == 0 {
+				var rotated int64
+				if err := tx.Model(&models.UserPushToken{}).
+					Where("id = ? AND user_id = ? AND generation > ? AND token <> ? AND token <> '' AND revoked_at IS NULL AND invalidated_at IS NULL", device.ID, device.UserID, device.Generation, device.Token).
+					Count(&rotated).Error; err != nil {
+					return err
+				}
+				if rotated == 1 {
+					result.State = models.DeliveryTransient
+					result.Code = "registration_rotated"
+				}
+			}
+		}
+		changes := map[string]any{"state": result.State, "last_error_code": result.Code}
 		if result.State == models.DeliveryAccepted {
 			changes["provider_accepted_at"] = now
 			if err := tx.Model(&models.Notification{}).Where("id = ?", outbox.NotificationID).Updates(map[string]any{"push_sent": true, "push_sent_at": now}).Error; err != nil {
@@ -326,12 +358,6 @@ func (d *NotificationDispatcher) finishAttempt(ctx context.Context, outbox *mode
 		}
 		if updated.RowsAffected != 1 {
 			return ErrNotificationLeaseLost
-		}
-		if result.InvalidRegistration {
-			// Do not invalidate a rotated token or another owner after the network call.
-			if err := tx.Model(&models.UserPushToken{}).Where("id = ? AND user_id = ? AND generation = ? AND token = ? AND revoked_at IS NULL AND invalidated_at IS NULL", device.ID, device.UserID, device.Generation, device.Token).Updates(map[string]any{"invalidated_at": now, "generation": gorm.Expr("generation + 1")}).Error; err != nil {
-				return err
-			}
 		}
 		return nil
 	})
@@ -459,9 +485,6 @@ func (s *NotificationService) queueDeliveryPolicy(tx *gorm.DB, notification mode
 	if club.NotificationsPaused && !bypass {
 		return "club_paused", nil
 	}
-	if !s.fcmEnabled || s.fcmClient == nil {
-		return "push_unavailable", nil
-	}
 	// Release 3 preserves existing trigger timing, but stale/cancelled sessions
 	// and changed RSVP eligibility are rechecked at dispatch.
 	var data map[string]string
@@ -503,6 +526,10 @@ func (s *NotificationService) queueDeliveryPolicy(tx *gorm.DB, notification mode
 }
 
 type notificationFCMProvider struct{ s *NotificationService }
+
+func (p notificationFCMProvider) Available() bool {
+	return p.s != nil && p.s.fcmEnabled && p.s.fcmClient != nil
+}
 
 func (p notificationFCMProvider) Send(ctx context.Context, n models.Notification, token string, ttl time.Duration) DeliveryProviderResult {
 	seconds := int64(math.Floor(ttl.Seconds()))

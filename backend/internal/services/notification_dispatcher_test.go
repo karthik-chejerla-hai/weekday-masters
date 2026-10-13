@@ -8,6 +8,7 @@ import (
 	"github.com/weekday-masters/backend/internal/database"
 	"github.com/weekday-masters/backend/internal/models"
 	"gorm.io/gorm"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -249,14 +250,23 @@ func TestDeliveryRotatedTokenInvalidationIsConditional(t *testing.T) {
 			}
 		}
 	}
-	queueDelivery(t, user, "invalid-old", clock.now())
+	oldOutbox := queueDelivery(t, user, "invalid-old", clock.now())
 	processDelivery(t, d)
 	var active int64
 	database.DB.Model(&models.UserPushToken{}).Where("id = ? AND token = ? AND invalidated_at IS NULL", device.ID, "rotated").Count(&active)
 	if active != 1 {
 		t.Fatal("old provider result invalidated rotated token")
 	}
+	if outboxState(t, oldOutbox.ID) != models.DeliveryPending {
+		t.Fatal("rotated registration lost rejected event")
+	}
 	provider.hook = nil
+	clock.advance(time.Minute)
+	processDelivery(t, d)
+	if provider.calls["old"] != 1 || provider.calls["rotated"] != 1 || outboxState(t, oldOutbox.ID) != models.DeliveryCompleted {
+		t.Fatalf("rotated healthy address did not receive bounded retry: %v", provider.calls)
+	}
+	provider.calls["rotated"] = 0
 	provider.results["rotated"] = []DeliveryProviderResult{{State: models.DeliveryTransient}, {State: models.DeliveryAccepted}}
 	outbox := queueDelivery(t, user, "pending-rotation", clock.now())
 	processDelivery(t, d)
@@ -452,5 +462,112 @@ func TestDeliveryInvalidatedTokenRetiresOnlyAttemptedRegistration(t *testing.T) 
 	database.DB.Model(&models.UserPushToken{}).Where("id = ? AND invalidated_at IS NULL", other.ID).Count(&active)
 	if invalidated != 1 || active != 1 {
 		t.Fatal("provider invalidation affected wrong device")
+	}
+}
+
+func TestDeliveryOriginIndependentOfAPIProviderInitialization(t *testing.T) {
+	d, clock, provider, user := deliveryFixture(t)
+	addDeliveryDevice(t, user, "active")
+	apiService := &NotificationService{} // API process may fail Firebase initialization.
+	var outbox *models.NotificationOutbox
+	if err := database.DB.Transaction(func(tx *gorm.DB) error {
+		var err error
+		outbox, err = apiService.QueueNotificationWithin(tx, &models.Notification{UserID: user.ID, NotificationType: models.NotificationAdminAnnouncement, Title: "Saved", Body: "Durable", Data: "{}"}, "api-provider-unavailable", clock.now(), clock.now().Add(time.Hour))
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if outbox.State != models.DeliveryPending {
+		t.Fatalf("API provider failure discarded intent: %s", outbox.State)
+	}
+	if summary, err := apiService.ProcessNotificationWork(context.Background(), 25); !errors.Is(err, ErrPushUnavailable) || summary.Claimed != 0 {
+		t.Fatalf("uninitialized worker claimed intent: %+v %v", summary, err)
+	}
+	var untouched models.NotificationOutbox
+	database.DB.First(&untouched, "id = ?", outbox.ID)
+	if untouched.State != models.DeliveryPending || untouched.LeaseGeneration != 0 {
+		t.Fatal("unavailable worker changed intent")
+	}
+	processDelivery(t, d)
+	if outboxState(t, outbox.ID) != models.DeliveryCompleted || provider.calls["active"] != 1 {
+		t.Fatal("healthy independent worker could not deliver retained intent")
+	}
+}
+func TestDeliveryUninitializedDispatcherDoesNotClaim(t *testing.T) {
+	d, clock, _, user := deliveryFixture(t)
+	addDeliveryDevice(t, user, "active")
+	outbox := queueDelivery(t, user, "missing-worker-provider", clock.now())
+	d.Provider = nil
+	summary, err := d.Process(context.Background(), 25)
+	if !errors.Is(err, ErrPushUnavailable) || summary.Claimed != 0 || outboxState(t, outbox.ID) != models.DeliveryPending {
+		t.Fatalf("nil provider claimed event: %+v %v", summary, err)
+	}
+}
+func TestRejectedRotatingAddressRetriesAreBoundedByExpiryAndCount(t *testing.T) {
+	for _, mode := range []string{"exhaustion", "expiry", "owner_changed", "revoked", "accepted", "uncertain"} {
+		t.Run(mode, func(t *testing.T) {
+			d, clock, provider, user := deliveryFixture(t)
+			device := addDeliveryDevice(t, user, "address-0")
+			outbox := queueDelivery(t, user, "rotating-address-"+mode, clock.now())
+			owner := newUser(t, "other")
+			if mode == "expiry" {
+				if err := database.DB.Model(outbox).Update("expires_at", clock.now().Add(30*time.Second)).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			generation := 0
+			provider.hook = func(token string) {
+				generation++
+				changes := map[string]any{"token": "address-" + strconv.Itoa(generation), "generation": gorm.Expr("generation + 1")}
+				if mode == "owner_changed" {
+					changes["user_id"] = owner.ID
+				}
+				if mode == "revoked" {
+					changes["revoked_at"] = clock.now()
+				}
+				if err := database.DB.Model(&models.UserPushToken{}).Where("id = ?", device.ID).Updates(changes).Error; err != nil {
+					t.Error(err)
+				}
+			}
+			for i := 0; i < 5; i++ {
+				provider.results["address-"+strconv.Itoa(i)] = []DeliveryProviderResult{{State: models.DeliveryFailed, Code: "unregistered", InvalidRegistration: true}}
+			}
+			if mode == "accepted" {
+				provider.results["address-0"] = []DeliveryProviderResult{{State: models.DeliveryAccepted, InvalidRegistration: true}}
+			}
+			if mode == "uncertain" {
+				provider.results["address-0"] = []DeliveryProviderResult{{State: models.DeliveryUncertain, InvalidRegistration: true}}
+			}
+			processDelivery(t, d)
+			for _, delay := range deliveryRetryDelays {
+				clock.advance(delay)
+				processDelivery(t, d)
+			}
+			calls := 0
+			for _, count := range provider.calls {
+				calls += count
+			}
+			wantState, wantCalls := models.DeliveryFailed, 1
+			switch mode {
+			case "exhaustion":
+				wantCalls = 4
+			case "expiry":
+				wantState = models.DeliveryExpired
+			case "accepted":
+				wantState = models.DeliveryCompleted
+			case "uncertain":
+				wantState = models.DeliveryUncertain
+			}
+			if calls != wantCalls || outboxState(t, outbox.ID) != wantState {
+				t.Fatalf("mode %s calls %d state %s want %d %s", mode, calls, outboxState(t, outbox.ID), wantCalls, wantState)
+			}
+			if mode == "accepted" || mode == "uncertain" {
+				var count int64
+				database.DB.Model(&models.UserPushToken{}).Where("id = ? AND invalidated_at IS NULL", device.ID).Count(&count)
+				if count != 1 {
+					t.Fatal("terminal acceptance/uncertainty invalidated healthy rotation")
+				}
+			}
+		})
 	}
 }
