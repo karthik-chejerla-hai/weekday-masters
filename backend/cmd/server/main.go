@@ -182,10 +182,11 @@ func run() (runErr error) {
 
 			// Notification preferences routes (available to all authenticated users)
 			protected.GET("/users/me/notifications", notificationHandler.GetPreferences)
-			protected.PUT("/users/me/notifications", notificationHandler.UpdatePreferences)
-			protected.POST("/users/me/push-tokens", notificationHandler.RegisterPushToken)
-			protected.DELETE("/users/me/push-tokens", notificationHandler.UnregisterPushToken)
+			protected.PUT("/users/me/notifications", notificationHandler.ObsoletePushMutation)
+			protected.POST("/users/me/push-tokens", notificationHandler.ObsoletePushMutation)
+			protected.DELETE("/users/me/push-tokens", notificationHandler.ObsoletePushMutation)
 			notificationHandler.RegisterHistoryRoutes(protected)
+			notificationHandler.RegisterDeviceRoutes(protected)
 
 			// These routes require approved membership
 			approved := protected.Group("")

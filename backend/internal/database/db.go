@@ -62,6 +62,12 @@ func Migrate() error {
 		return err
 	}
 
+	// Additive lifecycle schema only: existing IDs, token addresses, owners,
+	// timestamps and preference flags are not rewritten or translated.
+	if err := applyPushDeviceConstraints(); err != nil {
+		return err
+	}
+
 	if err := applyLedgerConstraints(); err != nil {
 		return err
 	}
@@ -223,4 +229,14 @@ func SeedDefaultClub() error {
 	}
 	log.Println("Created default club")
 	return nil
+}
+
+// Lifecycle counters are monotonic. This constraint is repeat-safe and does not
+// reset generations or revoke any registration on subsequent deployments.
+func applyPushDeviceConstraints() error {
+	return DB.Exec(`DO $$ BEGIN
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'push_device_generation_positive' AND conrelid = 'user_push_tokens'::regclass) THEN
+ ALTER TABLE user_push_tokens ADD CONSTRAINT push_device_generation_positive CHECK (generation >= 1);
+ END IF;
+ END $$`).Error
 }

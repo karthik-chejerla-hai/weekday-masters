@@ -18,7 +18,7 @@ test('admin can see device setup without loading every member detail', async ({ 
   await expect(alex.getByText('Push set up')).toBeVisible();
   await expect(alex.getByText('1 registered device')).toBeVisible();
   await expect(alex.getByText('Unnamed browser 1')).toBeVisible();
-  await expect(alex.getByText('Balance alerts')).toBeVisible();
+  await expect(alex.getByText('All supported push alerts are included on registered devices.')).toBeVisible();
   await expect(page.getByRole('region', { name: 'Push alerts for Blair' })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
