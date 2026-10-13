@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import Dashboard from './Dashboard';
 import { useAuth } from '../context/useAuth';
@@ -146,4 +146,85 @@ it('shows a future next date when a cancelled game and another game have started
   } finally {
     clock.mockRestore();
   }
+});
+
+const playingSession = makeSession({
+  id: 'playing', title: 'Tonight’s session',
+  starts_at: '2026-10-13T20:00:00+11:00',
+  ends_at: '2026-10-13T22:00:00+11:00',
+  start_time: '20:00', end_time: '22:00',
+});
+const followingSession = makeSession({
+  id: 'following', title: 'Next week',
+  starts_at: '2026-10-20T20:00:00+11:00',
+  ends_at: '2026-10-20T22:00:00+11:00',
+});
+
+it.each([
+  ['before start', '2026-10-13T19:59:59+11:00', false],
+  ['at start', '2026-10-13T20:00:00+11:00', true],
+  ['during play', '2026-10-13T21:00:00+11:00', true],
+  ['at end', '2026-10-13T22:00:00+11:00', false],
+])('uses the scheduled playing window %s', async (_, instant, active) => {
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.parse(instant));
+  try {
+    vi.mocked(api.listSessions).mockResolvedValue([playingSession, followingSession]);
+    renderPage();
+    await screen.findByText('Next week');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(active ? 'Session in progress' : 'Ready for your next game?');
+    if (active) {
+      const card = screen.getByRole('region', { name: 'Current session' });
+      const scoreLink = within(card).getByRole('link', { name: 'Record score' });
+      expect(scoreLink).toHaveAttribute('href', '/sessions/playing/games');
+      expect(scoreLink.closest('article')).not.toBeNull();
+      expect(scoreLink.parentElement?.closest('a')).toBeNull();
+      expect(within(card).getByRole('link', { name: 'Session details' })).toHaveAttribute('href', '/sessions/playing');
+      expect(within(card).getByText('Olympic Park')).toBeInTheDocument();
+      expect(within(card).getByText('20:00 - 22:00')).toBeInTheDocument();
+    } else {
+      expect(screen.queryByRole('link', { name: 'Record score' })).not.toBeInTheDocument();
+      if (instant.includes('22:00')) expect(screen.queryByText('Tonight’s session')).not.toBeInTheDocument();
+    }
+  } finally { clock.mockRestore(); }
+});
+
+it('puts the active card before expenses and future sessions even when returned later', async () => {
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-13T21:00:00+11:00'));
+  try {
+    vi.mocked(api.listSessions).mockResolvedValue([followingSession, playingSession]);
+    vi.mocked(api.listUnsettledSessions).mockResolvedValue({ items: outstanding, total: 2 });
+    renderPage();
+    const current = await screen.findByRole('region', { name: 'Current session' });
+    const expenses = screen.getByRole('region', { name: /Expenses to record/ });
+    const future = screen.getByRole('region', { name: 'Future sessions' });
+    expect(current.compareDocumentPosition(expenses) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(expenses.compareDocumentPosition(future) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(future).getByText('Next week')).toBeInTheDocument();
+  } finally { clock.mockRestore(); }
+});
+
+it('updates the playing state on focus without reloading the page', async () => {
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-13T19:59:59+11:00'));
+  try {
+    vi.mocked(api.listSessions).mockResolvedValue([playingSession, followingSession]);
+    renderPage();
+    await screen.findByText('Tonight’s session');
+    clock.mockReturnValue(Date.parse('2026-10-13T20:00:00+11:00'));
+    await act(async () => { window.dispatchEvent(new Event('focus')); });
+    expect(screen.getByRole('heading', { level: 1, name: 'Session in progress' })).toBeInTheDocument();
+    clock.mockReturnValue(Date.parse('2026-10-13T22:00:00+11:00'));
+    await act(async () => { window.dispatchEvent(new Event('focus')); });
+    expect(screen.queryByRole('link', { name: 'Record score' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Tonight’s session')).not.toBeInTheDocument();
+  } finally { clock.mockRestore(); }
+});
+
+it('does not offer score entry for a cancelled session within its scheduled window', async () => {
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-13T21:00:00+11:00'));
+  try {
+    vi.mocked(api.listSessions).mockResolvedValue([{ ...playingSession, status: 'cancelled' }, followingSession]);
+    renderPage();
+    await screen.findByText('Next week');
+    expect(screen.queryByRole('link', { name: 'Record score' })).not.toBeInTheDocument();
+  } finally { clock.mockRestore(); }
 });
