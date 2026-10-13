@@ -111,12 +111,17 @@ func (n *Notification) BeforeCreate(tx *gorm.DB) error {
 
 // Announcement represents an admin-sent announcement to all members
 type Announcement struct {
-	ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	Title     string    `gorm:"type:text;not null" json:"title"`
-	Body      string    `gorm:"type:text;not null" json:"body"`
-	CreatedBy uuid.UUID `gorm:"type:uuid;not null" json:"created_by"`
-	SentAt    time.Time `gorm:"default:now()" json:"sent_at"`
-	CreatedAt time.Time `json:"created_at"`
+	PublicationKey  *string    `gorm:"type:text;uniqueIndex" json:"-"`
+	RequestID       *uuid.UUID `gorm:"type:uuid" json:"request_id,omitempty"`
+	AudienceCount   int        `gorm:"not null;default:0" json:"audience_count"`
+	QueuedCount     int        `gorm:"not null;default:0" json:"queued_count"`
+	SuppressedCount int        `gorm:"not null;default:0" json:"suppressed_count"`
+	ID              uuid.UUID  `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	Title           string     `gorm:"type:text;not null" json:"title"`
+	Body            string     `gorm:"type:text;not null" json:"body"`
+	CreatedBy       uuid.UUID  `gorm:"type:uuid;not null" json:"created_by"`
+	SentAt          time.Time  `gorm:"default:now()" json:"sent_at"`
+	CreatedAt       time.Time  `json:"created_at"`
 
 	// Association
 	Creator *User `gorm:"foreignKey:CreatedBy" json:"creator,omitempty"`

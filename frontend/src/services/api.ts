@@ -324,8 +324,8 @@ class ApiService {
   }
 
   // Admin - Announcements
-  async sendAnnouncement(title: string, body: string): Promise<Announcement> {
-    const response = await this.client.post<Announcement>('/admin/announcements', { title, body });
+  async sendAnnouncement(title: string, body: string, requestId: string): Promise<Announcement> {
+    const response = await this.client.post<Announcement>('/admin/announcements', { title, body, request_id: requestId });
     return response.data;
   }
 
@@ -578,6 +578,11 @@ export interface Notification {
 }
 
 export interface Announcement {
+  request_id?: string;
+  audience_count: number;
+  queued_count: number;
+  suppressed_count: number;
+  delivery_status: 'queued' | 'suppressed' | 'partially_queued';
   id: string;
   title: string;
   body: string;

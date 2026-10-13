@@ -884,7 +884,7 @@ paths:
         "404":
           description: No member with that id
         "409":
-          description: The target is the caller, is not approved, or no longer has a low balance
+          description: Request identity conflicts, target is the caller, is not approved, or no longer has a low balance
         "429":
           description: This member was nudged during the preceding 24 hours
         "503":
@@ -1134,7 +1134,8 @@ paths:
   /admin/announcements:
     post:
       tags: ["Admin: Announcements"]
-      summary: Send announcement to all approved members
+      summary: Publish one announcement to the approved audience
+      description: Approved admins only. Saves publication, recipient history and durable delivery intent atomically. Same actor/request UUID and normalized title/body return the original publication and counts; changed content with that ID returns 409. Counts snapshot publication-time queue/suppression, not device delivery. Stops preserve history and suppress push.
       operationId: sendAnnouncement
       requestBody:
         required: true
@@ -1144,7 +1145,7 @@ paths:
               $ref: "#/components/schemas/SendAnnouncementRequest"
       responses:
         "201":
-          description: Announcement created and sent
+          description: Announcement saved with original publication-time delivery counts
           content:
             application/json:
               schema:
@@ -1155,6 +1156,11 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+
+        "409":
+          description: Request ID was reused with different normalized title or message
+        "500":
+          description: Publication could not be confirmed; retry unchanged content with the same request ID
 
   # --- Ledger -------------------------------------------------------------
 
@@ -1859,10 +1865,10 @@ paths:
         - name: settlement_id
           in: query
           required: false
-          description: Original settlement version to inspect after a reversal; omit to read the current version.
           schema:
             type: string
             format: uuid
+          description: Original settlement version linked from a charge or correction notification; omit to inspect the current version.
       responses:
         "200":
           description: Settlement breakdown
@@ -1871,7 +1877,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/SettlementView"
         "404":
-          description: Not settled yet
+          description: No matching settlement for this session or requested historical settlement identity
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -3057,7 +3063,29 @@ components:
 
     Announcement:
       type: object
+      required: [id, title, body, created_by, audience_count, queued_count, suppressed_count, delivery_status]
       properties:
+        request_id:
+          type: string
+          format: uuid
+          description: Stable caller request identity for an ad hoc publication
+        audience_count:
+          type: integer
+          minimum: 0
+          description: Approved audience snapshot captured once when published
+        queued_count:
+          type: integer
+          minimum: 0
+          description: Original recipients with pending delivery intent at publication
+        suppressed_count:
+          type: integer
+          minimum: 0
+          description: Original recipients whose delivery was terminally suppressed at publication
+        delivery_status:
+          type: string
+          enum: [queued, suppressed, partially_queued]
+          description: Original publication outcome; no claim of provider acceptance or device arrival
+
         id:
           type: string
           format: uuid
@@ -3071,6 +3099,7 @@ components:
         sent_at:
           type: string
           format: date-time
+          description: Retained legacy field name for publication time; does not establish delivery
         created_at:
           type: string
           format: date-time
@@ -3275,12 +3304,21 @@ components:
 
     SendAnnouncementRequest:
       type: object
-      required: [title, body]
+      required: [request_id, title, body]
       properties:
+        request_id:
+          type: string
+          format: uuid
+          description: Retain across unchanged-content retries, including uncertain HTTP outcomes
+
         title:
           type: string
+          minLength: 1
+          maxLength: 200
         body:
           type: string
+          minLength: 1
+          maxLength: 5000
 
     # --- Ledger -------------------------------------------------------------
     #
