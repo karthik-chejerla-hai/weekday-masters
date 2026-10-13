@@ -71,6 +71,12 @@ jobs:
             --region ${{ env.GCP_REGION }} \
             --remove-tags pr-${{ github.event.pull_request.number }}
 
+      - name: Delete the private preview scheduler and worker
+        env:
+          NOTIFICATION_WORKER_SERVICE: rally-notifications-pr-${{ github.event.pull_request.number }}
+          NOTIFICATION_SCHEDULER_EMAIL: ${{ vars.NOTIFICATION_SCHEDULER_EMAIL }}
+        run: bash .github/scripts/notification-worker.sh cleanup
+
       # A second identity: Hosting is deployed by the frontend service account,
       # so it is the one that may delete what it created.
       - name: Authenticate to Google Cloud (frontend)

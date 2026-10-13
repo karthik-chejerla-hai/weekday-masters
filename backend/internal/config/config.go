@@ -20,6 +20,7 @@ type Config struct {
 	FrontendURL                     string
 	GinMode                         string
 	NotificationsDisabled           bool
+	NotificationWorkerEnabled       bool
 	NotificationsDisabledAllowEmail string
 	InvitationTestEmailsEnabled     bool
 
@@ -53,6 +54,7 @@ func Load() *Config {
 		Timezone:                        getEnv("TIMEZONE", "Australia/Sydney"),
 		FrontendURL:                     getEnv("FRONTEND_URL", "http://localhost:5173"),
 		GinMode:                         getEnv("GIN_MODE", "debug"),
+		NotificationWorkerEnabled:       getEnv("NOTIFICATION_WORKER_ENABLED", "false") == "true",
 		NotificationsDisabled:           getEnv("NOTIFICATIONS_DISABLED", "false") != "false",
 		NotificationsDisabledAllowEmail: getEnv("NOTIFICATIONS_DISABLED_ALLOW_EMAIL", ""),
 		InvitationTestEmailsEnabled:     getEnv("INVITATION_TEST_EMAILS_ENABLED", "false") == "true",

@@ -125,6 +125,7 @@ jobs:
             --set-env-vars="GIN_MODE=release" \
             --set-env-vars="OTEL_ENABLED=false" \
             --set-env-vars="NOTIFICATIONS_DISABLED=true" \
+            --set-env-vars="NOTIFICATION_WORKER_ENABLED=${{ vars.NOTIFICATION_WORKER_ENABLED || 'false' }}" \
             --set-env-vars="NOTIFICATIONS_DISABLED_ALLOW_EMAIL=${{ secrets.ADMIN_EMAIL }}" \
             --set-env-vars="INVITATION_TEST_EMAILS_ENABLED=false" \
             --set-env-vars="TIMEZONE=Australia/Sydney" \
@@ -145,6 +146,20 @@ jobs:
       # Smoke check only. The URL is deliberately NOT exported as a job output: the
       # frontend job resolves it itself at build time, because passing it between
       # jobs ran it through secret masking and produced an empty VITE_API_URL.
+      - name: Deploy isolated private preview worker
+        if: vars.NOTIFICATION_WORKER_ENABLED == 'true'
+        env:
+          IMAGE: ${{ env.IMAGE }}
+          DATABASE_URL: ${{ steps.neon.outputs.db_url }}
+          NOTIFICATION_WORKER_SERVICE: rally-notifications-pr-${{ github.event.pull_request.number }}
+          NOTIFICATION_WORKER_AUDIENCE: https://rally.internal/notifications/pr-${{ github.event.pull_request.number }}
+          NOTIFICATION_WORKER_RUNTIME_EMAIL: ${{ vars.NOTIFICATION_WORKER_RUNTIME_EMAIL }}
+          NOTIFICATION_SCHEDULER_EMAIL: ${{ vars.NOTIFICATION_SCHEDULER_EMAIL }}
+          NOTIFICATIONS_DISABLED: 'true'
+          FRONTEND_URL: https://invalid.preview
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+        run: bash .github/scripts/notification-worker.sh deploy
+
       - name: Verify preview backend URL resolves
         run: |
           PR_NUMBER=${{ github.event.pull_request.number }}
