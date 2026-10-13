@@ -62,9 +62,11 @@ func Migrate() error {
 		return err
 	}
 
-	// Additive lifecycle schema only: existing IDs, token addresses, owners,
-	// timestamps and preference flags are not rewritten or translated.
+	// Additive lifecycle schema only; retain every existing token and owner.
 	if err := applyPushDeviceConstraints(); err != nil {
+		return err
+	}
+	if err := MigrateNotificationDeliverySchema(DB); err != nil {
 		return err
 	}
 
