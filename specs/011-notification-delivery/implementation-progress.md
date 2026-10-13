@@ -25,4 +25,4 @@ Each release review compares only that release against its parent branch, includ
 
 ## Status
 
-R1 coding in progress. Later releases not implemented or pushed. No application notification sends or production database operations are part of local verification.
+R1 implemented and locally validated; independent integrated review found no P1/P2 issues. All 122 desktop/mobile browser tests pass after updating old assertions to the new device/return-path contracts. Backend race tests with real scratch DB and 72.0% coverage pass; frontend 351 unit tests and 81.47% line coverage, lint, build and E2E typecheck pass. The final test-only changes are being confirmed by the independent reviewer before push. R2 device/waitlist and R3 independent library/infra work are in progress in separate worktrees; none pushed. No application notification sends or production database operations are part of local verification.
