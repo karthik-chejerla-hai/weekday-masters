@@ -37,7 +37,7 @@ The HTML overview is `specs/011-notification-delivery/release-plan.html`. The sp
 
 ## Execution and validation
 
-Resolve release 1's exact contracts and error/navigation cases from review-followups.md before coding. Record the scoped decisions/tests in the docs and report readiness honestly: later-release design gaps do not justify claiming the whole checklist is complete, and do not block this independent release once its own prerequisites are resolved. Use an implementation scope limited to T001–T011 rather than a workflow that executes the entire backlog.
+Resolve release 1's exact contracts and error/navigation cases from review-followups.md before coding. Record the scoped decisions/tests in the docs and report readiness honestly: later-release design gaps do not justify claiming the whole checklist is complete, and do not block this independent release once its own prerequisites are resolved. For each release, use its own task subset and review/validation gate before activating the next release. T001–T011 applies to release 1; the owner authorizes continuation through release 6.
 
 Implement in the existing handler -> service -> DB structure. Frontend requests use the singleton Axios client. Keep authentication/identity claims authoritative. Prefer focused regression tests proving actual behavior rather than implementation-mirroring tests. Verify database behavior with a disposable scratch database and the existing harness; never use production, an imported roster or a remote DATABASE_URL for tests. Tests without TEST_DATABASE_URL skip database cases; disclose that limitation if infrastructure is unavailable.
 
