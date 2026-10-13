@@ -6,9 +6,13 @@ import AdminMembers from './AdminMembers';
 import { api } from '../services/api';
 import type { User } from '../types';
 
+vi.mock('../context/useAuth', () => ({ useAuth: () => ({ user: { id: 'current-admin' } }) }));
+
 vi.mock('../services/api', () => ({
   api: {
     adminListMembers: vi.fn(),
+    listBalances: vi.fn(),
+    nudgeBalance: vi.fn(),
     getMemberPushStatus: vi.fn(),
     inviteMember: vi.fn(),
     updateMember: vi.fn(),
@@ -62,6 +66,7 @@ function renderPage() {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.adminListMembers).mockResolvedValue([]);
+  vi.mocked(api.listBalances).mockResolvedValue([]);
   vi.mocked(api.getMemberPushStatus).mockResolvedValue({ preferences: null, devices: [] });
 });
 
@@ -310,4 +315,26 @@ it('reports a failure to load rather than showing an empty club', async () => {
   renderPage();
 
   expect(await screen.findByRole('alert')).toHaveTextContent('nope');
+});
+
+
+describe('member balance reminders', () => {
+  it('shows a nudge only for another approved member below $20', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.adminListMembers).mockResolvedValue([makeMember({ push_device_count: 0 })]);
+    vi.mocked(api.listBalances).mockResolvedValue([{ user_id: 'user-1', name: 'Signed', balance_cents: 1999 }]);
+    vi.mocked(api.nudgeBalance).mockResolvedValue({ notification_id: 'notice', balance_cents: 1999, push_sent: false, delivery_state: 'suppressed', next_allowed_at: '' });
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Details for Signed' }));
+    await user.click(screen.getByRole('button', { name: 'Nudge to top up' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('recorded in Rally');
+    expect(api.nudgeBalance).toHaveBeenCalledWith('user-1', expect.any(String));
+  });
+  it('keeps the roll usable when balances cannot load without inferring nudge eligibility', async () => {
+    vi.mocked(api.adminListMembers).mockResolvedValue([makeMember()]);
+    vi.mocked(api.listBalances).mockRejectedValue(new Error('Unavailable'));
+    renderPage();
+    expect(await screen.findByText('Signed')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Nudge to top up' })).not.toBeInTheDocument();
+  });
 });

@@ -549,6 +549,15 @@ func (s *NotificationService) queueDeliveryPolicy(tx *gorm.DB, notification mode
 	if err := json.Unmarshal([]byte(notification.Data), &data); err != nil {
 		return "invalid_event_data", nil
 	}
+	if data["source"] == "admin_balance_nudge" {
+		balance, err := balanceWithin(tx, user.ID)
+		if err != nil {
+			return "", err
+		}
+		if BalanceNotificationBand(balance) == "healthy" {
+			return "balance_no_longer_low", nil
+		}
+	}
 	if notification.NotificationType == models.NotificationSessionReminder || notification.NotificationType == models.NotificationRSVPDeadline {
 		// Fence legacy origin/dispatch against the exclusive Release 4 migration
 		// lock. A scan already in flight cannot enqueue deliverable old reminders.

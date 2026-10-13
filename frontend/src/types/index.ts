@@ -237,7 +237,8 @@ export interface MyBalance {
 }
 
 export interface BalanceNudgeResult {
-  delivery_state?: 'pending' | 'suppressed';
+  request_id?: string;
+  delivery_state?: 'pending' | 'claimed' | 'completed' | 'partial' | 'uncertain' | 'failed' | 'expired' | 'suppressed';
   suppression_reason?: string;
   notification_id: string;
   balance_cents: number;
@@ -398,6 +399,7 @@ export interface ImportedSession {
 }
 
 export interface SettlementView extends SettlementPreview {
+  settlement_id?: string;
 	 imported?: ImportedSession;
   session: { id: string; title: string; starts_at: string; ends_at: string };
   rates: SettlementRates;

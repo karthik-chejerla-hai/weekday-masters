@@ -11,7 +11,11 @@ import (
 func NotificationDestination(data map[string]string) string {
 	if id, err := uuid.Parse(data["session_id"]); err == nil {
 		if data["type"] == "session_charge" || data["type"] == "session_charge_reversed" {
-			return "/sessions/" + id.String() + "/settlement"
+			path := "/sessions/" + id.String() + "/settlement"
+			if settlementID, err := uuid.Parse(data["settlement_id"]); err == nil {
+				path += "?settlement_id=" + settlementID.String()
+			}
+			return path
 		}
 		return "/sessions/" + id.String()
 	}

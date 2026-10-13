@@ -7,6 +7,7 @@ import (
 
 	"github.com/weekday-masters/backend/internal/database"
 	"github.com/weekday-masters/backend/internal/models"
+	"github.com/weekday-masters/backend/internal/services"
 	"github.com/weekday-masters/backend/internal/utils"
 )
 
@@ -333,4 +334,26 @@ func TestSettlementRejectsMalformedIDs(t *testing.T) {
 	h.as(admin).post("/api/admin/sessions/not-a-uuid/settle", nil).expect(http.StatusBadRequest)
 	h.as(admin).post("/api/admin/sessions/not-a-uuid/settlement/preview", nil).expect(http.StatusBadRequest)
 	h.as(admin).post("/api/admin/settlements/not-a-uuid/reverse", nil).expect(http.StatusBadRequest)
+}
+
+func TestHistoricalSettlementQueryKeepsOriginalAfterReversal(t *testing.T) {
+	h := newHarness(t)
+	admin, player := makeAdmin(t), makePlayer(t)
+	session := pastSession(t, h, admin)
+	var first struct {
+		Settlement models.Settlement `json:"settlement"`
+	}
+	body := map[string]any{"lines": []map[string]any{{"user_id": player.ID.String(), "in_base": true}}}
+	h.as(admin).post("/api/admin/sessions/"+session.ID.String()+"/settle", body).expect(http.StatusCreated).decode(&first)
+	h.as(admin).post("/api/admin/settlements/"+first.Settlement.ID.String()+"/reverse", nil).expect(http.StatusCreated)
+	h.as(admin).post("/api/admin/sessions/"+session.ID.String()+"/settle", body).expect(http.StatusCreated)
+	var original services.SettlementView
+	path := "/api/sessions/" + session.ID.String() + "/settlement?settlement_id=" + first.Settlement.ID.String()
+	h.as(player).get(path).expect(http.StatusOK).decode(&original)
+	if original.ReversedAt == nil || original.SettlementID == nil || *original.SettlementID != first.Settlement.ID {
+		t.Fatal("receipt resolved replacement split")
+	}
+	h.as(player).get("/api/sessions/" + session.ID.String() + "/settlement?settlement_id=bad").expect(http.StatusBadRequest)
+	other := pastSession(t, h, admin)
+	h.as(player).get("/api/sessions/" + other.ID.String() + "/settlement?settlement_id=" + first.Settlement.ID.String()).expect(http.StatusNotFound)
 }

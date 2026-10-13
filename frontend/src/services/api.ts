@@ -345,8 +345,8 @@ class ApiService {
     return response.data.items ?? [];
   }
 
-  async nudgeBalance(userId: string): Promise<BalanceNudgeResult> {
-    const response = await this.client.post<BalanceNudgeResult>(`/admin/users/${userId}/balance-nudge`);
+  async nudgeBalance(userId: string, requestId: string): Promise<BalanceNudgeResult> {
+    const response = await this.client.post<BalanceNudgeResult>(`/admin/users/${userId}/balance-nudge`, { request_id: requestId });
     return response.data;
   }
 
@@ -488,8 +488,8 @@ class ApiService {
     return { items: response.data.items ?? [], total: response.data.total ?? 0 };
   }
 
-  async getSessionSettlement(sessionId: string): Promise<SettlementView> {
-    const response = await this.client.get<SettlementView>(`/sessions/${sessionId}/settlement`);
+  async getSessionSettlement(sessionId: string, settlementId?: string): Promise<SettlementView> {
+    const response = await this.client.get<SettlementView>(`/sessions/${sessionId}/settlement`, { params: settlementId ? { settlement_id: settlementId } : undefined });
     return response.data;
   }
 
