@@ -55,7 +55,10 @@ test.describe('Admin top-ups', () => {
       return json(route, { id: 'transaction-1', kind: 'topup' });
     });
     await page.goto('/money');
-    const submit = page.getByRole('button', { name: 'Record top-up' });
+    const opener = page.getByRole('button', { name: 'Record top-up', expanded: false });
+    await opener.click();
+    await expect(page.getByLabel('Member', { exact: true })).toBeFocused();
+    const submit = page.getByRole('region', { name: 'Record top-up' }).getByRole('button', { name: 'Record top-up' });
     await expect(submit).toBeDisabled();
     await page.getByLabel('Member', { exact: true }).selectOption(member.id);
     await page.getByLabel('Amount', { exact: true }).fill('0');
@@ -67,10 +70,45 @@ test.describe('Admin top-ups', () => {
     await expect(page.getByLabel('Amount', { exact: true })).toHaveValue('12.34');
     fail = false;
     await submit.click();
-    await expect(page.getByLabel('Amount', { exact: true })).toHaveValue('');
+    await expect(page.getByLabel('Amount', { exact: true })).toHaveCount(0);
+    await expect(opener).toBeFocused();
+    await expect(page.getByRole('status')).toContainText('Top-up recorded.');
     await expect(page.getByRole('main')).toContainText('$62.34');
+    await expect(page.getByRole('banner')).toContainText('$62.34');
     expect(writes).toEqual(Array(2).fill({ user_id: member.id, amount_cents: 1234, description: 'Test bank transfer' }));
     await page.reload();
     await expect(page.getByRole('main')).toContainText('$62.34');
   });
+  test('opening and cancelling a top-up sends no transaction and returns focus', async ({ page }) => {
+    await page.goto('/money');
+    const opener = page.getByRole('button', { name: 'Record top-up', expanded: false });
+    await expect(page.getByLabel('Member', { exact: true })).toHaveCount(0);
+    await opener.click();
+    await page.getByLabel('Member', { exact: true }).selectOption(member.id);
+    await page.getByLabel('Amount', { exact: true }).fill('25');
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(opener).toBeFocused();
+    await expect(page.getByLabel('Amount', { exact: true })).toHaveCount(0);
+    await opener.click();
+    await expect(page.getByLabel('Amount', { exact: true })).toHaveValue('');
+  });
+
+  test('keeps the top-up form open while its request is pending', async ({ page }) => {
+    let finish: (() => void) | undefined;
+    const pending = new Promise<void>(resolve => { finish = resolve; });
+    await page.route('**/api/admin/transactions/topup', async route => {
+      await pending;
+      await json(route, { id: 'transaction-1', kind: 'topup' });
+    });
+    await page.goto('/money');
+    await page.getByRole('button', { name: 'Record top-up', expanded: false }).click();
+    await page.getByLabel('Member', { exact: true }).selectOption(member.id);
+    await page.getByLabel('Amount', { exact: true }).fill('25');
+    await page.getByRole('region', { name: 'Record top-up' }).getByRole('button', { name: 'Record top-up' }).click();
+    await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Record top-up', expanded: true })).toBeDisabled();
+    finish!();
+    await expect(page.getByRole('status')).toHaveText('Top-up recorded.');
+  });
+
 });

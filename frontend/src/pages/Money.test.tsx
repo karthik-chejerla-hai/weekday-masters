@@ -210,7 +210,13 @@ describe('Money', () => {
     });
     renderPage();
 
-    await waitFor(() => expect(screen.getByText('Record a top-up')).toBeInTheDocument());
+    const opener = await screen.findByRole('button', { name: 'Record top-up', expanded: false });
+    expect(screen.queryByLabelText('Member')).not.toBeInTheDocument();
+    await userEvent.click(opener);
+    expect(screen.getByLabelText('Member')).toHaveFocus();
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(opener).toHaveFocus();
+    expect(api.recordTopup).not.toHaveBeenCalled();
   });
 
   it('lets an admin nudge a low-balance member once', async () => {

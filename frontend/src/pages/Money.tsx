@@ -6,6 +6,7 @@ import { api } from '../services/api';
 import BalancesList from '../components/money/BalancesList';
 import LedgerBrowser from '../components/money/LedgerBrowser';
 import TopupForm from '../components/money/TopupForm';
+import FormDisclosure from '../components/money/FormDisclosure';
 import PositionPanel from '../components/money/PositionPanel';
 import AssetPurchaseForms from '../components/money/AssetPurchaseForms';
 import BalanceCorrectionForm from '../components/money/BalanceCorrectionForm';
@@ -114,7 +115,12 @@ export default function Money() {
             currentUserId={user?.id}
             canNudge={isAdmin}
           />
-          {isAdmin && <TopupForm members={balances} onRecorded={load} />}
+          {isAdmin && <FormDisclosure label="Record top-up" successMessage="Top-up recorded." onRecorded={() => {
+            window.dispatchEvent(new Event('rally:balances-changed'));
+            void load();
+          }}>
+            {(actions) => <TopupForm members={balances} {...actions} />}
+          </FormDisclosure>}
         </div>
       )}
 
