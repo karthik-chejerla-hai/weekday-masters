@@ -3,7 +3,10 @@ import { createRoot } from 'react-dom/client';
 import { Auth0Provider } from '@auth0/auth0-react';
 import App from './App';
 import { handleAuthRedirect } from './context/auth-redirect';
+import { installBrowserTelemetry } from './services/browser-telemetry';
 import './index.css';
+
+installBrowserTelemetry();
 
 const auth0Domain = import.meta.env.VITE_AUTH0_DOMAIN;
 const auth0ClientId = import.meta.env.VITE_AUTH0_CLIENT_ID;
