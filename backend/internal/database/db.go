@@ -70,6 +70,9 @@ func Migrate() error {
 		return err
 	}
 
+	if err := MigrateRSVPReminderSchema(DB); err != nil {
+		return err
+	}
 	if err := applyLedgerConstraints(); err != nil {
 		return err
 	}
@@ -91,6 +94,14 @@ func Migrate() error {
 		return err
 	}
 
+	if err := RunNotificationMigration(DB, RSVP48HourMigrationVersion, func(tx *gorm.DB, cutoff time.Time) error {
+		if err := ApplyRSVPDeadline48hWithin(tx, cutoff); err != nil {
+			return err
+		}
+		return ApplyRSVPReminderCutoverWithin(tx, cutoff)
+	}); err != nil {
+		return err
+	}
 	if err := SeedClubAccounts(); err != nil {
 		return err
 	}
