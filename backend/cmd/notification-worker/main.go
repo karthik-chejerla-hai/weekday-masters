@@ -66,9 +66,13 @@ func main() {
 // Only safe aggregate counters are logged; provider/DB errors and member data
 // never reach operational logs or scheduled HTTP responses.
 func emitWorkerHealth(event string, result any, err error) {
+	failed := err != nil
+	if summary, ok := result.(*services.DeliveryRunSummary); ok && summary != nil {
+		failed = failed || summary.Failed > 0 || summary.Uncertain > 0 || summary.Partial > 0
+	}
 	severity := "INFO"
-	if err != nil {
+	if failed {
 		severity = "ERROR"
 	}
-	_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"severity": severity, "event": event, "result": result, "failed": err != nil})
+	_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"severity": severity, "event": event, "result": result, "failed": failed})
 }

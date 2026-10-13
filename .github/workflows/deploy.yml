@@ -35,6 +35,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
+      - name: Verify notification queue deployment readiness
+        env:
+          NOTIFICATIONS_DISABLED: ${{ vars.NOTIFICATIONS_DISABLED || 'true' }}
+          NOTIFICATION_WORKER_ENABLED: ${{ vars.NOTIFICATION_WORKER_ENABLED || 'false' }}
+        run: |
+          if [[ "$NOTIFICATIONS_DISABLED" == "false" && "$NOTIFICATION_WORKER_ENABLED" != "true" ]]; then
+            echo '::error::Provision the private notification worker before enabling delivery. Stopped staging requires NOTIFICATIONS_DISABLED=true.'
+            exit 1
+          fi
+
       - name: Authenticate to Google Cloud
         id: auth
         uses: google-github-actions/auth@v3

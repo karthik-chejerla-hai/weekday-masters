@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"strconv"
 
@@ -89,4 +90,13 @@ func getEnvInt(key string, defaultValue int) int {
 		}
 	}
 	return defaultValue
+}
+
+// ValidateNotificationDeliveryReadiness prevents a production queue cutover
+// without the private drain worker. Stopped staging may deploy before provisioning.
+func (c *Config) ValidateNotificationDeliveryReadiness() error {
+	if c.GinMode == "release" && !c.NotificationsDisabled && !c.NotificationWorkerEnabled {
+		return errors.New("enabled notification delivery requires NOTIFICATION_WORKER_ENABLED=true and a provisioned private worker")
+	}
+	return nil
 }

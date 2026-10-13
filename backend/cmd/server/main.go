@@ -31,6 +31,9 @@ func main() {
 func run() (runErr error) {
 	// Load configuration
 	cfg := config.Load()
+	if err := cfg.ValidateNotificationDeliveryReadiness(); err != nil {
+		return err
+	}
 	obs, err := telemetry.Start(context.Background())
 	if err != nil {
 		return fmt.Errorf("initialize telemetry: %w", err)
