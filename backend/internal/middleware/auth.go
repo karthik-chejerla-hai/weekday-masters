@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -110,7 +111,7 @@ func ValidateToken(config Auth0Config, tokenString string) (jwt.MapClaims, error
 	jwks, err := getJWKS(config.Domain)
 	if err != nil {
 		// Log the actual error for debugging; don't leak it to the caller.
-		fmt.Printf("JWKS fetch error: %v\n", err)
+		log.Printf("JWKS fetch error: %v", err)
 		return nil, errJWKSUnavailable
 	}
 
