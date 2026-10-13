@@ -199,7 +199,7 @@ describe('session renewal failures', () => {
       expect(api.authCallback).not.toHaveBeenCalled();
       expect(api.setAccessToken).toHaveBeenCalledWith(null);
       await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
-      expect(login).toHaveBeenCalledWith({ authorizationParams: { connection: 'google-oauth2' } });
+      expect(login).toHaveBeenCalledWith({ appState: { returnTo: '/' }, authorizationParams: { connection: 'google-oauth2' } });
     }
   );
 

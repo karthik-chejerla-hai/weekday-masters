@@ -39,11 +39,11 @@ it('opens the session in an existing window for an FCM notification', async () =
   let completion: Promise<unknown> | undefined;
   worker.handlers.notificationclick({
     stopImmediatePropagation: vi.fn(),
-    notification: { close: vi.fn(), data: { FCM_MSG: { data: { session_id: 'session-1' } } } },
+    notification: { close: vi.fn(), data: { FCM_MSG: { data: { session_id: '11111111-1111-4111-8111-111111111111' } } } },
     waitUntil: (promise: Promise<unknown>) => { completion = promise; },
   });
   await completion;
-  expect(worker.client.navigate).toHaveBeenCalledWith('https://rally.test/sessions/session-1');
+  expect(worker.client.navigate).toHaveBeenCalledWith('https://rally.test/sessions/11111111-1111-4111-8111-111111111111');
   expect(worker.client.focus).toHaveBeenCalled();
 });
 
@@ -57,4 +57,14 @@ it.each(['balance_low', 'balance_negative'])('opens Money for a %s background al
   });
   await completion;
   expect(worker.client.navigate).toHaveBeenCalledWith('https://rally.test/money');
+});
+
+it.each([
+ [{ type: 'session_charge', session_id: '11111111-1111-4111-8111-111111111111' }, '/sessions/11111111-1111-4111-8111-111111111111/settlement'],
+ [{ type: 'admin_announcement', notification_id: '11111111-1111-4111-8111-111111111111' }, '/notifications/11111111-1111-4111-8111-111111111111'],
+ [{ destination_path: '//evil.test', session_id: 'bad' }, '/notifications'],
+])('safely opens typed worker destinations', async (data, path) => {
+ const worker = startWorker(); let completion: Promise<unknown> | undefined;
+ worker.handlers.notificationclick({ stopImmediatePropagation: vi.fn(), notification: { close: vi.fn(), data }, waitUntil: (promise: Promise<unknown>) => { completion = promise; } });
+ await completion; expect(worker.client.navigate).toHaveBeenCalledWith(`https://rally.test${path}`);
 });

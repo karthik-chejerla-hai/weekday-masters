@@ -21,11 +21,13 @@ export default function SessionSettlement() {
 
   useEffect(() => {
     if (!id) return;
-    api
-      .getSessionSettlement(id)
-      .then(setView)
-      .catch(() => setError('This session has not been settled yet.'))
-      .finally(() => setIsLoading(false));
+    let active = true;
+    setIsLoading(true); setError(null); setView(null);
+    api.getSessionSettlement(id)
+      .then(result => { if (active) setView(result); })
+      .catch((e: { response?: { status?: number } }) => { if (active) setError(e.response?.status === 404 ? 'This split is unavailable. The session may not have been settled, or may no longer exist.' : 'Could not load this split. Please try again.'); })
+      .finally(() => { if (active) setIsLoading(false); });
+    return () => { active = false; };
   }, [id]);
 
   if (isLoading) {

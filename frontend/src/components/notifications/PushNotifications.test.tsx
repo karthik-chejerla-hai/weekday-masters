@@ -45,8 +45,8 @@ it('restores registration and shows an actionable foreground message', async () 
   await waitFor(() => expect(notificationService.setupForegroundHandler).toHaveBeenCalled());
   expect(notificationService.enablePushNotifications).toHaveBeenCalledOnce();
   const callback = vi.mocked(notificationService.setupForegroundHandler).mock.calls[0][0];
-  act(() => callback('Session reminder', 'Time to play', { session_id: 's1' }));
-  expect(screen.getByRole('link')).toHaveAttribute('href', '/sessions/s1');
+  act(() => callback('Session reminder', 'Time to play', { session_id: '11111111-1111-4111-8111-111111111111' }));
+  expect(screen.getByRole('link')).toHaveAttribute('href', '/sessions/11111111-1111-4111-8111-111111111111');
 });
 
 it('offers an explicit enable action without requesting permission on page load', async () => {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
-import { CalendarDays, Eye, Home, LogOut, Settings, UsersRound, WalletCards, MessageCircle } from 'lucide-react';
+import { CalendarDays, Eye, Home, LogOut, Settings, UsersRound, WalletCards, MessageCircle, Bell } from 'lucide-react';
 import { useAuth } from '../../context/useAuth';
 import { api } from '../../services/api';
 import Avatar from '../ui/Avatar';
@@ -80,6 +80,7 @@ export default function Header() {
               )}
               <SpendChip />
             </div>
+            {isApproved && <Link to="/notifications" aria-label="Notifications" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-slate-100"><Bell className="h-5 w-5" /></Link>}
             <Link to="/profile" aria-label={`Open ${displayName(user)}'s profile`} className="shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2">
               <Avatar src={user?.profile_picture} name={displayName(user)} size="sm" />
             </Link>
