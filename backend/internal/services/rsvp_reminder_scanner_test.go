@@ -2,7 +2,10 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"github.com/google/uuid"
 	"github.com/weekday-masters/backend/internal/database"
 	"github.com/weekday-masters/backend/internal/models"
 	"github.com/weekday-masters/backend/internal/utils"
@@ -11,6 +14,253 @@ import (
 	"testing"
 	"time"
 )
+
+type recordedReminderSend struct {
+	token        string
+	notification models.Notification
+}
+
+type recordedReminderProvider struct {
+	sends []recordedReminderSend
+	hook  func(recordedReminderSend)
+}
+
+func (p *recordedReminderProvider) Send(_ context.Context, n models.Notification, token string, _ time.Duration) DeliveryProviderResult {
+	send := recordedReminderSend{token: token, notification: n}
+	p.sends = append(p.sends, send)
+	if p.hook != nil {
+		p.hook(send)
+	}
+	return DeliveryProviderResult{State: models.DeliveryAccepted}
+}
+
+func reminderDispatcher(s *NotificationService, now func() time.Time, provider DeliveryProvider) *NotificationDispatcher {
+	return &NotificationDispatcher{DB: database.DB, Provider: provider, Now: now, Policy: s.queueDeliveryPolicy, Reconcile: s.reconcileRSVPDeliveryWithin}
+}
+
+func queueFirstRSVPStage(t *testing.T, s *NotificationService, ss *SessionService, user models.User, start time.Time) (*models.Session, time.Time, models.NotificationOutbox) {
+	t.Helper()
+	session := scannerSession(t, ss, user, start)
+	now := session.StartsAt.Add(-96 * time.Hour)
+	addDeliveryDevice(t, user, "device")
+	if summary := scanRSVP(t, s, now); summary.Events != 1 {
+		t.Fatalf("first stage was not published: %+v", summary)
+	}
+	var outbox models.NotificationOutbox
+	if err := database.DB.Where("event_key = ?", RSVPReminderEventKey(session.ID, user.ID, 1)).First(&outbox).Error; err != nil {
+		t.Fatal(err)
+	}
+	return session, now, outbox
+}
+
+func TestRSVPReminderDispatchRechecksResponsesAndEligibility(t *testing.T) {
+	for _, change := range []string{"in", "out", "maybe", "waitlisted", "cancelled", "removed"} {
+		t.Run(change, func(t *testing.T) {
+			s, ss, user := rsvpScannerFixture(t)
+			session, now, outbox := queueFirstRSVPStage(t, s, ss, user, utils.NowInSydney().AddDate(0, 0, 7).Truncate(time.Minute))
+			wantCode := "already_responded"
+			switch change {
+			case "in", "out", "maybe", "waitlisted":
+				status := models.RSVPStatus(change)
+				if err := database.DB.Create(&models.RSVP{SessionID: session.ID, UserID: user.ID, Status: status, RSVPTimestamp: time.Now()}).Error; err != nil {
+					t.Fatal(err)
+				}
+			case "cancelled":
+				wantCode = "no_longer_eligible"
+				if err := database.DB.Model(&models.Session{}).Where("id = ?", session.ID).UpdateColumn("status", models.SessionStatusCancelled).Error; err != nil {
+					t.Fatal(err)
+				}
+			case "removed":
+				wantCode = "membership_not_approved"
+				if err := database.DB.Model(&models.User{}).Where("id = ?", user.ID).UpdateColumn("membership_status", models.MembershipRemoved).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			provider := &recordedReminderProvider{}
+			if _, err := reminderDispatcher(s, func() time.Time { return now }, provider).Process(context.Background(), 10); err != nil {
+				t.Fatal(err)
+			}
+			var stored models.NotificationOutbox
+			if err := database.DB.First(&stored, "id = ?", outbox.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if len(provider.sends) != 0 || stored.State != models.DeliverySuppressed || stored.LastErrorCode != wantCode {
+				t.Fatalf("changed eligibility reached provider: sends=%d outbox=%+v", len(provider.sends), stored)
+			}
+		})
+	}
+}
+
+func TestRSVPReminderDispatchDefersWhenEditedStartMovesDueIntoFuture(t *testing.T) {
+	s, ss, user := rsvpScannerFixture(t)
+	session, now, outbox := queueFirstRSVPStage(t, s, ss, user, utils.NowInSydney().AddDate(0, 0, 7).Truncate(time.Minute))
+	newStartTime := session.StartsAt.In(utils.SydneyLocation).Add(time.Hour).Format("15:04")
+	updated, err := ss.UpdateSession(session.ID, UpdateSessionInput{StartTime: &newStartTime})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &recordedReminderProvider{}
+	if _, err := reminderDispatcher(s, func() time.Time { return now }, provider).Process(context.Background(), 10); err != nil {
+		t.Fatal(err)
+	}
+	due, expires := RSVPReminderTimes(*updated.StartsAt, updated.RSVPDeadline, 1)
+	var stored models.NotificationOutbox
+	if err := database.DB.First(&stored, "id = ?", outbox.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	var attempts int64
+	database.DB.Model(&models.NotificationDeliveryAttempt{}).Where("outbox_id = ?", outbox.ID).Count(&attempts)
+	if len(provider.sends) != 0 || attempts != 0 || stored.State != models.DeliveryPending || !stored.DueAt.Equal(due) || !stored.ExpiresAt.Equal(expires) || !stored.NextAttemptAt.Equal(due) || !due.After(now) {
+		t.Fatalf("future reminder was not deferred: sends=%d attempts=%d outbox=%+v", len(provider.sends), attempts, stored)
+	}
+}
+
+func TestRSVPReminderDispatchUsesEarlierUsefulWindowAfterEdit(t *testing.T) {
+	s, ss, user := rsvpScannerFixture(t)
+	session, now, outbox := queueFirstRSVPStage(t, s, ss, user, utils.NowInSydney().AddDate(0, 0, 7).Truncate(time.Minute))
+	previousDate := session.SessionDate.AddDate(0, 0, -1)
+	updated, err := ss.UpdateSession(session.ID, UpdateSessionInput{SessionDate: &previousDate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &recordedReminderProvider{}
+	if _, err := reminderDispatcher(s, func() time.Time { return now }, provider).Process(context.Background(), 10); err != nil {
+		t.Fatal(err)
+	}
+	due, expires := RSVPReminderTimes(*updated.StartsAt, updated.RSVPDeadline, 1)
+	if len(provider.sends) != 1 || provider.sends[0].notification.Body != fmt.Sprintf("Please RSVP for %s on %s at %s.", updated.Title, utils.FormatDateForDisplay(updated.SessionDate), utils.FormatTimeForDisplay(*updated.StartsAt)) {
+		t.Fatalf("edited reminder payload was not sent: %+v", provider.sends)
+	}
+	var data map[string]string
+	if err := json.Unmarshal([]byte(provider.sends[0].notification.Data), &data); err != nil {
+		t.Fatal(err)
+	}
+	if data["starts_at"] != updated.StartsAt.UTC().Format(time.RFC3339Nano) {
+		t.Fatalf("stale start instant sent: %v", data)
+	}
+	var stored models.NotificationOutbox
+	if err := database.DB.First(&stored, "id = ?", outbox.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !stored.DueAt.Equal(due) || !stored.ExpiresAt.Equal(expires) || !expires.After(now) || stored.State != models.DeliveryCompleted {
+		t.Fatalf("earlier useful window not delivered: %+v", stored)
+	}
+}
+
+func TestRSVPReminderDispatchExpiresExactlyAtRescheduledStageBoundary(t *testing.T) {
+	s, ss, user := rsvpScannerFixture(t)
+	session, now, outbox := queueFirstRSVPStage(t, s, ss, user, utils.NowInSydney().AddDate(0, 0, 7).Truncate(time.Minute))
+	newStart := session.StartsAt.In(utils.SydneyLocation).Add(-36 * time.Hour)
+	previousDate := newStart
+	newStartTime := newStart.Format("15:04")
+	updated, err := ss.UpdateSession(session.ID, UpdateSessionInput{SessionDate: &previousDate, StartTime: &newStartTime})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, expires := RSVPReminderTimes(*updated.StartsAt, updated.RSVPDeadline, 1)
+	// Set the controlled dispatcher clock at the edited stage's exclusive expiry.
+	now = expires
+	provider := &recordedReminderProvider{}
+	if _, err := reminderDispatcher(s, func() time.Time { return now }, provider).Process(context.Background(), 10); err != nil {
+		t.Fatal(err)
+	}
+	var stored models.NotificationOutbox
+	if err := database.DB.First(&stored, "id = ?", outbox.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.sends) != 0 || stored.State != models.DeliveryExpired || !stored.ExpiresAt.Equal(now) {
+		t.Fatalf("stage sent at its expiry boundary: sends=%d outbox=%+v", len(provider.sends), stored)
+	}
+}
+
+func TestRSVPReminderDispatchReconcilesBetweenDeviceAttempts(t *testing.T) {
+	s, ss, user := rsvpScannerFixture(t)
+	session, now, outbox := queueFirstRSVPStage(t, s, ss, user, utils.NowInSydney().AddDate(0, 0, 7).Truncate(time.Minute))
+	lowID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	highID := uuid.MustParse("00000000-0000-0000-0000-000000000002")
+	for _, device := range []models.UserPushToken{{ID: lowID, UserID: user.ID, Token: "first"}, {ID: highID, UserID: user.ID, Token: "second"}} {
+		if err := database.DB.Create(&device).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Remove the fixture device so the two intended attempts are ordered and explicit.
+	if err := database.DB.Where("user_id = ? AND token = ?", user.ID, "device").Delete(&models.UserPushToken{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	newStartTime := session.StartsAt.In(utils.SydneyLocation).Add(time.Hour).Format("15:04")
+	edited := false
+	provider := &recordedReminderProvider{hook: func(recordedReminderSend) {
+		if !edited {
+			edited = true
+			if _, err := ss.UpdateSession(session.ID, UpdateSessionInput{StartTime: &newStartTime}); err != nil {
+				t.Errorf("edit during dispatch: %v", err)
+			}
+		}
+	}}
+	clock := &deliveryClock{value: now}
+	dispatcher := reminderDispatcher(s, clock.now, provider)
+	if _, err := dispatcher.Process(context.Background(), 10); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := ss.GetSessionByID(session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	due, _ := RSVPReminderTimes(*updated.StartsAt, updated.RSVPDeadline, 1)
+	var stored models.NotificationOutbox
+	if err := database.DB.First(&stored, "id = ?", outbox.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	var accepted, pending int64
+	database.DB.Model(&models.NotificationDeliveryAttempt{}).Where("outbox_id = ? AND state = ?", outbox.ID, models.DeliveryAccepted).Count(&accepted)
+	database.DB.Model(&models.NotificationDeliveryAttempt{}).Where("outbox_id = ? AND state = ?", outbox.ID, models.DeliveryPending).Count(&pending)
+	if len(provider.sends) != 1 || accepted != 1 || pending != 1 || stored.State != models.DeliveryPending || !stored.DueAt.Equal(due) || !stored.NextAttemptAt.Equal(due) || !due.After(now) {
+		t.Fatalf("accepted device replayed or remaining attempt not deferred: sends=%+v accepted=%d pending=%d outbox=%+v", provider.sends, accepted, pending, stored)
+	}
+	clock.advance(time.Hour)
+	if _, err := dispatcher.Process(context.Background(), 10); err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.sends) != 2 || provider.sends[1].token == provider.sends[0].token {
+		t.Fatalf("remaining device did not resume alone: %+v", provider.sends)
+	}
+	wantBody := fmt.Sprintf("Please RSVP for %s on %s at %s.", updated.Title, utils.FormatDateForDisplay(updated.SessionDate), utils.FormatTimeForDisplay(*updated.StartsAt))
+	if provider.sends[1].notification.Body != wantBody {
+		t.Fatalf("remaining device got stale session details: got %q want %q", provider.sends[1].notification.Body, wantBody)
+	}
+}
+
+func TestRSVPReminderDispatchSuppressesMalformedStagePayload(t *testing.T) {
+	s, ss, user := rsvpScannerFixture(t)
+	session := scannerSession(t, ss, user, utils.NowInSydney().AddDate(0, 0, 7).Truncate(time.Minute))
+	now := session.StartsAt.Add(-96 * time.Hour)
+	device := addDeliveryDevice(t, user, "device")
+	_ = device
+	if err := database.DB.Transaction(func(tx *gorm.DB) error {
+		notice := models.Notification{UserID: user.ID, NotificationType: models.NotificationAdminAnnouncement, Title: "Malformed", Body: "Fixture", Data: "{}"}
+		if err := tx.Create(&notice).Error; err != nil {
+			return err
+		}
+		outbox := models.NotificationOutbox{NotificationID: notice.ID, EventKey: "rsvp:malformed", DueAt: now, NextAttemptAt: now, ExpiresAt: now.Add(time.Hour), State: models.DeliveryPending}
+		return tx.Create(&outbox).Error
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.DB.Model(&models.Notification{}).Where("title = ?", "Malformed").Updates(map[string]any{"notification_type": models.NotificationRSVPReminder, "data": `{ "rsvp_stage": "not-a-stage" }`}).Error; err != nil {
+		t.Fatal(err)
+	}
+	provider := &recordedReminderProvider{}
+	if _, err := reminderDispatcher(s, func() time.Time { return now }, provider).Process(context.Background(), 10); err != nil {
+		t.Fatal(err)
+	}
+	var outbox models.NotificationOutbox
+	if err := database.DB.Where("event_key = ?", "rsvp:malformed").First(&outbox).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.sends) != 0 || outbox.State != models.DeliverySuppressed || outbox.LastErrorCode != "invalid_reminder_stage" {
+		t.Fatalf("malformed stage reached provider: sends=%d outbox=%+v", len(provider.sends), outbox)
+	}
+}
 
 func rsvpScannerFixture(t *testing.T) (*NotificationService, *SessionService, models.User) {
 	t.Helper()
