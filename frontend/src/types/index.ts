@@ -11,6 +11,8 @@ export type SelectableRSVPStatus = Exclude<RSVPStatus, 'waitlisted'>;
 export type SessionStatus = 'open' | 'closed' | 'cancelled';
 
 export interface User {
+  /** Present on the admin roll; registrations do not prove delivery. */
+  push_device_count?: number;
   id: string;
   auth0_id: string;
   email: string;

@@ -15,3 +15,10 @@ it('rejects arbitrary redirect destinations', () => {
   handleAuthRedirect({ returnTo: 'https://outside.example' });
   expect(window.location.pathname).toBe('/');
 });
+
+it.each(['/sessions/11111111-1111-4111-8111-111111111111/settlement', '/notifications/11111111-1111-4111-8111-111111111111', '/money'])('restores protected notification path %s', path => {
+ handleAuthRedirect({ returnTo: path }); expect(window.location.pathname).toBe(path);
+});
+it.each(['//outside.example', '/sessions/invalid', '/money?next=https://evil', '/admin'])('rejects unsafe or unexpected OAuth return %s', path => {
+ handleAuthRedirect({ returnTo: path }); expect(window.location.pathname).toBe('/');
+});

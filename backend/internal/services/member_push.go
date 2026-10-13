@@ -44,3 +44,43 @@ func (s *UserService) MemberPushStatus(id uuid.UUID) (*MemberPushStatus, error) 
 	}
 	return result, nil
 }
+
+// AdminMember includes a registration summary, not browser permission or delivery status.
+type AdminMember struct {
+	models.User
+	PushDeviceCount int64 `json:"push_device_count"`
+}
+
+// ListMembersWithPushSummary uses one grouped query for the complete roll. Errors
+// fail the list rather than misrepresent unavailable registration data as zero.
+func (s *UserService) ListMembersWithPushSummary() ([]AdminMember, error) {
+	users, err := s.ListAllMembers()
+	if err != nil {
+		return nil, err
+	}
+	result := make([]AdminMember, len(users))
+	if len(users) == 0 {
+		return result, nil
+	}
+	ids := make([]uuid.UUID, len(users))
+	for i, user := range users {
+		ids[i] = user.ID
+	}
+	var counts []struct {
+		UserID      uuid.UUID
+		DeviceCount int64
+	}
+	if err := database.DB.Model(&models.UserPushToken{}).
+		Select("user_id, COUNT(*) AS device_count").Where("user_id IN ?", ids).
+		Group("user_id").Scan(&counts).Error; err != nil {
+		return nil, err
+	}
+	byUser := make(map[uuid.UUID]int64, len(counts))
+	for _, count := range counts {
+		byUser[count.UserID] = count.DeviceCount
+	}
+	for i, user := range users {
+		result[i] = AdminMember{User: user, PushDeviceCount: byUser[user.ID]}
+	}
+	return result, nil
+}
