@@ -187,8 +187,7 @@ func run() (runErr error) {
 			protected.PUT("/users/me/notifications", notificationHandler.UpdatePreferences)
 			protected.POST("/users/me/push-tokens", notificationHandler.RegisterPushToken)
 			protected.DELETE("/users/me/push-tokens", notificationHandler.UnregisterPushToken)
-			protected.GET("/users/me/notifications/history", notificationHandler.GetNotificationHistory)
-			protected.POST("/notifications/:id/read", notificationHandler.MarkNotificationRead)
+			notificationHandler.RegisterHistoryRoutes(protected)
 
 			// These routes require approved membership
 			approved := protected.Group("")
@@ -214,7 +213,7 @@ func run() (runErr error) {
 			}
 
 			// Admin routes
-			admin := protected.Group("/admin")
+			admin := approved.Group("/admin")
 			admin.Use(middleware.RequireAdmin())
 			{
 				// Join requests

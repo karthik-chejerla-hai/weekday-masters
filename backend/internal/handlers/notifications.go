@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	"gorm.io/gorm"
 	"net/http"
 	"strconv"
 
@@ -29,6 +30,37 @@ func (h *NotificationHandler) RegisterAdminRoutes(protected *gin.RouterGroup) {
 	admin := protected.Group("/admin", middleware.RequireApproved(), middleware.RequireAdmin())
 	admin.POST("/notifications/test-push", h.SendTestPush)
 	admin.POST("/users/:id/balance-nudge", h.SendBalanceNudge)
+}
+
+// RegisterHistoryRoutes binds approval consistently in production and tests.
+func (h *NotificationHandler) RegisterHistoryRoutes(protected *gin.RouterGroup) {
+	approved := protected.Group("", middleware.RequireApproved())
+	approved.GET("/users/me/notifications/history", h.GetNotificationHistory)
+	approved.GET("/notifications/:id", h.GetNotification)
+	approved.POST("/notifications/:id/read", h.MarkNotificationRead)
+}
+
+func (h *NotificationHandler) GetNotification(c *gin.Context) {
+	user, err := middleware.GetUserFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid notification ID"})
+		return
+	}
+	notification, err := h.notificationService.GetUserNotification(id, user.ID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Notification not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get notification"})
+		return
+	}
+	c.JSON(http.StatusOK, services.WithNotificationNavigation(*notification))
 }
 
 // SendTestPush verifies push delivery for the signed-in admin without enabling
@@ -214,7 +246,11 @@ func (h *NotificationHandler) GetNotificationHistory(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, notifications)
+	items := make([]services.NotificationNavigation, 0, len(notifications))
+	for _, notification := range notifications {
+		items = append(items, services.WithNotificationNavigation(notification))
+	}
+	c.JSON(http.StatusOK, items)
 }
 
 // MarkNotificationRead marks a notification as read
@@ -232,6 +268,10 @@ func (h *NotificationHandler) MarkNotificationRead(c *gin.Context) {
 	}
 
 	if err := h.notificationService.MarkNotificationRead(notificationID, user.ID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Notification not found"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to mark notification as read"})
 		return
 	}

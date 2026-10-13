@@ -184,6 +184,7 @@ paths:
     get:
       tags: [Notifications]
       summary: Get notification history
+      description: Requires approved membership; returns only the caller’s history with safe local destination_path. Newest first; offset pagination, default 20, maximum 100.
       operationId: getNotificationHistory
       parameters:
         - name: limit
@@ -210,11 +211,38 @@ paths:
                   $ref: "#/components/schemas/Notification"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /notifications/{id}:
+    get:
+      tags: [Notifications]
+      summary: Get own notification detail
+      description: Requires approved membership. Foreign or missing IDs both return 404.
+      operationId: getNotification
+      parameters:
+        - $ref: "#/components/parameters/NotificationId"
+      responses:
+        "200":
+          description: Caller-owned notification with validated local destination
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Notification"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /notifications/{id}/read:
     post:
       tags: [Notifications]
       summary: Mark notification as read
+      description: Requires approved membership and caller ownership. Foreign or missing IDs return 404; malformed UUID returns 400.
       operationId: markNotificationRead
       parameters:
         - $ref: "#/components/parameters/NotificationId"
@@ -225,6 +253,10 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /sessions:
     get:
@@ -2456,6 +2488,10 @@ components:
             lists, RSVPs, balances and settlement breakdowns. When it is empty
             the display name falls back to the member's first name, so this
             being blank does not mean they show up under their full legal name.
+        push_device_count:
+          type: integer
+          minimum: 0
+          description: Present on admin member-list summaries. Number of registered push devices; does not establish current browser permission or delivery. Zero means no registered devices.
         profile_picture:
           type: string
         phone_number:
@@ -2672,7 +2708,11 @@ components:
           type: string
         data:
           type: string
-          description: JSON-encoded additional payload
+          description: JSON-encoded additional payload; serialization retained for existing clients
+        destination_path:
+          type: string
+          description: Validated local destination. Announcement links identify this recipient’s exact history record.
+          example: /notifications/11111111-1111-4111-8111-111111111111
         push_sent:
           type: boolean
         push_sent_at:
