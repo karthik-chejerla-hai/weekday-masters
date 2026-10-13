@@ -89,6 +89,7 @@ export default function AdminMembers() {
   const loadMembers = async () => {
     try {
       setMembers(await api.adminListMembers());
+      setPushStatuses({});
       setLoadError(null);
     } catch (err) {
       setLoadError(readError(err, 'Could not load the member list.'));
@@ -97,21 +98,9 @@ export default function AdminMembers() {
     }
   };
 
-  useEffect(() => {
-    let active = true;
-    for (const member of members) {
-      api.getMemberPushStatus(member.id).then(status => {
-        if (active) setPushStatuses(current => ({ ...current, [member.id]: status }));
-      }).catch(() => {
-        if (active) setPushStatuses(current => ({ ...current, [member.id]: null }));
-      });
-    }
-    return () => { active = false; };
-  }, [members]);
-
   /** Replaces one row in place, so an edit does not cost a full reload. */
   const replaceMember = (updated: User) =>
-    setMembers((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+    setMembers((prev) => prev.map((m) => (m.id === updated.id ? { ...updated, push_device_count: m.push_device_count } : m)));
 
   const counts = useMemo(() => {
     const tally: Record<Tab, number> = { members: 0, invited: 0, removed: 0 };
@@ -447,13 +436,14 @@ export default function AdminMembers() {
 }
 
 function PushStatusIcon({ member, status }: { member: User; status: MemberPushStatus | null | undefined }) {
-  const enabled = status?.preferences?.push_enabled;
-  const label = status === undefined ? 'Loading push setting' : status === null ? 'Push setting unavailable'
-    : enabled === undefined ? 'No saved push setting' : enabled ? 'Account push enabled' : 'Account push disabled';
-  const Icon = status === undefined ? Loader2 : enabled === undefined ? CircleHelp : enabled ? Bell : BellOff;
-  return <span id={`push-status-${member.id}`} role="img" aria-label={label} title={`${label}. Open Details for saved preferences and devices.`}
-    className={`shrink-0 ${enabled === true ? 'text-green-700' : 'text-slate-500'}`}>
-    <Icon aria-hidden="true" className={`h-5 w-5 ${status === undefined ? 'animate-spin' : ''}`} />
+  const count = status === null ? undefined : status?.devices.length ?? member.push_device_count;
+  const known = count !== undefined;
+  const label = !known ? 'Push status unavailable' : count > 0 ? `Push set up · ${count} ${count === 1 ? 'device' : 'devices'}` : 'No push devices';
+  const Icon = !known ? CircleHelp : count > 0 ? Bell : BellOff;
+  return <span id={`push-status-${member.id}`} role="img" aria-label={label} title={`${label}. Registration does not confirm current permission or delivery.`}
+    className={`shrink-0 inline-flex items-center gap-1 text-xs ${known && count > 0 ? 'text-green-700' : 'text-slate-500'}`}>
+    <Icon aria-hidden="true" className="h-5 w-5" />
+    <span>{label}</span>
   </span>;
 }
 
