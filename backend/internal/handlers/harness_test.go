@@ -42,7 +42,7 @@ func newHarness(t *testing.T) *harness {
 	h := &harness{t: t}
 
 	sessionService := services.NewSessionService()
-	rsvpService := services.NewRSVPService(nil)
+	rsvpService := services.NewRSVPService()
 	userService := services.NewUserService("").WithRSVPs(rsvpService)
 	notificationService := services.NewNotificationService(services.NotificationConfig{})
 	ledgerService := services.NewLedgerService()

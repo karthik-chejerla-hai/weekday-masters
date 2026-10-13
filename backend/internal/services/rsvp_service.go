@@ -1,9 +1,7 @@
 package services
 
 import (
-	"context"
 	"errors"
-	"log"
 
 	"github.com/google/uuid"
 	"github.com/weekday-masters/backend/internal/database"
@@ -13,18 +11,11 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// WaitlistNotifier is the slice of NotificationService that RSVPService needs in
-// order to tell players they have been promoted off the waitlist.
-type WaitlistNotifier interface {
-	SendNotification(ctx context.Context, userID uuid.UUID, notifType models.NotificationType, title, body string, data map[string]string) error
-}
+// RSVPService owns capacity and waitlist promotion without notification side effects.
+type RSVPService struct{}
 
-type RSVPService struct {
-	notifier WaitlistNotifier
-}
-
-func NewRSVPService(notifier WaitlistNotifier) *RSVPService {
-	return &RSVPService{notifier: notifier}
+func NewRSVPService() *RSVPService {
+	return &RSVPService{}
 }
 
 type RSVPInput struct {
@@ -165,14 +156,12 @@ func (s *RSVPService) PromoteFromWaitlist(sessionID uuid.UUID) error {
 }
 
 // withSessionLock runs fn with the session row locked FOR UPDATE, so concurrent
-// RSVPs cannot both claim the last spot. Players fn promotes are notified only
-// after the transaction commits.
+// RSVPs cannot both claim the last spot. Promotion stays inside the transaction.
 func (s *RSVPService) withSessionLock(
 	sessionID uuid.UUID,
 	fn func(tx *gorm.DB, session models.Session) ([]uuid.UUID, error),
 ) error {
 	var session models.Session
-	var promoted []uuid.UUID
 
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -181,7 +170,7 @@ func (s *RSVPService) withSessionLock(
 		}
 
 		var err error
-		promoted, err = fn(tx, session)
+		_, err = fn(tx, session)
 		return err
 	})
 
@@ -189,7 +178,6 @@ func (s *RSVPService) withSessionLock(
 		return err
 	}
 
-	s.notifyPromoted(promoted, session)
 	return nil
 }
 
@@ -246,29 +234,6 @@ func promoteWithinTx(tx *gorm.DB, session models.Session) ([]uuid.UUID, error) {
 	}
 
 	return ids, nil
-}
-
-// notifyPromoted tells players they have moved off the waitlist. Failures are logged
-// but never surfaced — the promotion itself is already committed.
-func (s *RSVPService) notifyPromoted(userIDs []uuid.UUID, session models.Session) {
-	if len(userIDs) == 0 || s.notifier == nil {
-		return
-	}
-
-	ctx := context.Background()
-	dateStr := utils.FormatDateForDisplay(session.SessionDate)
-	title := "You're in!"
-	body := "A spot opened up for " + session.Title + " on " + dateStr + ". You're off the waitlist and confirmed to play."
-	data := map[string]string{
-		"type":       string(models.NotificationWaitlistUpdate),
-		"session_id": session.ID.String(),
-	}
-
-	for _, userID := range userIDs {
-		if err := s.notifier.SendNotification(ctx, userID, models.NotificationWaitlistUpdate, title, body, data); err != nil {
-			log.Printf("Error notifying promoted user %s: %v", userID, err)
-		}
-	}
 }
 
 // waitlistOrder is the single definition of queue order: earliest RSVP first, with
