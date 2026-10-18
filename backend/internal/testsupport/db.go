@@ -29,7 +29,7 @@ import (
 // truncateAll empties every table between tests. Kept in one place so a new
 // table cannot be added to the schema and forgotten in one suite's reset.
 const truncateAll = `TRUNCATE TABLE
-	notification_delivery_attempts, notification_outboxes, notification_migration_records,
+	notification_delivery_attempts, notification_outboxes, notification_migration_records, rsvp_reminder_stages,
 	game_revisions, game_results, invitation_deliveries, splitwise_changes, splitwise_records, splitwise_participants, splitwise_imports,
 	charge_lines, settlements,
 	balance_corrections, ledger_entries, transactions, accounts,

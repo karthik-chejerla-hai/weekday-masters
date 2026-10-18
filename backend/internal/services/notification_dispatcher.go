@@ -39,6 +39,7 @@ type NotificationDispatcher struct {
 	// PolicyOnly drains terminal stop decisions without initializing a provider.
 	// It is internal and only set for an unconditional deployment stop.
 	policyOnly bool
+	Reconcile  func(*gorm.DB, *models.Notification, *models.NotificationOutbox, time.Time) (bool, error)
 	// Policy returns a terminal suppression code or an operational database error.
 	Policy func(*gorm.DB, models.Notification, time.Time) (string, error)
 }
@@ -63,7 +64,7 @@ func (d *NotificationDispatcher) now() time.Time {
 // ProcessNotificationWork is a bounded worker entry point; trigger scanning is
 // owned by the scheduler and caller. It performs no provider I/O under DB locks.
 func (s *NotificationService) ProcessNotificationWork(ctx context.Context, batchSize int) (*DeliveryRunSummary, error) {
-	d := NotificationDispatcher{DB: database.DB, Provider: notificationFCMProvider{s}, Policy: s.queueDeliveryPolicy, policyOnly: s.disabled && s.disabledAllowEmail == ""}
+	d := NotificationDispatcher{DB: database.DB, Provider: notificationFCMProvider{s}, Policy: s.queueDeliveryPolicy, policyOnly: s.disabled && s.disabledAllowEmail == "", Reconcile: s.reconcileRSVPDeliveryWithin}
 	return d.Process(ctx, batchSize)
 }
 func (d *NotificationDispatcher) Process(ctx context.Context, batchSize int) (*DeliveryRunSummary, error) {
@@ -160,6 +161,15 @@ func (d *NotificationDispatcher) processClaim(ctx context.Context, outbox *model
 		if err := d.lockLease(tx, outbox); err != nil {
 			return err
 		}
+		if d.Reconcile != nil {
+			deferred, err := d.Reconcile(tx, &notification, outbox, d.now())
+			if err != nil {
+				return err
+			}
+			if deferred {
+				return nil
+			}
+		}
 		if !d.now().Before(outbox.ExpiresAt) {
 			return d.terminateWithin(tx, outbox, models.DeliveryExpired, "event_expired")
 		}
@@ -208,9 +218,12 @@ func (d *NotificationDispatcher) processClaim(ctx context.Context, outbox *model
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
-		device, started, err := d.startAttempt(ctx, outbox, &attempt, notification)
+		device, started, err := d.startAttempt(ctx, outbox, &attempt, &notification)
 		if err != nil {
 			return "", err
+		}
+		if outbox.State != models.DeliveryClaimed {
+			return outbox.State, nil
 		}
 		if !started {
 			continue
@@ -244,12 +257,21 @@ type deliveryDevice struct {
 	Generation int64
 }
 
-func (d *NotificationDispatcher) startAttempt(ctx context.Context, outbox *models.NotificationOutbox, attempt *models.NotificationDeliveryAttempt, notification models.Notification) (deliveryDevice, bool, error) {
+func (d *NotificationDispatcher) startAttempt(ctx context.Context, outbox *models.NotificationOutbox, attempt *models.NotificationDeliveryAttempt, notification *models.Notification) (deliveryDevice, bool, error) {
 	var device deliveryDevice
 	started := false
 	err := d.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := d.lockLease(tx, outbox); err != nil {
 			return err
+		}
+		if d.Reconcile != nil {
+			deferred, err := d.Reconcile(tx, notification, outbox, d.now())
+			if err != nil {
+				return err
+			}
+			if deferred {
+				return nil
+			}
 		}
 		// Renew between devices while the same fenced owner is still current.
 		until := d.now().Add(notificationLeaseDuration)
@@ -265,7 +287,7 @@ func (d *NotificationDispatcher) startAttempt(ctx context.Context, outbox *model
 		if !d.now().Before(outbox.ExpiresAt) {
 			state, code = models.DeliveryExpired, "event_expired"
 		} else if d.Policy != nil {
-			reason, err := d.Policy(tx, notification, d.now())
+			reason, err := d.Policy(tx, *notification, d.now())
 			if err != nil {
 				return err
 			}
@@ -490,6 +512,36 @@ func (s *NotificationService) queueDeliveryPolicy(tx *gorm.DB, notification mode
 	}
 	if club.NotificationsPaused && !bypass {
 		return "club_paused", nil
+	}
+	if notification.NotificationType == models.NotificationRSVPReminder {
+		var data map[string]string
+		if err := json.Unmarshal([]byte(notification.Data), &data); err != nil {
+			return "invalid_event_data", nil
+		}
+		stage, err := strconv.Atoi(data["rsvp_stage"])
+		if err != nil || stage < 1 || stage > 2 {
+			return "invalid_reminder_stage", nil
+		}
+		id, err := uuid.Parse(data["session_id"])
+		if err != nil {
+			return "invalid_session", nil
+		}
+		var session models.Session
+		if err := tx.First(&session, "id = ?", id).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+			return "session_unavailable", nil
+		} else if err != nil {
+			return "", err
+		}
+		if session.Status != models.SessionStatusOpen || session.StartsAt == nil || !session.StartsAt.After(now) || !session.RSVPDeadline.After(now) {
+			return "no_longer_eligible", nil
+		}
+		var responses int64
+		if err := tx.Model(&models.RSVP{}).Where("session_id = ? AND user_id = ?", id, user.ID).Count(&responses).Error; err != nil {
+			return "", err
+		}
+		if responses > 0 {
+			return "already_responded", nil
+		}
 	}
 	// Release 3 preserves existing trigger timing, but stale/cancelled sessions
 	// and changed RSVP eligibility are rechecked at dispatch.
