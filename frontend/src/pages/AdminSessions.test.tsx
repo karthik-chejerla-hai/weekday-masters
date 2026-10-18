@@ -349,3 +349,41 @@ describe('Existing session RSVP deadline', () => {
   expect(screen.getByText(/default: 36 hours before start/i)).toBeInTheDocument();
  });
 });
+
+describe('Nonexistent Sydney deadline times', () => {
+  it('rejects a nonexistent time when editing a deadline', async () => {
+    vi.mocked(api.listSessions).mockResolvedValue([makeSession({ session_date: '2027-10-05', starts_at: '2027-10-05T09:00:00Z' })]);
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Edit RSVP deadline' }));
+    const input = screen.getByLabelText('RSVP deadline (Sydney time)');
+    await user.clear(input);
+    await user.type(input, '2027-10-03T02:30');
+    await user.click(screen.getByRole('button', { name: 'Save deadline' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/valid Sydney/i);
+    expect(api.updateSession).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('rejects a nonexistent time when creating a recurring=%s session', async (recurring) => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText(/click "new session"/i);
+    const form = await openForm(user);
+    await user.type(form.querySelector('input[type="date"]')!, '2027-10-05');
+    if (recurring) await user.click(screen.getByRole('radio', { name: /recurring weekly/i }));
+    await user.click(deadlineToggle());
+    if (recurring) {
+      const offset = Array.from(form.querySelectorAll('select')).find(el => within(el).queryByText('2 days before'))!;
+      await user.selectOptions(offset, '2');
+      const times = form.querySelectorAll('input[type="time"]');
+      const time = times[times.length - 1];
+      await user.clear(time);
+      await user.type(time, '02:30');
+    } else {
+      await user.type(form.querySelector('input[type="datetime-local"]')!, '2027-10-03T02:30');
+    }
+    await user.click(screen.getByRole('button', { name: /create session/i }));
+    expect(await screen.findByText(/valid Sydney/i)).toBeInTheDocument();
+    expect(api.createSession).not.toHaveBeenCalled();
+  });
+});

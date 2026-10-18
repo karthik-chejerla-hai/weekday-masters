@@ -29,7 +29,7 @@ describe('Club display settings', () => {
     await user.selectOptions(screen.getByLabelText('Time display'), '12h');
     await user.click(screen.getByRole('button', { name: 'Save Club Settings' }));
     expect(await screen.findByText('Club settings saved!')).toBeInTheDocument();
-    expect(api.updateClub).toHaveBeenCalledWith({ name: 'Rally', venue_name: 'BadmintonWorx Norwest', venue_address: 'Local venue', court_number: 8, time_format: '12h', rsvp_deadline_hours: 50 });
+    expect(api.updateClub).toHaveBeenCalledWith({ name: 'Rally', venue_name: 'BadmintonWorx Norwest', venue_address: 'Local venue', court_number: 8, time_format: '12h' });
   });
 
   it('can clear the assigned court without changing the time choice', async () => {
@@ -104,4 +104,37 @@ describe('Default RSVP deadline', () => {
   expect(await screen.findByText(/Enter whole hours from 0 to 8760/)).toBeInTheDocument();
   expect(api.updateClub).not.toHaveBeenCalled();
  });
+});
+
+describe('Deadline changes in club settings', () => {
+  it('does not send the old default when an admin changes another setting', async () => {
+    vi.mocked(api.getClub).mockResolvedValue({ name: 'Rally', rsvp_deadline_hours: 50 } as never);
+    // Another tab changed the saved default to 48 after this page loaded.
+    vi.mocked(api.updateClub).mockResolvedValue({ rsvp_deadline_hours: 48 } as never);
+    const user = userEvent.setup();
+    renderPage();
+    const input = await screen.findByLabelText('Default RSVP deadline (hours before start)');
+    await waitFor(() => expect(input).toHaveValue(50));
+    await user.click(screen.getByRole('button', { name: 'Save Club Settings' }));
+    await waitFor(() => expect(api.updateClub).toHaveBeenCalled());
+    expect(vi.mocked(api.updateClub).mock.calls[0][0]).not.toHaveProperty('rsvp_deadline_hours');
+    await waitFor(() => expect(input).toHaveValue(48));
+  });
+
+  it('does not send the same deadline again after saving it', async () => {
+    vi.mocked(api.updateClub).mockResolvedValue({ rsvp_deadline_hours: 48 } as never);
+    const user = userEvent.setup();
+    renderPage();
+    const input = await screen.findByLabelText('Default RSVP deadline (hours before start)');
+    await waitFor(() => expect(input).toHaveValue(50));
+    await user.clear(input);
+    await user.type(input, '48');
+    const save = screen.getByRole('button', { name: 'Save Club Settings' });
+    await user.click(save);
+    await screen.findByText('Club settings saved!');
+    await user.click(save);
+    await waitFor(() => expect(api.updateClub).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(api.updateClub).mock.calls[0][0]).toHaveProperty('rsvp_deadline_hours', 48);
+    expect(vi.mocked(api.updateClub).mock.calls[1][0]).not.toHaveProperty('rsvp_deadline_hours');
+  });
 });

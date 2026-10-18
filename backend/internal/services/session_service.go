@@ -118,6 +118,17 @@ func validateDeadline(deadline, startsAt time.Time) error {
 	return nil
 }
 
+// Unlike an explicit user edit, a stored series rule may refer to the past.
+// It must still close RSVPs no later than the start of each generated session.
+var errRecurringDeadline = errors.New("Session start cannot be before the recurring RSVP deadline. Change the club default to reset the recurring rule.")
+
+func validateRecurringDeadline(deadline, startsAt time.Time) error {
+	if deadline.After(startsAt) {
+		return errRecurringDeadline
+	}
+	return nil
+}
+
 // generateRecurringSessions creates recurring session instances
 func (s *SessionService) generateRecurringSessions(tx *gorm.DB, parent *models.Session, occurrences, defaultHours int) error {
 	if parent.RecurringDayOfWeek == nil {
@@ -166,12 +177,15 @@ func (s *SessionService) generateRecurringSessions(tx *gorm.DB, parent *models.S
 				utils.SydneyLocation,
 			)
 
+			startsAt, _, err := utils.ResolveSessionTimes(nextDate, parent.StartTime, parent.EndTime)
+			if err != nil {
+				return err
+			}
 			if parent.RecurringRSVPDeadline == nil {
-				startsAt, _, err := utils.ResolveSessionTimes(nextDate, parent.StartTime, parent.EndTime)
-				if err != nil {
-					return err
-				}
 				childDeadline = utils.CalculateRSVPDeadline(startsAt, defaultHours)
+			}
+			if err := validateRecurringDeadline(childDeadline, startsAt); err != nil {
+				return err
 			}
 
 			child := models.Session{
@@ -202,7 +216,8 @@ func (s *SessionService) generateRecurringSessions(tx *gorm.DB, parent *models.S
 // RefreshRecurringSessions generates any missing recurring session instances
 // This is called for maintenance/refresh - uses default of 4 weeks ahead
 func (s *SessionService) RefreshRecurringSessions() error {
-	return database.DB.Transaction(func(tx *gorm.DB) error {
+	var invalidRules []error
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
 		club, err := lockClub(tx)
 		if err != nil {
 			return err
@@ -212,12 +227,25 @@ func (s *SessionService) RefreshRecurringSessions() error {
 			return err
 		}
 		for i := range parents {
-			if err := s.generateRecurringSessions(tx, &parents[i], 4, club.RSVPDeadlineHours); err != nil {
+			// A savepoint keeps an invalid legacy series from rolling back
+			// valid series. The club lock still protects the shared default.
+			err := tx.Transaction(func(seriesTx *gorm.DB) error {
+				return s.generateRecurringSessions(seriesTx, &parents[i], 4, club.RSVPDeadlineHours)
+			})
+			if errors.Is(err, errRecurringDeadline) {
+				invalidRules = append(invalidRules, fmt.Errorf("recurring session %s: %w", parents[i].ID, err))
+				continue
+			}
+			if err != nil {
 				return err
 			}
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	return errors.Join(invalidRules...)
 }
 
 // GetSessionByID retrieves a session by ID with RSVPs and user details
@@ -338,6 +366,11 @@ func (s *SessionService) UpdateSession(id uuid.UUID, input UpdateSessionInput) (
 			startsAt, _, err := utils.ResolveSessionTimes(session.SessionDate, session.StartTime, session.EndTime)
 			if err != nil {
 				return err
+			}
+			if session.IsRecurring && session.RecurringRSVPDeadline != nil {
+				if err := validateRecurringDeadline(*session.RecurringRSVPDeadline, startsAt); err != nil {
+					return err
+				}
 			}
 			if input.RSVPDeadline != nil {
 				if err := validateDeadline(*input.RSVPDeadline, startsAt); err != nil {
