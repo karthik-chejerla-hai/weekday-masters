@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/weekday-masters/backend/internal/database"
+	"github.com/weekday-masters/backend/internal/middleware"
 	"github.com/weekday-masters/backend/internal/models"
 	"github.com/weekday-masters/backend/internal/services"
 	"github.com/weekday-masters/backend/internal/testsupport"
@@ -130,7 +131,7 @@ func newHarness(t *testing.T) *harness {
 		admin.DELETE("/sessions/:id", adminHandler.DeleteSession)
 		admin.POST("/sessions/:id/cancel", adminHandler.CancelSession)
 		admin.POST("/sessions/:id/rsvp/:userId", adminHandler.AddPlayerRSVP)
-		admin.PUT("/club", adminHandler.UpdateClub)
+		admin.PUT("/club", middleware.RequireApproved(), middleware.RequireAdmin(), adminHandler.UpdateClub)
 
 		admin.POST("/sessions/:id/settlement/preview", settlementHandler.PreviewSettlement)
 		admin.POST("/sessions/:id/settle", settlementHandler.SettleSession)

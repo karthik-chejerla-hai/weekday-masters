@@ -172,3 +172,29 @@ it('rejects old-client disabled state writes even when they retain the operation
  const newer=JSON.parse(values.get('rally:push-installation:v2')!);newer.disabled=true;newer.cleanupIntent='old-client-disable';const authoritative=JSON.stringify(newer);values.set('rally:push-installation:v2',authoritative);
  gate.resolve(device);await expect(operation).rejects.toThrow('newer action');expect(values.get('rally:push-installation:v2')).toBe(authoritative);
 });
+
+it.each(['former-member', 'same-member', 'pending-member'])('lost installation proof deletes an adopted address before setup completes for %s', async owner => {
+ const deletion=deferred<void>();vi.mocked(api.revokeForeignLegacyToken).mockResolvedValue({cleanup_required:true});vi.mocked(deletePushToken).mockReturnValue(deletion.promise);
+ let completed=false;const operation=preparePushAccount(owner).then(()=>{completed=true;});
+ await called(vi.mocked(deletePushToken));
+ expect(completed).toBe(false);expect(api.revokeForeignLegacyToken).toHaveBeenCalledWith('token');
+ expect(JSON.parse(values.get('rally:push-installation:v2')!).legacyCleanupToken).toBe('token');
+ expect(api.getPushDevices).not.toHaveBeenCalled();expect(api.revokePushDeviceProof).not.toHaveBeenCalled();
+ deletion.resolve();await operation;
+ expect(JSON.parse(values.get('rally:push-installation:v2')!).legacyCleanupToken).toBeUndefined();
+ vi.mocked(getExistingPushToken).mockResolvedValue(null);vi.mocked(api.getPushDevices).mockResolvedValue([{...device,installation_id:'lost-installation'}]);
+ expect(await restorePushDevice(owner)).toBe(false);expect(api.adoptPushDevice).not.toHaveBeenCalled();expect(api.enrollPushDevice).not.toHaveBeenCalled();expect(requestNotificationPermission).not.toHaveBeenCalled();
+});
+it.each(['same-member','pending-member'])('lost-proof adopted cleanup keeps deletion failure retry state for %s', async owner => {
+ vi.mocked(api.revokeForeignLegacyToken).mockResolvedValue({cleanup_required:true});vi.mocked(deletePushToken).mockRejectedValueOnce(new Error('deletion failed'));
+ await expect(preparePushAccount(owner)).rejects.toThrow('deletion failed');
+ const pending=JSON.parse(values.get('rally:push-installation:v2')!);expect(pending.owner).toBe(owner);expect(pending.legacyCleanupToken).toBe('token');
+ expect(api.adoptPushDevice).not.toHaveBeenCalled();expect(api.enrollPushDevice).not.toHaveBeenCalled();
+ await preparePushAccount(owner);expect(deletePushToken).toHaveBeenCalledTimes(2);expect(api.revokeForeignLegacyToken).toHaveBeenNthCalledWith(2,'token');
+ const complete=JSON.parse(values.get('rally:push-installation:v2')!);expect(complete.installation).toBe(pending.installation);expect(complete.secret).toBe(pending.secret);expect(complete.legacyCleanupToken).toBeUndefined();
+});
+it('lost-proof address deletion cannot complete setup after a newer action replaces its owner', async () => {
+ const deletion=deferred<void>();vi.mocked(api.revokeForeignLegacyToken).mockResolvedValue({cleanup_required:true});vi.mocked(deletePushToken).mockReturnValue(deletion.promise);
+ const operation=preparePushAccount('member');await called(vi.mocked(deletePushToken));const authoritative=replaceFromOtherTab('other');deletion.resolve();
+ await expect(operation).rejects.toThrow('newer action');expect(values.get('rally:push-installation:v2')).toBe(authoritative);
+});

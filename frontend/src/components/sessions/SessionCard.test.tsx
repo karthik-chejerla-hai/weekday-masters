@@ -140,6 +140,32 @@ describe('SessionCard Component', () => {
     expect(screen.getByText('RSVP Closed')).toBeInTheDocument();
   });
 
+  it('shows only confirmed players and score actions for the current session', () => {
+    const confirmed = baseSession.rsvps![0];
+    const others = (['out', 'maybe', 'waitlisted'] as const).map((status, i) => ({
+      ...confirmed, id: `other-${i}`, user_id: `other-${i}`, status,
+      user: { ...confirmed.user!, id: `other-${i}`, nickname: `Other ${i}` },
+    }));
+    render(<MemoryRouter><SessionCard session={{ ...baseSession, max_players: 1,
+      rsvps: [confirmed, ...others],
+    }} recordScore currentUserId="u1" /></MemoryRouter>);
+    expect(screen.getByText('1 confirmed player')).toBeInTheDocument();
+    expect(screen.getByRole('listitem', { name: 'Player, Confirmed' })).toBeInTheDocument();
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+    expect(screen.queryByText(/Your RSVP:/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/RSVP Closed|RSVP open|RSVP by|Full|spots left/)).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Record score' })).toHaveAttribute('href', '/sessions/session-123/games');
+    expect(screen.getByRole('link', { name: 'Session details' })).toBeInTheDocument();
+  });
+
+  it.each([0, 2])('shows %s confirmed players without RSVP messaging', (count) => {
+    const rsvps = Array.from({ length: count }, (_, i) => ({ ...baseSession.rsvps![0], id: `r${i}`, user_id: `u${i}` }));
+    render(<MemoryRouter><SessionCard session={{ ...baseSession, rsvps }} recordScore /></MemoryRouter>);
+    expect(screen.getByText(`${count} confirmed players`)).toBeInTheDocument();
+    expect(screen.queryByText('No RSVPs yet')).not.toBeInTheDocument();
+    if (count === 0) expect(screen.getByText('No confirmed players yet')).toBeInTheDocument();
+  });
+
   describe('RSVP deadline', () => {
     afterEach(() => {
       vi.useRealTimers();
@@ -162,6 +188,17 @@ describe('SessionCard Component', () => {
 
       expect(screen.getByText(/^RSVP by /)).toBeInTheDocument();
       expect(screen.queryByText('RSVP Closed')).not.toBeInTheDocument();
+    });
+
+    it.each([
+      ['2027-01-10T07:00:00Z', '12h', 'RSVP by Sun, 10 Jan at 6:00 PM'],
+      ['2027-01-10T07:00:00Z', '24h', 'RSVP by Sun, 10 Jan at 18:00'],
+      ['2027-07-11T08:00:00Z', '12h', 'RSVP by Sun, 11 Jul at 6:00 PM'],
+      ['2027-07-11T08:00:00Z', '24h', 'RSVP by Sun, 11 Jul at 18:00'],
+    ] as const)('shows the Sydney deadline time for %s in %s format', (deadline, timeFormat, expected) => {
+      freezeBefore();
+      render(<MemoryRouter><SessionCard session={{ ...baseSession, rsvp_deadline: deadline }} timeFormat={timeFormat} /></MemoryRouter>);
+      expect(screen.getByText(expected)).toBeInTheDocument();
     });
 
     it('hides the RSVP deadline once it has passed', () => {

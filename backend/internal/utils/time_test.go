@@ -5,31 +5,18 @@ import (
 	"time"
 )
 
-func TestCalculateRSVPDeadlineElapsedHours(t *testing.T) {
-	for _, date := range []string{"2026-03-02", "2026-10-05", "2026-04-06"} {
-		t.Run(date, func(t *testing.T) {
-			day, err := ParseDateInSydney(date)
-			if err != nil {
-				t.Fatal(err)
+func TestCalculateRSVPDeadline(t *testing.T) {
+	for _, date := range []string{"2027-03-02T18:00:00+11:00", "2027-04-04T18:00:00+10:00", "2027-10-03T18:00:00+11:00"} {
+		start, err := time.Parse(time.RFC3339, date)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, hours := range []int{0, 24, 50, 72, 8760} {
+			deadline := CalculateRSVPDeadline(start, hours)
+			if start.Sub(deadline) != time.Duration(hours)*time.Hour {
+				t.Fatalf("wrong deadline for %s, %d", date, hours)
 			}
-			start, _, err := ResolveSessionTimes(day, "18:00", "20:00")
-			if err != nil {
-				t.Fatal(err)
-			}
-			deadline := CalculateRSVPDeadline(start)
-			if start.Sub(deadline) != 48*time.Hour {
-				t.Fatalf("deadline is not 48 elapsed hours before start: %v", deadline)
-			}
-			if deadline.Location() != SydneyLocation {
-				t.Fatal("deadline lost Sydney display zone")
-			}
-			if date == "2026-10-05" && deadline.Hour() != 17 {
-				t.Fatalf("spring DST wall clock should be 17:00, got %v", deadline)
-			}
-			if date == "2026-04-06" && deadline.Hour() != 19 {
-				t.Fatalf("autumn DST wall clock should be 19:00, got %v", deadline)
-			}
-		})
+		}
 	}
 }
 
@@ -187,5 +174,14 @@ func TestResolveSessionTimesRejectsNonsense(t *testing.T) {
 	}
 	if _, _, err := ResolveSessionTimes(day, "20:00", "25:99"); err == nil {
 		t.Error("expected an impossible end time to be refused")
+	}
+}
+
+func TestFiftyHourDeadlineForTuesdayEvening(t *testing.T) {
+	start := time.Date(2027, time.January, 12, 20, 0, 0, 0, SydneyLocation)
+	want := time.Date(2027, time.January, 10, 18, 0, 0, 0, SydneyLocation)
+	deadline := CalculateRSVPDeadline(start, 50)
+	if start.Weekday() != time.Tuesday || deadline.Weekday() != time.Sunday || !deadline.Equal(want) {
+		t.Fatalf("expected Sunday 18:00 before Tuesday 20:00, got %s", deadline)
 	}
 }

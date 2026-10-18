@@ -29,15 +29,6 @@ func NewSessionService() *SessionService {
 	return &SessionService{}
 }
 
-func (s *SessionService) currentTime() time.Time {
-	if s.now != nil {
-		return s.now()
-	}
-	return utils.NowInSydney()
-}
-
-var ErrFixedRSVPDeadline = errors.New("RSVP deadline is fixed at 48 hours before session start")
-
 type CreateSessionInput struct {
 	Title              string
 	Description        string
@@ -49,7 +40,14 @@ type CreateSessionInput struct {
 	RecurringDayOfWeek *int
 	Occurrences        *int
 	CreatedBy          uuid.UUID
-	RSVPDeadline       *time.Time // Retained only to reject obsolete custom-deadline callers
+	RSVPDeadline       *time.Time // Optional custom deadline; otherwise uses the club default
+}
+
+func (s *SessionService) currentTime() time.Time {
+	if s.now != nil {
+		return s.now()
+	}
+	return utils.NowInSydney()
 }
 
 // CreateSession creates a new session
@@ -58,55 +56,90 @@ func (s *SessionService) CreateSession(input CreateSessionInput) (*models.Sessio
 		return nil, errors.New("courts must be between 1 and 3")
 	}
 
-	if input.RSVPDeadline != nil {
-		return nil, ErrFixedRSVPDeadline
-	}
-	startsAt, endsAt, err := utils.ResolveSessionTimes(input.SessionDate, input.StartTime, input.EndTime)
+	var session models.Session
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		club, err := lockClub(tx)
+		if err != nil {
+			return err
+		}
+		startsAt, _, err := utils.ResolveSessionTimes(input.SessionDate, input.StartTime, input.EndTime)
+		if err != nil {
+			return err
+		}
+		deadline := utils.CalculateRSVPDeadline(startsAt, club.RSVPDeadlineHours)
+		if input.RSVPDeadline != nil {
+			if err := validateDeadline(*input.RSVPDeadline, startsAt); err != nil {
+				return err
+			}
+			deadline = *input.RSVPDeadline
+		}
+		session = models.Session{
+			Title:              input.Title,
+			Description:        input.Description,
+			SessionDate:        input.SessionDate,
+			StartTime:          input.StartTime,
+			EndTime:            input.EndTime,
+			Courts:             input.Courts,
+			MaxPlayers:         models.MaxPlayersForCourts(input.Courts),
+			RSVPDeadline:       deadline,
+			IsRecurring:        input.IsRecurring,
+			RecurringDayOfWeek: input.RecurringDayOfWeek,
+			Status:             models.SessionStatusOpen,
+			CreatedBy:          input.CreatedBy,
+		}
+		if input.IsRecurring {
+			session.RecurringRSVPDeadline = input.RSVPDeadline
+		}
+		if err := tx.Create(&session).Error; err != nil {
+			return err
+		}
+		if input.IsRecurring && input.RecurringDayOfWeek != nil {
+			occurrences := 4
+			if input.Occurrences != nil && *input.Occurrences > 0 {
+				occurrences = *input.Occurrences
+			}
+			return s.generateRecurringSessions(tx, &session, occurrences, club.RSVPDeadlineHours)
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	// Short-notice sessions may already have a closed window; admins can still
-	// create them and use the existing admin RSVP exception.
-	rsvpDeadline := utils.CalculateRSVPDeadline(startsAt)
-
-	session := models.Session{
-		Title:              input.Title,
-		Description:        input.Description,
-		SessionDate:        input.SessionDate,
-		StartTime:          input.StartTime,
-		EndTime:            input.EndTime,
-		Courts:             input.Courts,
-		MaxPlayers:         models.MaxPlayersForCourts(input.Courts),
-		RSVPDeadline:       rsvpDeadline,
-		StartsAt:           &startsAt,
-		EndsAt:             &endsAt,
-		IsRecurring:        input.IsRecurring,
-		RecurringDayOfWeek: input.RecurringDayOfWeek,
-		Status:             models.SessionStatusOpen,
-		CreatedBy:          input.CreatedBy,
-	}
-
-	if err := database.DB.Create(&session).Error; err != nil {
-		return nil, err
-	}
-
-	// If recurring, generate sessions for the specified number of occurrences
-	if input.IsRecurring && input.RecurringDayOfWeek != nil {
-		occurrences := 4 // default
-		if input.Occurrences != nil && *input.Occurrences > 0 {
-			occurrences = *input.Occurrences
-		}
-		s.generateRecurringSessions(&session, occurrences)
-	}
-
 	return &session, nil
 }
 
+func validateDeadline(deadline, startsAt time.Time) error {
+	if deadline.Before(utils.NowInSydney()) {
+		return errors.New("RSVP deadline cannot be in the past")
+	}
+	if deadline.After(startsAt) {
+		return errors.New("RSVP deadline cannot be after the session starts")
+	}
+	return nil
+}
+
 // generateRecurringSessions creates recurring session instances
-func (s *SessionService) generateRecurringSessions(parent *models.Session, occurrences int) error {
+func (s *SessionService) generateRecurringSessions(tx *gorm.DB, parent *models.Session, occurrences, defaultHours int) error {
 	if parent.RecurringDayOfWeek == nil {
 		return nil
 	}
+
+	// Derive the relative deadline offset from the parent session.
+	// This preserves any custom deadline the admin set on the parent.
+	parentDateSyd := parent.SessionDate.In(utils.SydneyLocation)
+	parentDeadlineSyd := parent.RSVPDeadline.In(utils.SydneyLocation)
+	if parent.RecurringRSVPDeadline != nil {
+		parentDeadlineSyd = parent.RecurringRSVPDeadline.In(utils.SydneyLocation)
+	}
+
+	// Count whole days in UTC: subtracting two Sydney midnights across a DST
+	// boundary yields 71 or 73 hours and would truncate to the wrong offset.
+	sessionDay := time.Date(parentDateSyd.Year(), parentDateSyd.Month(), parentDateSyd.Day(), 0, 0, 0, 0, time.UTC)
+	deadlineDay := time.Date(parentDeadlineSyd.Year(), parentDeadlineSyd.Month(), parentDeadlineSyd.Day(), 0, 0, 0, 0, time.UTC)
+	daysBefore := int(sessionDay.Sub(deadlineDay).Hours() / 24)
+	deadlineHour := parentDeadlineSyd.Hour()
+	deadlineMin := parentDeadlineSyd.Minute()
+	deadlineSec := parentDeadlineSyd.Second()
 
 	// Start from the next week after the parent session
 	nextDate := parent.SessionDate.AddDate(0, 0, 7)
@@ -115,19 +148,31 @@ func (s *SessionService) generateRecurringSessions(parent *models.Session, occur
 	for i := 0; i < occurrences-1; i++ {
 		// Check if session already exists
 		var count int64
-		database.DB.Model(&models.Session{}).
+		if err := tx.Model(&models.Session{}).
 			Where("session_date = ? AND recurring_parent_id = ?", nextDate, parent.ID).
-			Count(&count)
+			Count(&count).Error; err != nil {
+			return err
+		}
 
 		if count == 0 {
 			// Generate title for this occurrence in format "Day - DD MMM YYYY"
 			childTitle := nextDate.Format("Monday - 02 Jan 2006")
 
-			startsAt, endsAt, err := utils.ResolveSessionTimes(nextDate, parent.StartTime, parent.EndTime)
-			if err != nil {
-				return err
+			// Compute child deadline using the same relative offset as the parent
+			childDateSyd := nextDate.In(utils.SydneyLocation)
+			childDeadline := time.Date(
+				childDateSyd.Year(), childDateSyd.Month(), childDateSyd.Day()-daysBefore,
+				deadlineHour, deadlineMin, deadlineSec, 0,
+				utils.SydneyLocation,
+			)
+
+			if parent.RecurringRSVPDeadline == nil {
+				startsAt, _, err := utils.ResolveSessionTimes(nextDate, parent.StartTime, parent.EndTime)
+				if err != nil {
+					return err
+				}
+				childDeadline = utils.CalculateRSVPDeadline(startsAt, defaultHours)
 			}
-			childDeadline := utils.CalculateRSVPDeadline(startsAt)
 
 			child := models.Session{
 				Title:             childTitle,
@@ -138,14 +183,14 @@ func (s *SessionService) generateRecurringSessions(parent *models.Session, occur
 				Courts:            parent.Courts,
 				MaxPlayers:        parent.MaxPlayers,
 				RSVPDeadline:      childDeadline,
-				StartsAt:          &startsAt,
-				EndsAt:            &endsAt,
 				IsRecurring:       false,
 				RecurringParentID: &parent.ID,
 				Status:            models.SessionStatusOpen,
 				CreatedBy:         parent.CreatedBy,
 			}
-			database.DB.Create(&child)
+			if err := tx.Create(&child).Error; err != nil {
+				return err
+			}
 		}
 
 		nextDate = nextDate.AddDate(0, 0, 7)
@@ -157,17 +202,22 @@ func (s *SessionService) generateRecurringSessions(parent *models.Session, occur
 // RefreshRecurringSessions generates any missing recurring session instances
 // This is called for maintenance/refresh - uses default of 4 weeks ahead
 func (s *SessionService) RefreshRecurringSessions() error {
-	var parentSessions []models.Session
-	if err := database.DB.Where("is_recurring = ? AND status = ?", true, models.SessionStatusOpen).
-		Find(&parentSessions).Error; err != nil {
-		return err
-	}
-
-	for _, parent := range parentSessions {
-		s.generateRecurringSessions(&parent, 4) // Default to 4 weeks for refresh
-	}
-
-	return nil
+	return database.DB.Transaction(func(tx *gorm.DB) error {
+		club, err := lockClub(tx)
+		if err != nil {
+			return err
+		}
+		var parents []models.Session
+		if err := tx.Where("is_recurring = ? AND status = ?", true, models.SessionStatusOpen).Find(&parents).Error; err != nil {
+			return err
+		}
+		for i := range parents {
+			if err := s.generateRecurringSessions(tx, &parents[i], 4, club.RSVPDeadlineHours); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // GetSessionByID retrieves a session by ID with RSVPs and user details
@@ -228,37 +278,25 @@ type UpdateSessionInput struct {
 	EndTime      *string
 	Courts       *int
 	Status       *models.SessionStatus
-	RSVPDeadline *time.Time // Retained only to reject obsolete custom-deadline callers
+	RSVPDeadline *time.Time // Optional; if set, overrides auto-calculated deadline
 }
 
 // UpdateSession updates a session
 func (s *SessionService) UpdateSession(id uuid.UUID, input UpdateSessionInput) (*models.Session, error) {
-	if input.RSVPDeadline != nil {
-		return nil, ErrFixedRSVPDeadline
-	}
 	var session models.Session
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		club, err := lockClub(tx)
+		if err != nil {
+			return err
+		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&session, "id = ?", id).Error; err != nil {
 			return err
 		}
 		if session.Status == models.SessionStatusCancelled {
 			return errors.New("cancelled sessions cannot be edited")
 		}
-		if session.Status == models.SessionStatusClosed && input.Status != nil && *input.Status == models.SessionStatusOpen {
-			return errors.New("closed RSVP windows cannot be reopened")
-		}
 		if input.Status != nil && *input.Status != models.SessionStatusOpen && *input.Status != models.SessionStatusClosed {
 			return errors.New("use the cancel action to cancel a session")
-		}
-
-		now := s.currentTime()
-		oldStart := session.StartsAt
-		windowWasOpen := session.Status == models.SessionStatusOpen && session.RSVPDeadline.After(now) && oldStart != nil && oldStart.After(now)
-		var settlements int64
-		if windowWasOpen {
-			if err := tx.Model(&models.Settlement{}).Where("session_id = ?", session.ID).Count(&settlements).Error; err != nil {
-				return err
-			}
 		}
 
 		if input.Title != nil {
@@ -268,6 +306,15 @@ func (s *SessionService) UpdateSession(id uuid.UUID, input UpdateSessionInput) (
 			session.Description = *input.Description
 		}
 		if input.SessionDate != nil {
+			if session.RecurringRSVPDeadline != nil {
+				oldDay := session.SessionDate.In(utils.SydneyLocation)
+				newDay := input.SessionDate.In(utils.SydneyLocation)
+				oldCalendarDay := time.Date(oldDay.Year(), oldDay.Month(), oldDay.Day(), 0, 0, 0, 0, time.UTC)
+				newCalendarDay := time.Date(newDay.Year(), newDay.Month(), newDay.Day(), 0, 0, 0, 0, time.UTC)
+				days := int(newCalendarDay.Sub(oldCalendarDay).Hours() / 24)
+				shifted := session.RecurringRSVPDeadline.In(utils.SydneyLocation).AddDate(0, 0, days)
+				session.RecurringRSVPDeadline = &shifted
+			}
 			session.SessionDate = *input.SessionDate
 		}
 		if input.StartTime != nil {
@@ -287,16 +334,21 @@ func (s *SessionService) UpdateSession(id uuid.UUID, input UpdateSessionInput) (
 			session.Status = *input.Status
 		}
 
-		startsAt, endsAt, err := utils.ResolveSessionTimes(session.SessionDate, session.StartTime, session.EndTime)
-		if err != nil {
-			return err
+		if input.RSVPDeadline != nil || input.SessionDate != nil || input.StartTime != nil {
+			startsAt, _, err := utils.ResolveSessionTimes(session.SessionDate, session.StartTime, session.EndTime)
+			if err != nil {
+				return err
+			}
+			if input.RSVPDeadline != nil {
+				if err := validateDeadline(*input.RSVPDeadline, startsAt); err != nil {
+					return err
+				}
+				session.RSVPDeadline = *input.RSVPDeadline
+			} else {
+				session.RSVPDeadline = utils.CalculateRSVPDeadline(startsAt, club.RSVPDeadlineHours)
+			}
 		}
-		session.StartsAt, session.EndsAt = &startsAt, &endsAt
-		if windowWasOpen && settlements == 0 && !startsAt.Equal(*oldStart) {
-			session.RSVPDeadline = utils.CalculateRSVPDeadline(startsAt)
-		}
-		// Already closed, started/historical or settled windows stay closed
-		// even when the date moves forward or status is explicitly reopened.
+
 		session.UpdatedAt = time.Now()
 
 		return tx.Save(&session).Error

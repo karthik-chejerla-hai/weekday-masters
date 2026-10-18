@@ -56,6 +56,8 @@ async function cleanupLegacy(local: LocalDevice) {
  if (!token) return;
  // Save the address/intent before requesting revoke, so lost responses and
  // failed Firebase deletion can resume without forgetting the former device.
+ // Adopted server rows also require deletion if this browser lost their proof;
+ // the compatibility endpoint preserves those rows and only signals cleanup.
  local.legacyCleanupToken = token; write(local);
  const result = await api.revokeForeignLegacyToken(token);
  currentOperation(local);
