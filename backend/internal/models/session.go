@@ -25,6 +25,7 @@ type Session struct {
 	EndTime            string        `gorm:"size:10;not null" json:"end_time"`   // HH:MM format
 	Courts             int           `gorm:"not null;check:courts >= 1 AND courts <= 3" json:"courts"`
 	MaxPlayers         int           `gorm:"not null" json:"max_players"`
+	RSVPDeadlineCustom bool          `gorm:"not null;default:false" json:"-"`
 	RSVPDeadline       time.Time     `gorm:"not null" json:"rsvp_deadline"`
 	IsRecurring        bool          `gorm:"default:false" json:"is_recurring"`
 	RecurringDayOfWeek *int          `json:"recurring_day_of_week"` // 0=Sunday, 1=Monday, etc.

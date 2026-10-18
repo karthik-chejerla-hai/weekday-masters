@@ -121,7 +121,7 @@ func TestCreateSession_CalculatesCapacityFromCourts(t *testing.T) {
 	}
 }
 
-func TestCreateSession_SetsTheRSVPDeadlineThreeDaysBefore(t *testing.T) {
+func TestCreateSession_SetsTheRSVPDeadline72HoursBeforeStart(t *testing.T) {
 	h := newHarness(t)
 	admin := makeAdmin(t)
 
@@ -134,14 +134,8 @@ func TestCreateSession_SetsTheRSVPDeadlineThreeDaysBefore(t *testing.T) {
 		"courts":       2,
 	}).expect(http.StatusCreated).decode(&session)
 
-	deadline := session.RSVPDeadline.In(utils.SydneyLocation)
-	wantDay := session.SessionDate.In(utils.SydneyLocation).AddDate(0, 0, -3)
-
-	if deadline.Year() != wantDay.Year() || deadline.YearDay() != wantDay.YearDay() {
-		t.Fatalf("expected the deadline on %s, got %s", wantDay.Format("2006-01-02"), deadline.Format("2006-01-02"))
-	}
-	if h, m, sec := deadline.Clock(); h != 23 || m != 59 || sec != 59 {
-		t.Fatalf("expected the deadline at end of day Sydney time, got %s", deadline.Format("15:04:05"))
+	if session.StartsAt == nil || session.StartsAt.Sub(session.RSVPDeadline) != 72*time.Hour {
+		t.Fatalf("expected deadline 72 hours before start, got %v", session.RSVPDeadline)
 	}
 }
 
@@ -531,5 +525,86 @@ func TestAddPlayerRSVP_RejectsUnapprovedMembers(t *testing.T) {
 	database.DB.Model(&models.RSVP{}).Where("session_id = ?", session.ID).Count(&count)
 	if count != 0 {
 		t.Fatal("created an RSVP for an unapproved member")
+	}
+}
+
+func TestClubRSVPDefaultUpdatesFutureSessions(t *testing.T) {
+	h := newHarness(t)
+	admin := makeAdmin(t)
+	future := makeSession(t, admin.ID, 2)
+	past := makeSession(t, admin.ID, 2)
+	if err := database.DB.Model(&past).UpdateColumn("starts_at", time.Now().Add(-time.Hour)).Error; err != nil {
+		t.Fatal(err)
+	}
+	originalPast := past.RSVPDeadline
+	custom := utils.NowInSydney().Add(24 * time.Hour).Truncate(time.Second)
+	h.as(admin).put("/api/admin/sessions/"+future.ID.String(), map[string]any{"rsvp_deadline": custom.Format(time.RFC3339)}).expect(http.StatusOK)
+	h.as(admin).put("/api/admin/club", map[string]any{"rsvp_deadline_hours": 48}).expect(http.StatusOK)
+	var saved models.Session
+	if err := database.DB.First(&saved, "id = ?", future.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if saved.StartsAt.Sub(saved.RSVPDeadline) != 48*time.Hour {
+		t.Fatalf("future custom deadline was not replaced: %v", saved.RSVPDeadline)
+	}
+	saved = models.Session{}
+	if err := database.DB.First(&saved, "id = ?", past.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !saved.RSVPDeadline.Equal(originalPast) {
+		t.Fatal("past deadline changed")
+	}
+	var club map[string]any
+	h.as(nil).get("/api/club").expect(http.StatusOK).decode(&club)
+	if club["rsvp_deadline_hours"] != float64(48) {
+		t.Fatalf("default was not saved: %v", club)
+	}
+	// Saving the same default must preserve later per-session edits.
+	h.as(admin).put("/api/admin/sessions/"+future.ID.String(), map[string]any{"rsvp_deadline": custom.Format(time.RFC3339)}).expect(http.StatusOK)
+	h.as(admin).put("/api/admin/club", map[string]any{"rsvp_deadline_hours": 48}).expect(http.StatusOK)
+	saved = models.Session{}
+	if err := database.DB.First(&saved, "id = ?", future.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !saved.RSVPDeadline.Equal(custom) {
+		t.Fatal("unchanged default replaced custom deadline")
+	}
+	// Zero is a valid default: RSVPs close at the start.
+	h.as(admin).put("/api/admin/club", map[string]any{"rsvp_deadline_hours": 0}).expect(http.StatusOK)
+	saved = models.Session{}
+	if err := database.DB.First(&saved, "id = ?", future.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !saved.RSVPDeadline.Equal(*saved.StartsAt) {
+		t.Fatal("zero did not close at start")
+	}
+}
+
+func TestClubRSVPDefaultRejectsInvalidValuesAndNonAdmins(t *testing.T) {
+	h := newHarness(t)
+	admin := makeAdmin(t)
+	for _, hours := range []any{-1, 8761, 1.5, "48"} {
+		h.as(admin).put("/api/admin/club", map[string]any{"rsvp_deadline_hours": hours}).expect(http.StatusBadRequest)
+	}
+	h.as(makePlayer(t)).put("/api/admin/club", map[string]any{"rsvp_deadline_hours": 48}).expect(http.StatusForbidden)
+}
+
+func TestConfiguredRSVPDefaultIsUsedForNewSessions(t *testing.T) {
+	h := newHarness(t)
+	admin := makeAdmin(t)
+	h.as(admin).put("/api/admin/club", map[string]any{"rsvp_deadline_hours": 36}).expect(http.StatusOK)
+	var session models.Session
+	h.as(admin).post("/api/admin/sessions", map[string]any{"title": "Configured default", "session_date": sydneyDate(14), "start_time": "18:00", "end_time": "20:00", "courts": 1}).expect(http.StatusCreated).decode(&session)
+	if session.StartsAt.Sub(session.RSVPDeadline) != 36*time.Hour {
+		t.Fatal("new session ignored saved default")
+	}
+	h.as(admin).put("/api/admin/sessions/"+session.ID.String(), map[string]any{"rsvp_deadline": session.StartsAt.Add(time.Minute).Format(time.RFC3339)}).expect(http.StatusBadRequest)
+	h.as(admin).put("/api/admin/club", map[string]any{"venue_name": "New venue"}).expect(http.StatusOK)
+	var saved models.Session
+	if err := database.DB.First(&saved, "id = ?", session.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !saved.RSVPDeadline.Equal(session.RSVPDeadline) {
+		t.Fatal("unrelated setting or invalid edit changed deadline")
 	}
 }

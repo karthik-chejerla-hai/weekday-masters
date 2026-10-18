@@ -33,6 +33,14 @@ func Connect(databaseURL string) error {
 func Migrate() error {
 	log.Println("Running database migrations...")
 
+	// Preserve the calendar rule for recurring sessions created before custom
+	// deadline metadata existed. New sessions set this flag explicitly.
+	if DB.Migrator().HasTable(&models.Session{}) && !DB.Migrator().HasColumn(&models.Session{}, "rsvp_deadline_custom") {
+		if err := DB.Exec("ALTER TABLE sessions ADD COLUMN rsvp_deadline_custom boolean NOT NULL DEFAULT true").Error; err != nil {
+			return err
+		}
+	}
+
 	err := DB.AutoMigrate(
 		&models.Club{},
 		&models.User{},

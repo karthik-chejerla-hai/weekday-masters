@@ -12,6 +12,7 @@ vi.mock('../services/api', () => ({
     listSessions: vi.fn(),
     listCancelledSessions: vi.fn(),
     createSession: vi.fn(),
+    updateSession: vi.fn(),
     deleteSession: vi.fn(),
     cancelSession: vi.fn(),
   },
@@ -159,7 +160,7 @@ describe('AdminSessions page', () => {
       const sent = vi.mocked(api.createSession).mock.calls[0][0].rsvp_deadline;
       expect(sent).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/);
       // Whatever the runner's zone, it must denote the instant the admin picked.
-      expect(new Date(sent!).getTime()).toBe(new Date('2026-12-08T18:00').getTime());
+      expect(new Date(sent!).getTime()).toBe(new Date('2026-12-08T18:00:00+11:00').getTime());
     });
 
     it('derives a recurring deadline from the days-before offset', async () => {
@@ -188,7 +189,7 @@ describe('AdminSessions page', () => {
       expect(sent).toBeDefined();
       // 2 days before the 11th, at the default 23:59.
       expect(new Date(sent!).getTime()).toBe(
-        new Date('2026-12-09T23:59:59').getTime()
+        new Date('2026-12-09T23:59:59+11:00').getTime()
       );
     });
 
@@ -294,4 +295,33 @@ describe('Session cancellation', () => {
     expect(within(dialog).getByRole('textbox')).toBeDisabled();
     expect(api.cancelSession).toHaveBeenCalledTimes(1);
   });
+});
+
+describe('Existing session RSVP deadline', () => {
+ it('edits one deadline in Sydney time and keeps the edit on failure', async () => {
+  vi.mocked(api.listSessions).mockResolvedValue([makeSession({ session_date: '2027-01-10', starts_at: '2027-01-10T09:00:00Z' })]);
+  vi.mocked(api.updateSession).mockRejectedValueOnce({ response: { data: { error: 'Save failed. Try again.' } } })
+   .mockResolvedValueOnce(makeSession({ session_date: '2027-01-10', starts_at: '2027-01-10T09:00:00Z', rsvp_deadline: '2027-01-08T07:00:00Z' }));
+  const user = userEvent.setup();
+  renderPage();
+  await user.click(await screen.findByRole('button', { name: 'Edit RSVP deadline' }));
+  const input = screen.getByLabelText('RSVP deadline (Sydney time)');
+  await user.clear(input);
+  await user.type(input, '2027-01-08T18:00');
+  await user.click(screen.getByRole('button', { name: 'Save deadline' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Save failed. Try again.');
+  expect(input).toHaveValue('2027-01-08T18:00');
+  await user.click(screen.getByRole('button', { name: 'Save deadline' }));
+  await waitFor(() => expect(api.updateSession).toHaveBeenLastCalledWith('session-1', { rsvp_deadline: '2027-01-08T07:00:00.000Z' }));
+  await waitFor(() => expect(screen.queryByLabelText('RSVP deadline (Sydney time)')).not.toBeInTheDocument());
+  expect(screen.getByText(/8 Jan 2027/)).toBeInTheDocument();
+ });
+ it('shows the configured default in the create form', async () => {
+  vi.mocked(api.getClub).mockResolvedValue({ rsvp_deadline_hours: 36 } as never);
+  const user = userEvent.setup();
+  renderPage();
+  await screen.findByText(/click "new session"/i);
+  await openForm(user);
+  expect(screen.getByText(/default: 36 hours before start/i)).toBeInTheDocument();
+ });
 });

@@ -6,30 +6,17 @@ import (
 )
 
 func TestCalculateRSVPDeadline(t *testing.T) {
-	// A Sunday session on 2026-03-15 at 18:00 Sydney time
-	sessionDate := time.Date(2026, 3, 15, 18, 0, 0, 0, SydneyLocation)
-
-	deadline := CalculateRSVPDeadline(sessionDate)
-
-	// Deadline should be 3 days earlier: Thursday 2026-03-12 23:59:59
-	if deadline.Year() != 2026 || deadline.Month() != 3 || deadline.Day() != 12 {
-		t.Fatalf("expected deadline date to be 2026-03-12, got %v", deadline.Format("2006-01-02"))
-	}
-	if deadline.Hour() != 23 || deadline.Minute() != 59 || deadline.Second() != 59 {
-		t.Fatalf("expected deadline time to be 23:59:59, got %02d:%02d:%02d", deadline.Hour(), deadline.Minute(), deadline.Second())
-	}
-	if deadline.Location().String() != SydneyLocation.String() {
-		t.Fatalf("expected location %v, got %v", SydneyLocation, deadline.Location())
-	}
-}
-
-func TestCalculateRSVPDeadline_AcrossMonthBoundary(t *testing.T) {
-	// 2nd of March session -> Deadline is 3 days before (February 27 in a non-leap year)
-	sessionDate := time.Date(2026, 3, 2, 10, 0, 0, 0, SydneyLocation)
-	deadline := CalculateRSVPDeadline(sessionDate)
-
-	if deadline.Year() != 2026 || deadline.Month() != 2 || deadline.Day() != 27 {
-		t.Fatalf("expected deadline date to be 2026-02-27, got %v", deadline.Format("2006-01-02"))
+	for _, date := range []string{"2027-03-02T18:00:00+11:00", "2027-04-04T18:00:00+10:00", "2027-10-03T18:00:00+11:00"} {
+		start, err := time.Parse(time.RFC3339, date)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, hours := range []int{0, 24, 72, 8760} {
+			deadline := CalculateRSVPDeadline(start, hours)
+			if start.Sub(deadline) != time.Duration(hours)*time.Hour {
+				t.Fatalf("wrong deadline for %s, %d", date, hours)
+			}
+		}
 	}
 }
 

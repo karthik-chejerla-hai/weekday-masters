@@ -88,6 +88,7 @@ export interface Club {
   venue_address: string;
   court_number?: number;
   time_format?: TimeFormat;
+  rsvp_deadline_hours?: number;
   created_at: string;
   updated_at: string;
   // Settlement defaults. Present on the admin view of the club; the public
