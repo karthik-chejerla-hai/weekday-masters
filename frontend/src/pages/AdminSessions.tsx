@@ -7,6 +7,7 @@ import { api } from '../services/api';
 import type { Session, CreateSessionInput, TimeFormat } from '../types';
 import { formatSessionTimeRange } from '../utils/session-display';
 import Badge from '../components/ui/Badge';
+import { parseSydneyDateTime } from '../utils/sydney-time';
 
 export default function AdminSessions() {
   const navigate = useNavigate();
@@ -87,21 +88,19 @@ export default function AdminSessions() {
     }
   };
 
-  const computeRsvpDeadline = (): string | undefined => {
+  const computeRsvpDeadline = (): Date | null | undefined => {
     if (!useCustomDeadline) return undefined;
 
     if (formData.is_recurring) {
       // Compute deadline relative to the first session date
-      if (!formData.session_date) return undefined;
+      if (!formData.session_date || !deadlineTime) return null;
       const date = new Date(`${formData.session_date}T00:00:00Z`);
+      if (Number.isNaN(date.getTime())) return null;
       date.setUTCDate(date.getUTCDate() - deadlineDaysBefore);
-      const deadline = fromZonedTime(`${date.toISOString().slice(0, 10)}T${deadlineTime}:59`, 'Australia/Sydney');
-      return formatInTimeZone(deadline, 'Australia/Sydney', "yyyy-MM-dd'T'HH:mm:ssXXX");
+      return parseSydneyDateTime(`${date.toISOString().slice(0, 10)}T${deadlineTime}:59`);
     } else {
       // One-off: use the datetime-local value directly
-      if (!deadlineDatetime) return undefined;
-      const dt = fromZonedTime(deadlineDatetime, 'Australia/Sydney');
-      return formatInTimeZone(dt, 'Australia/Sydney', "yyyy-MM-dd'T'HH:mm:ssXXX");
+      return parseSydneyDateTime(deadlineDatetime);
     }
   };
 
@@ -110,15 +109,19 @@ export default function AdminSessions() {
     setDeadlineError('');
     setCreateError('');
 
-    // Client-side deadline validation
+    // Reject Sydney clock times that disappear during the daylight saving jump.
+    const deadline = computeRsvpDeadline();
     if (useCustomDeadline) {
-      const deadline = computeRsvpDeadline();
-      if (deadline && new Date(deadline) < new Date()) {
+      if (!deadline) {
+        setDeadlineError('Choose a valid Sydney date and time. This clock time does not exist.');
+        return;
+      }
+      if (deadline < new Date()) {
         setDeadlineError('RSVP deadline cannot be in the past');
         return;
       }
       const startsAt = fromZonedTime(`${formData.session_date}T${formData.start_time}`, 'Australia/Sydney');
-      if (deadline && new Date(deadline) > startsAt) {
+      if (deadline > startsAt) {
         setDeadlineError('RSVP deadline cannot be after the session starts');
         return;
       }
@@ -133,7 +136,9 @@ export default function AdminSessions() {
           ? new Date(formData.session_date).getDay()
           : undefined,
         occurrences: formData.is_recurring ? formData.occurrences : undefined,
-        rsvp_deadline: computeRsvpDeadline(),
+        rsvp_deadline: deadline
+          ? formatInTimeZone(deadline, 'Australia/Sydney', "yyyy-MM-dd'T'HH:mm:ssXXX")
+          : undefined,
       };
       await api.createSession(input);
       setShowForm(false);
@@ -163,11 +168,15 @@ export default function AdminSessions() {
   const saveDeadline = async (event: React.FormEvent, session: Session) => {
     event.preventDefault();
     if (isSavingDeadline) return;
-    const deadline = fromZonedTime(editedDeadline, 'Australia/Sydney');
+    const deadline = parseSydneyDateTime(editedDeadline);
+    if (!deadline) {
+      setEditDeadlineError('Choose a valid Sydney date and time. This clock time does not exist.');
+      return;
+    }
     const start = session.starts_at
       ? new Date(session.starts_at)
       : fromZonedTime(`${session.session_date.slice(0, 10)}T${session.start_time}`, 'Australia/Sydney');
-    if (Number.isNaN(deadline.getTime()) || deadline < new Date() || deadline > start) {
+    if (deadline < new Date() || deadline > start) {
       setEditDeadlineError('Choose a future deadline at or before the session starts.');
       return;
     }

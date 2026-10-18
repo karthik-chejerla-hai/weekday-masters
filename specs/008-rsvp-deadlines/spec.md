@@ -32,3 +32,8 @@ Implementation rules:
 - Default changes also clear recurring custom rules so later generated sessions use the new default.
 
 - Session cards show both the date and time after “RSVP by”. They use Sydney time and the club time display setting.
+
+- A settings save omits the deadline default unless the admin changes that control. The form uses the server's saved default after a save.
+- A recurring session edit must not put the stored series deadline after the new start. The server rejects such edits without saving partial changes.
+- Recurring generation rejects stored rules that would close RSVPs after the start. Refresh reports invalid series and continues valid series.
+- Deadline forms reject nonexistent Sydney clock times during the daylight saving jump. They retain the selected input for correction.
