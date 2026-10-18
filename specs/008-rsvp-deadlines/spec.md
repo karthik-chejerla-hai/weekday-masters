@@ -30,3 +30,5 @@ Implementation rules:
 - New default recurring deadlines use elapsed hours. Custom recurring deadlines keep their day and clock offset.
 - Editing one session does not change the original recurring rule.
 - Default changes also clear recurring custom rules so later generated sessions use the new default.
+
+- Session cards show both the date and time after “RSVP by”. They use Sydney time and the club time display setting.

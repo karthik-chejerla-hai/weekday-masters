@@ -49,3 +49,20 @@ test('admin changes one session deadline in Sydney time and can retry a failed s
   await expect(page.getByText('RSVP closes: 14 Oct 2026 at 18:00 (Sydney)')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
+
+for (const [timeFormat, expected] of [['12h', '6:00 PM'], ['24h', '18:00']] as const) {
+  test(`session cards show the RSVP deadline time in ${timeFormat} format`, async ({ page }) => {
+    await page.route('**/api/club', route => json(route, { ...club, time_format: timeFormat }));
+    await page.route(/\/api\/sessions(?:\?.*)?$/, route => json(route, [{ ...session,
+      title: 'Tuesday badminton', session_date: '2026-10-13', start_time: '20:00', end_time: '22:00',
+      starts_at: '2026-10-13T09:00:00Z', ends_at: '2026-10-13T11:00:00Z',
+      rsvp_deadline: '2026-10-11T07:00:00Z',
+    }]));
+    await page.goto('/sessions');
+    await expect(page.getByText(`RSVP by Sun, 11 Oct at ${expected}`, { exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    if (process.env.RSVP_SCREENSHOTS_DIR && timeFormat === '12h') {
+      await page.screenshot({ path: `${process.env.RSVP_SCREENSHOTS_DIR}/card-time-${test.info().project.name}.png`, fullPage: true });
+    }
+  });
+}
