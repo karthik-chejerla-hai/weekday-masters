@@ -305,3 +305,76 @@ func TestMovingCustomParentPreservesItsRecurringCalendarOffset(t *testing.T) {
 		}
 	}
 }
+
+func TestRecurringStartEditRejectsAnInvalidStoredDeadlineRule(t *testing.T) {
+	_, ss, _ := newTestServices(t)
+	admin := newUser(t, "admin")
+	date := utils.NowInSydney().AddDate(0, 0, 14)
+	original := time.Date(date.Year(), date.Month(), date.Day(), 18, 0, 0, 0, utils.SydneyLocation)
+	day, occurrences := int(date.Weekday()), 1
+	parent, err := ss.CreateSession(CreateSessionInput{Title: "Series rule validation", SessionDate: date, StartTime: "20:00", EndTime: "22:00", Courts: 1, IsRecurring: true, RecurringDayOfWeek: &day, Occurrences: &occurrences, CreatedBy: admin.ID, RSVPDeadline: &original})
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := "17:00"
+	replacement := original.Add(-2 * time.Hour)
+	if _, err := ss.UpdateSession(parent.ID, UpdateSessionInput{StartTime: &start, RSVPDeadline: &replacement}); err == nil {
+		t.Fatal("expected the start change to reject a recurring deadline after the new start")
+	}
+	saved, err := ss.GetSessionByID(parent.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.StartTime != "20:00" || !saved.RSVPDeadline.Equal(original) {
+		t.Fatal("rejected edit changed the parent")
+	}
+	if err := ss.RefreshRecurringSessions(); err != nil {
+		t.Fatal(err)
+	}
+	var children []models.Session
+	if err := database.DB.Where("recurring_parent_id = ?", parent.ID).Find(&children).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(children) != 3 {
+		t.Fatalf("got %d children", len(children))
+	}
+	for _, child := range children {
+		if child.RSVPDeadline.After(*child.StartsAt) {
+			t.Fatal("child deadline is after start")
+		}
+	}
+}
+
+func TestRefreshRejectsInvalidLegacyRulesWithoutBlockingValidSeries(t *testing.T) {
+	_, ss, _ := newTestServices(t)
+	admin := newUser(t, "admin")
+	date := utils.NowInSydney().AddDate(0, 0, 14)
+	rule := time.Date(date.Year(), date.Month(), date.Day(), 18, 0, 0, 0, utils.SydneyLocation)
+	day := int(date.Weekday())
+	parent := models.Session{Title: "Invalid legacy rule", SessionDate: date, StartTime: "17:00", EndTime: "20:00", Courts: 1, IsRecurring: true, RecurringDayOfWeek: &day, CreatedBy: admin.ID, Status: models.SessionStatusOpen, RSVPDeadline: rule, RecurringRSVPDeadline: &rule}
+	if err := database.DB.Create(&parent).Error; err != nil {
+		t.Fatal(err)
+	}
+	occurrences := 1
+	valid, err := ss.CreateSession(CreateSessionInput{Title: "Valid series", SessionDate: date, StartTime: "20:00", EndTime: "22:00", Courts: 1, IsRecurring: true, RecurringDayOfWeek: &day, Occurrences: &occurrences, CreatedBy: admin.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ss.RefreshRecurringSessions(); err == nil {
+		t.Fatal("expected invalid legacy series to be rejected")
+	}
+	var count int64
+	if err := database.DB.Model(&models.Session{}).Where("recurring_parent_id = ?", parent.ID).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatal("refresh created children with invalid deadlines")
+	}
+	if err := database.DB.Model(&models.Session{}).Where("recurring_parent_id = ?", valid.ID).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 3 {
+		t.Fatalf("invalid series blocked a valid series: got %d children", count)
+	}
+
+}
