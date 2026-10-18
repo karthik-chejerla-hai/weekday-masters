@@ -29,17 +29,23 @@ type LegacyPushCleanupResult struct {
 
 // Legacy token possession permits revoke-only cleanup during the first account
 // switch after rollout. Same-owner rows are preserved; adopted installations
-// cannot be modified through this compatibility cleanup endpoint.
+// cannot be modified through this compatibility cleanup endpoint. An adopted
+// address still requires browser deletion when its local installation proof is
+// lost, including when the caller is its owner.
 func (s *NotificationService) RevokeForeignLegacyToken(actorID uuid.UUID, token string) (*LegacyPushCleanupResult, error) {
 	result := &LegacyPushCleanupResult{}
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
 		var row models.UserPushToken
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("token = ? AND installation_id IS NULL", token).First(&row).Error
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("token = ?", token).First(&row).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil
 		}
 		if err != nil {
 			return err
+		}
+		if row.InstallationID != nil {
+			result.CleanupRequired = true
+			return nil
 		}
 		if row.UserID == actorID && row.RevokedAt == nil {
 			return nil

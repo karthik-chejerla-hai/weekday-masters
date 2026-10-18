@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/weekday-masters/backend/internal/database"
 	"github.com/weekday-masters/backend/internal/models"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -239,20 +240,32 @@ func TestForeignLegacyCleanupPreservesSameOwnerAndAdoptedRows(t *testing.T) {
 	if stored.Generation != 2 {
 		t.Fatal("duplicate legacy cleanup advanced generation")
 	}
-	adopted, err := ns.EnrollPushDevice(owner.ID, uuid.New(), "adopted-address", deviceSecret, "", 0)
+	legacy := models.UserPushToken{UserID: owner.ID, Token: "adopted-address"}
+	if err := database.DB.Create(&legacy).Error; err != nil {
+		t.Fatal(err)
+	}
+	adopted, err := ns.AdoptPushDevice(owner.ID, uuid.New(), legacy.Token, deviceSecret)
 	if err != nil {
 		t.Fatal(err)
 	}
-	untouched, err := ns.RevokeForeignLegacyToken(other.ID, "adopted-address")
-	if err != nil || untouched.CleanupRequired {
-		t.Fatal(untouched, err)
-	}
-	var healthy models.UserPushToken
-	if err := database.DB.First(&healthy, "id = ?", adopted.ID).Error; err != nil {
+	var before models.UserPushToken
+	if err := database.DB.First(&before, "id = ?", adopted.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if healthy.RevokedAt != nil {
-		t.Fatal("legacy endpoint revoked v2 installation")
+	for _, actor := range []models.User{owner, other} {
+		for attempt := 0; attempt < 2; attempt++ {
+			untouched, err := ns.RevokeForeignLegacyToken(actor.ID, "adopted-address")
+			if err != nil || !untouched.CleanupRequired {
+				t.Fatal(untouched, err)
+			}
+			var after models.UserPushToken
+			if err := database.DB.First(&after, "id = ?", adopted.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(before, after) {
+				t.Fatal("legacy endpoint changed adopted enrollment", before, after)
+			}
+		}
 	}
 }
 
