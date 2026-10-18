@@ -85,6 +85,8 @@ The pending durable-notification PRs replace the in-process scheduler with a pri
 
 ## Setup configuration
 
+Set `DEV_ADMIN_EMAIL` in the `dev` GitHub environment to the verified Google email address of the dev owner. The current dev owner is `chejerlakarthik@gmail.com`. This setting is separate from the production owner. A new verified account with this address receives admin access on its first sign-in. An account that already has pending membership needs approval and an admin role grant.
+
 The `dev` GitHub environment uses `DEV_*` variables for its WIF provider, Auth0 settings and public Firebase settings. Missing settings stop deployment. It never uses production Auth0 or Firebase values as a fallback. Create a separate empty Neon project named `Rally Dev` in the Neon console. Do not create a branch of production. Add its project ID as `DEV_NEON_PROJECT_ID` in GitHub's `dev` environment. Store a key restricted to that project as `DEV_NEON_API_KEY` in the same environment. The default database and role are `neondb` and `neondb_owner`. Set `DEV_NEON_DB_NAME` and `DEV_NEON_DB_ROLE` if they differ.
 
 Run **Set up dev database** once before the first dev release. It reads only the separate dev project and saves its URI in the dev Secret Manager. Normal releases do not receive a Neon administration key. The production project ID is explicitly forbidden. A changed saved project ID requires review before setup can continue.
