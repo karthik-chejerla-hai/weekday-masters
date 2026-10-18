@@ -9,6 +9,7 @@ import type { Club, Session, RSVPSummary, SelectableRSVPStatus, RSVP } from '../
 import { formatSessionTimeRange, formatSessionVenue } from '../utils/session-display';
 import RSVPButton from '../components/rsvp/RSVPButton';
 import PlayerList from '../components/rsvp/PlayerList';
+import AdminRSVPForm from '../components/rsvp/AdminRSVPForm';
 import Badge from '../components/ui/Badge';
 
 export default function SessionDetail() {
@@ -77,7 +78,7 @@ export default function SessionDetail() {
   const responseLabel = myRsvp ? {
     in: 'Confirmed', maybe: 'Tentative', out: 'Not attending', waitlisted: 'Waitlisted',
   }[myRsvp.status] : 'Not responded';
-  const canChangeRsvp = !isDeadlinePassed && !isCancelled;
+  const canChangeRsvp = !isDeadlinePassed && session.status === 'open';
   const canOnlyChangeToIn = isDeadlinePassed && myRsvp?.status === 'in';
   const isWaitlisted = myRsvp?.status === 'waitlisted';
   const confirmedCount = summary?.total_in ?? 0;
@@ -112,7 +113,7 @@ export default function SessionDetail() {
           <h1 className="text-2xl font-bold text-slate-900">{session.title}</h1>
           {isCancelled ? (
             <Badge variant="danger">Cancelled</Badge>
-          ) : isDeadlinePassed ? (
+          ) : isDeadlinePassed || session.status === 'closed' ? (
             <Badge variant="warning">RSVP Closed</Badge>
           ) : (
             <Badge variant="success">Open for RSVP</Badge>
@@ -176,7 +177,7 @@ export default function SessionDetail() {
           </p>
         )}
 
-        {!isDeadlinePassed && !isCancelled && (
+        {canChangeRsvp && (
           <div className="mt-4 p-3 bg-amber-50 rounded-lg">
             <p className="text-sm text-amber-800">
               <span className="font-medium">RSVP Deadline:</span>{' '}
@@ -220,6 +221,11 @@ export default function SessionDetail() {
             </>
           )}
         </div>
+      )}
+
+      {user?.role === 'admin' && session.status === 'open' && (
+        <AdminRSVPForm key={session.id} sessionId={session.id} rsvps={session.rsvps || []}
+          deadlinePassed={isDeadlinePassed} isFull={isFull} onSaved={loadSession} />
       )}
 
       <Link

@@ -8,7 +8,7 @@ import { api } from '../services/api';
 import type { RSVP, RSVPSummary, Session } from '../types';
 
 vi.mock('../context/useAuth', () => ({ useAuth: vi.fn() }));
-vi.mock('../services/api', () => ({ api: { getSession: vi.fn(), createRSVP: vi.fn(), getClub: vi.fn() } }));
+vi.mock('../services/api', () => ({ api: { getSession: vi.fn(), createRSVP: vi.fn(), getClub: vi.fn(), listMembers: vi.fn(), adminAddRSVP: vi.fn() } }));
 
 const ME = 'user-me';
 
@@ -196,4 +196,74 @@ it.each(['in', 'maybe', 'out', 'waitlisted'] as const)('identifies the current %
     in: 'Confirmed', maybe: 'Tentative', out: 'Not attending', waitlisted: 'Waitlisted',
   }[status]);
   expect(screen.getByRole('button', { pressed: true })).toBeInTheDocument();
+});
+
+
+describe('admin player RSVPs', () => {
+  beforeEach(() => {
+    vi.mocked(useAuth).mockReturnValue({ user: { id: ME, role: 'admin' } } as unknown as ReturnType<typeof useAuth>);
+    vi.mocked(api.listMembers).mockResolvedValue([
+      { id: 'player-1', name: 'Alice Smith', nickname: 'Ace', membership_status: 'approved' },
+      { id: 'pending-1', name: 'Pending Person', membership_status: 'pending' },
+    ] as never);
+    vi.mocked(api.adminAddRSVP).mockResolvedValue({} as never);
+  });
+
+  it.each([false, true])('saves a player RSVP with deadline passed = %s and refreshes the roster', async deadlinePassed => {
+    const session = makeSession({ rsvp_deadline: deadlinePassed ? past(1) : future(1) });
+    loads(session);
+    renderPage();
+    await userEvent.selectOptions(await screen.findByLabelText('Player'), 'player-1');
+    expect(screen.queryByRole('option', { name: 'Pending' })).not.toBeInTheDocument();
+    loads({ ...session, rsvps: [makeRSVP({ user_id: 'player-1' })] }, makeSummary({ total_in: 1, spots_left: 9 }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save player RSVP' }));
+    expect(await screen.findByText("Ace's RSVP saved as In.")).toBeInTheDocument();
+    expect(api.adminAddRSVP).toHaveBeenCalledWith('session-1', 'player-1', 'in');
+    expect(api.getSession).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('Current response: In')).toBeInTheDocument();
+    expect(api.createRSVP).not.toHaveBeenCalled();
+    if (deadlinePassed) expect(screen.getByText(/deadline stays unchanged/)).toBeInTheDocument();
+  });
+
+  it('changes an existing response and explains the capacity override', async () => {
+    loads(makeSession({ rsvps: [makeRSVP({ user_id: 'player-1', status: 'maybe' })] }), makeSummary({ spots_left: 0, total_in: 10 }));
+    renderPage();
+    await userEvent.selectOptions(await screen.findByLabelText('Player'), 'player-1');
+    expect(screen.getByLabelText('Response')).toHaveValue('maybe');
+    await userEvent.selectOptions(screen.getByLabelText('Response'), 'in');
+    expect(screen.getByText(/confirms the player beyond capacity/)).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText('Response'), 'out');
+    await userEvent.click(screen.getByRole('button', { name: 'Save player RSVP' }));
+    expect(await screen.findByText("Ace's RSVP saved as Out.")).toBeInTheDocument();
+    expect(api.adminAddRSVP).toHaveBeenCalledWith('session-1', 'player-1', 'out');
+  });
+
+  it('shows a failure and allows retry without changing the roster', async () => {
+    loads(makeSession());
+    vi.mocked(api.adminAddRSVP).mockRejectedValueOnce(new Error('offline'));
+    renderPage();
+    await userEvent.selectOptions(await screen.findByLabelText('Player'), 'player-1');
+    await userEvent.click(screen.getByRole('button', { name: 'Save player RSVP' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not save this RSVP');
+    expect(api.getSession).toHaveBeenCalledTimes(1);
+    await userEvent.click(screen.getByRole('button', { name: 'Save player RSVP' }));
+    expect(await screen.findByText("Ace's RSVP saved as In.")).toBeInTheDocument();
+  });
+
+  it.each(['closed', 'cancelled'] as const)('hides admin controls on a %s session', async status => {
+    loads(makeSession({ status }));
+    renderPage();
+    await screen.findByText('Sunday Social');
+    expect(screen.queryByLabelText('Player')).not.toBeInTheDocument();
+    expect(api.listMembers).not.toHaveBeenCalled();
+  });
+
+  it('keeps admin controls hidden from ordinary members', async () => {
+    vi.mocked(useAuth).mockReturnValue({ user: { id: ME, role: 'player' } } as unknown as ReturnType<typeof useAuth>);
+    loads(makeSession());
+    renderPage();
+    await screen.findByText('Sunday Social');
+    expect(screen.queryByLabelText('Player')).not.toBeInTheDocument();
+    expect(api.listMembers).not.toHaveBeenCalled();
+  });
 });
