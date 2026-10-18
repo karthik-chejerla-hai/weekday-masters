@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Auth0Provider } from '@auth0/auth0-react';
 import App from './App';
+import { EnvironmentBanner } from './components/ui/EnvironmentBanner';
 import { handleAuthRedirect } from './context/auth-redirect';
 import { installBrowserTelemetry } from './services/browser-telemetry';
 import './index.css';
@@ -14,6 +15,7 @@ const auth0Audience = import.meta.env.VITE_AUTH0_AUDIENCE;
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
+    <EnvironmentBanner />
     <Auth0Provider
       domain={auth0Domain}
       clientId={auth0ClientId}

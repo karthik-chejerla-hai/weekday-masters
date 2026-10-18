@@ -1,0 +1,38 @@
+name: Set up dev database
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/development-environment]
+    paths:
+      - scripts/release/neon_dev.py
+      - .github/workflows/setup-dev-database.yml
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: rally-dev-database-setup
+  cancel-in-progress: false
+
+jobs:
+  database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: dev
+    steps:
+      - uses: actions/checkout@v5
+      - uses: google-github-actions/auth@v3
+        with:
+          project_id: rally-club-app-dev
+          workload_identity_provider: ${{ vars.DEV_WIF_PROVIDER }}
+          service_account: rally-dev-deployer@rally-club-app-dev.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Connect the separate dev database
+        env:
+          DEV_NEON_API_KEY: ${{ secrets.DEV_NEON_API_KEY }}
+          DEV_NEON_PROJECT_ID: ${{ vars.DEV_NEON_PROJECT_ID }}
+          DEV_NEON_DB_NAME: ${{ vars.DEV_NEON_DB_NAME || 'neondb' }}
+          DEV_NEON_DB_ROLE: ${{ vars.DEV_NEON_DB_ROLE || 'neondb_owner' }}
+        run: python3 scripts/release/neon_dev.py

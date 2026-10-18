@@ -148,7 +148,7 @@ func run() (runErr error) {
 
 	// Health check
 	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
+		c.JSON(200, gin.H{"status": "ok", "sha": os.Getenv("RALLY_RELEASE_SHA"), "digest": os.Getenv("RALLY_IMAGE_DIGEST")})
 	})
 
 	// API routes

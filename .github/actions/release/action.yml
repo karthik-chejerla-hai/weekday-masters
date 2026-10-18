@@ -1,0 +1,61 @@
+name: Deploy Rally release
+description: Deploy one tested commit using the caller environment credentials
+inputs:
+  database_url:
+    description: Production migration connection, never exposed to frontend builds
+    required: false
+  groq_api_key:
+    description: Production assistant credential
+    required: false
+  sendgrid_api_key:
+    description: Production invitation credential
+    required: false
+  sendgrid_from_email:
+    description: Production invitation sender
+    required: false
+runs:
+  using: composite
+  steps:
+    - uses: google-github-actions/auth@v3
+      id: auth
+      with:
+        project_id: ${{ env.GCP_PROJECT_ID }}
+        workload_identity_provider: ${{ env.WIF_PROVIDER }}
+        service_account: ${{ env.DEPLOYER_SA }}
+        token_format: access_token
+    - uses: google-github-actions/setup-gcloud@v3
+    - uses: docker/login-action@v4
+      with:
+        registry: australia-southeast1-docker.pkg.dev
+        username: oauth2accesstoken
+        password: ${{ steps.auth.outputs.access_token }}
+    - uses: actions/setup-go@v6
+      with:
+        go-version: '1.22'
+        cache-dependency-path: backend/go.sum
+    - uses: actions/setup-node@v5
+      with:
+        node-version: '22'
+        cache: npm
+        cache-dependency-path: frontend/package-lock.json
+    - name: Install Firebase CLI
+      shell: bash
+      run: npm install --global firebase-tools@15.1.0
+    - name: Deploy release
+      shell: bash
+      env:
+        DATABASE_URL: ${{ inputs.database_url }}
+        GROQ_API_KEY: ${{ inputs.groq_api_key }}
+        SENDGRID_API_KEY: ${{ inputs.sendgrid_api_key }}
+        SENDGRID_FROM_EMAIL: ${{ inputs.sendgrid_from_email }}
+      run: bash .github/scripts/release.sh
+    - name: Use production frontend identity
+      if: env.RELEASE_ENV == 'prod'
+      uses: google-github-actions/auth@v3
+      with:
+        project_id: ${{ env.GCP_PROJECT_ID }}
+        workload_identity_provider: ${{ env.WIF_PROVIDER }}
+        service_account: ${{ env.FRONTEND_SA }}
+    - name: Deploy frontend
+      shell: bash
+      run: bash .github/scripts/release-frontend.sh
