@@ -44,6 +44,8 @@ Only main can release to prod. If you test a PR before merge, its squash merge c
 
 After this setup PR is merged, open **Actions > Dev then prod > Run workflow**. Keep the workflow branch set to **main**. Set **source_ref** to the branch name or commit you want to test. The workflow resolves the source to an immutable commit and runs the checks before deployment.
 
+The old automatic PR preview deployment is retired. It used the production Cloud Run service and copies of production data. PRs now run checks and provide instructions for dev testing.
+
 Dev is shared. A deployment replaces its previous version. Do not approve an old run after someone deploys a different dev version. The production check rejects approval if dev no longer matches the release artifact. Run the intended source through dev again and repeat the tests.
 
 During setup, pushes to `feat/development-environment` can deploy dev. GitHub restricts dev deployment workflows to this branch and main. The setup branch cannot release to prod. Remove this temporary trigger and its GitHub environment branch policy after setup merges.
@@ -77,12 +79,22 @@ Dev cannot validate SendGrid invitations until a separate dev sender is configur
 
 The current main version runs reminder checks inside the API. Dev keeps one API instance running with CPU available so those checks can run without browser requests. This has a continuing Cloud Run cost. Dev uses the existing Rally billing account. Neon uses a separate database project with a small endpoint that can suspend when idle.
 
-The pending durable-notification PRs replace the in-process scheduler with a private worker. The release script must deploy that worker before it enables queued delivery. Do not resolve a deployment workflow conflict by restoring automatic production deployment.
+The pending durable-notification PRs replace the in-process scheduler with a private worker. When the worker source is present, the release script deploys the private worker before it enables queued delivery. Production then also requires its scheduler and worker runtime identities in the repository variables. Do not resolve a deployment workflow conflict by restoring automatic production deployment.
 
 ## Setup configuration
 
 The `dev` GitHub environment uses `DEV_*` variables for its WIF provider, Auth0 settings and public Firebase settings. Missing settings stop deployment. It never uses production Auth0 or Firebase values as a fallback. `NEON_API_KEY` creates a fresh project in the same Neon organization and region, with no production branch or copied rows. Its connection URI stays in the dev Secret Manager.
 
+Until this setup PR merges, the existing `production-api` environment also requires approval. This prevents automatic production releases through the old workflow.
+
 `prod` requires review by `karthik-chejerla-hai`. Administrator bypass is disabled. Only the main workflow branch can enter prod. The maintainer can approve a run they started, which permits a single-owner release process.
 
 Repository administrators can still change workflows, credentials and environment protection. The approval gate protects this release workflow. Review changes to `.github/` with the same care as application changes.
+
+## Dev service access
+
+The dev deployment account has these project roles: Cloud Run Admin, Artifact Registry Writer, Firebase Hosting Admin, Firebase Viewer, Service Usage Consumer, Cloud Scheduler Admin and Secret Manager Admin. It can act as the dev runtime and dev scheduler service accounts. These grants apply only to `rally-club-app-dev`.
+
+The dev runtime can send Firebase messages and read dev secrets. GitHub uses short-lived Workload Identity Federation. The provider accepts only this repository's `dev` environment subject. GitHub branch rules permit main and the temporary setup branch. No service-account key was created.
+
+The dev Auth0 application is `rally-club-app-dev`. Its API audience is `https://rally-club-api-dev`. Callback, logout and web-origin lists contain only `https://rally-club-app-dev.web.app`. User-delegated API access is granted only to the dev SPA. Production's sign-in application and API are unchanged.
