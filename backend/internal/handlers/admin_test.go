@@ -502,3 +502,34 @@ func TestCancelSession_OptionalReasonAndMalformedBody(t *testing.T) {
 		t.Fatalf("unexpected notices: %+v", notices)
 	}
 }
+
+func TestAddPlayerRSVP_AfterDeadlinePreservesClosureAndMarksLate(t *testing.T) {
+	h := newHarness(t)
+	admin, player := makeAdmin(t), makePlayer(t)
+	session := makeSession(t, admin.ID, 1)
+	deadline := utils.NowInSydney().Add(-time.Hour).Truncate(time.Microsecond)
+	database.DB.Model(&session).Update("rsvp_deadline", deadline)
+	var rsvp models.RSVP
+	h.as(admin).post("/api/admin/sessions/"+session.ID.String()+"/rsvp/"+player.ID.String(), map[string]any{"status": "in"}).expect(http.StatusOK).decode(&rsvp)
+	if !rsvp.AddedByAdmin || !rsvp.IsLateRSVP || rsvp.Status != models.RSVPStatusIn {
+		t.Fatalf("expected late admin RSVP, got %+v", rsvp)
+	}
+	database.DB.First(&session, "id = ?", session.ID)
+	if !session.RSVPDeadline.Equal(deadline) {
+		t.Fatal("admin override changed the deadline")
+	}
+	h.as(player).post("/api/sessions/"+session.ID.String()+"/rsvp", map[string]any{"status": "out"}).expect(http.StatusBadRequest)
+}
+
+func TestAddPlayerRSVP_RejectsUnapprovedMembers(t *testing.T) {
+	h := newHarness(t)
+	admin := makeAdmin(t)
+	session := makeSession(t, admin.ID, 1)
+	player := makePending(t)
+	h.as(admin).post("/api/admin/sessions/"+session.ID.String()+"/rsvp/"+player.ID.String(), map[string]any{"status": "in"}).expect(http.StatusBadRequest)
+	var count int64
+	database.DB.Model(&models.RSVP{}).Where("session_id = ?", session.ID).Count(&count)
+	if count != 0 {
+		t.Fatal("created an RSVP for an unapproved member")
+	}
+}
