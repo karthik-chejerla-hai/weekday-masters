@@ -31,6 +31,9 @@ func main() {
 func run() (runErr error) {
 	// Load configuration
 	cfg := config.Load()
+	if err := cfg.ValidateNotificationDeliveryReadiness(); err != nil {
+		return err
+	}
 	obs, err := telemetry.Start(context.Background())
 	if err != nil {
 		return fmt.Errorf("initialize telemetry: %w", err)
@@ -91,7 +94,7 @@ func run() (runErr error) {
 
 	// Initialize scheduler for notification cron jobs
 	var scheduler *services.SchedulerService
-	if notificationService.IsEnabled() {
+	if !cfg.NotificationsDisabled {
 		scheduler = services.NewSchedulerService(services.SchedulerConfig{
 			NotificationService:    notificationService,
 			SessionReminderHours24: cfg.SessionReminderHours24,

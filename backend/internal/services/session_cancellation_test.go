@@ -278,6 +278,9 @@ func TestCancellationOutboundSettings(t *testing.T) {
 			if _, err := ss.CancelSession(session.ID, "Changed", admin.ID); err != nil {
 				t.Fatal(err)
 			}
+			if _, err := ns.ProcessNotificationWork(context.Background(), 10); err != nil {
+				t.Fatal(err)
+			}
 			want := int32(0)
 			if mode == "enabled" || mode == "opted_out" || mode == "provider_failure" {
 				want = 1
@@ -376,6 +379,9 @@ func TestConcurrentCancellationsDeliverWithoutCreatingObsoletePreferences(t *tes
 		}(session)
 	}
 	wg.Wait()
+	if _, err := ns.ProcessNotificationWork(context.Background(), 10); err != nil {
+		t.Fatal(err)
+	}
 
 	if requests.Load() != 2 {
 		t.Fatalf("provider calls = %d, want 2", requests.Load())

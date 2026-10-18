@@ -239,6 +239,8 @@ export interface MyBalance {
 }
 
 export interface BalanceNudgeResult {
+  delivery_state?: 'pending' | 'suppressed';
+  suppression_reason?: string;
   notification_id: string;
   balance_cents: number;
   push_sent: boolean;
