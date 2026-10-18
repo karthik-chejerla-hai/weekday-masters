@@ -37,3 +37,5 @@ Implementation rules:
 - A recurring session edit must not put the stored series deadline after the new start. The server rejects such edits without saving partial changes.
 - Recurring generation rejects stored rules that would close RSVPs after the start. Refresh reports invalid series and continues valid series.
 - Deadline forms reject nonexistent Sydney clock times during the daylight saving jump. They retain the selected input for correction.
+
+- Every generated custom recurring deadline must retain its selected Sydney clock time. A daylight saving gap rejects the series creation without saving a parent or partial children. Refresh rejects that series without saving partial children and continues independent valid series.

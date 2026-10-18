@@ -115,11 +115,11 @@ func validateDeadline(deadline, startsAt time.Time) error {
 
 // Unlike an explicit user edit, a stored series rule may refer to the past.
 // It must still close RSVPs no later than the start of each generated session.
-var errRecurringDeadline = errors.New("Session start cannot be before the recurring RSVP deadline. Change the club default to reset the recurring rule.")
+var errRecurringDeadline = errors.New("recurring RSVP deadline rule is invalid")
 
 func validateRecurringDeadline(deadline, startsAt time.Time) error {
 	if deadline.After(startsAt) {
-		return errRecurringDeadline
+		return fmt.Errorf("%w: session start cannot be before the recurring RSVP deadline. Change the club default to reset the recurring rule", errRecurringDeadline)
 	}
 	return nil
 }
@@ -164,20 +164,23 @@ func (s *SessionService) generateRecurringSessions(tx *gorm.DB, parent *models.S
 			// Generate title for this occurrence in format "Day - DD MMM YYYY"
 			childTitle := nextDate.Format("Monday - 02 Jan 2006")
 
-			// Compute child deadline using the same relative offset as the parent
-			childDateSyd := nextDate.In(utils.SydneyLocation)
-			childDeadline := time.Date(
-				childDateSyd.Year(), childDateSyd.Month(), childDateSyd.Day()-daysBefore,
-				deadlineHour, deadlineMin, deadlineSec, 0,
-				utils.SydneyLocation,
-			)
-
 			startsAt, _, err := utils.ResolveSessionTimes(nextDate, parent.StartTime, parent.EndTime)
 			if err != nil {
 				return err
 			}
-			if parent.RecurringRSVPDeadline == nil {
-				childDeadline = utils.CalculateRSVPDeadline(startsAt, defaultHours)
+			childDeadline := utils.CalculateRSVPDeadline(startsAt, defaultHours)
+			if parent.RecurringRSVPDeadline != nil {
+				// UTC is only a calendar container here, not the deadline instant.
+				// Normalize the day offset before resolving the intended Sydney clock.
+				childDateSyd := nextDate.In(utils.SydneyLocation)
+				wallClock := time.Date(childDateSyd.Year(), childDateSyd.Month(), childDateSyd.Day()-daysBefore,
+					deadlineHour, deadlineMin, deadlineSec, 0, time.UTC)
+				childDeadline = time.Date(wallClock.Year(), wallClock.Month(), wallClock.Day(),
+					deadlineHour, deadlineMin, deadlineSec, 0, utils.SydneyLocation)
+				const clockFormat = "2006-01-02T15:04:05"
+				if childDeadline.Format(clockFormat) != wallClock.Format(clockFormat) {
+					return fmt.Errorf("%w: %s does not exist in Australia/Sydney. Choose another recurring deadline time", errRecurringDeadline, wallClock.Format(clockFormat))
+				}
 			}
 			if err := validateRecurringDeadline(childDeadline, startsAt); err != nil {
 				return err
