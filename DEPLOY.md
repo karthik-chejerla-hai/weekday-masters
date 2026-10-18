@@ -1,3 +1,5 @@
+> The normal release process is documented in [DEV.md](DEV.md). Changes deploy to dev first. Production requires approval in the same GitHub Actions run. The commands below are manual maintenance procedures.
+
 # Deployment Guide
 
 Deploy Rally to Google Cloud (free tier).

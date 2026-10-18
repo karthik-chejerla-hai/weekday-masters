@@ -4,10 +4,22 @@ import { configDefaults } from 'vitest/config'
 import { firebaseWorker } from './firebase-worker.config'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import fs from 'node:fs'
 
 export default defineConfig({
   plugins: [
     react(),
+    {
+      name: 'dev-app-name',
+      closeBundle() {
+        if (process.env.VITE_APP_ENVIRONMENT !== 'dev') return;
+        const path = 'dist/manifest.json';
+        const manifest = JSON.parse(fs.readFileSync(path, 'utf8'));
+        manifest.name = 'Rally Dev';
+        manifest.short_name = 'Rally Dev';
+        fs.writeFileSync(path, JSON.stringify(manifest));
+      },
+    },
     firebaseWorker(),
     VitePWA({
       registerType: 'autoUpdate',

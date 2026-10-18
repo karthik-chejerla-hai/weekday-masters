@@ -70,3 +70,6 @@ infrastructure/terraform.tfvars
 
 # Keep implementation plans outside the repository.
 /specs/**/plan.md
+
+# Python release helper caches
+__pycache__/
