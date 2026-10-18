@@ -161,8 +161,8 @@ handler chain at registration time, so using the wrong group silently skips the 
 **Service layer pattern:** Handlers → Services → GORM/DB. Services contain business logic; handlers do request parsing and response formatting. The global `database.DB` is used directly by services (no DI).
 
 **Key business rules in services:**
-- `RSVPService`: enforces 3-day deadline, prevents IN→OUT after deadline (unless admin), tracks `is_late_rsvp` and `added_by_admin` flags. Enforces session capacity inside a transaction that locks the session row (`SELECT ... FOR UPDATE`): an "in" request for a full session is stored as `waitlisted` instead, and freeing a confirmed spot auto-promotes the longest-waiting player and notifies them. Admins bypass the cap.
-- `SessionService`: calculates `max_players` from courts (1→6, 2→10, 3→16), generates recurring sessions, sets RSVP deadline at sessionDate - 3 days 23:59:59 Sydney time.
+- `RSVPService`: enforces each stored session deadline, prevents IN→OUT after deadline (unless admin), tracks `is_late_rsvp` and `added_by_admin` flags. Enforces session capacity inside a transaction that locks the session row (`SELECT ... FOR UPDATE`): an "in" request for a full session is stored as `waitlisted` instead, and freeing a confirmed spot auto-promotes the longest-waiting player and notifies them. Admins bypass the cap.
+- `SessionService`: calculates `max_players` from courts (1→6, 2→10, 3→16), generates recurring sessions, sets RSVP deadlines from the club default in elapsed hours before the resolved session start (initially 72). Admins can override one deadline. Changing the default replaces all future deadlines atomically, including custom deadlines. Past deadlines stay unchanged.
   Cancellation locks the session and atomically stores its status, optional reason, an
   announcement and notification history for every approved member. Only the first request
   sends email/push through existing preferences and notification stops. Finished or settled
