@@ -6,6 +6,7 @@ runs:
     - uses: google-github-actions/auth@v3
       id: auth
       with:
+        project_id: ${{ env.GCP_PROJECT_ID }}
         workload_identity_provider: ${{ env.WIF_PROVIDER }}
         service_account: ${{ env.DEPLOYER_SA }}
         token_format: access_token
@@ -38,6 +39,7 @@ runs:
       if: env.RELEASE_ENV == 'prod'
       uses: google-github-actions/auth@v3
       with:
+        project_id: ${{ env.GCP_PROJECT_ID }}
         workload_identity_provider: ${{ env.WIF_PROVIDER }}
         service_account: ${{ env.FRONTEND_SA }}
     - name: Deploy frontend

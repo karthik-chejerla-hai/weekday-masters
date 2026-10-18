@@ -27,3 +27,16 @@ class ReleaseIdentityTests(unittest.TestCase):
         release = dict(self.release, environment='prod')
         with self.assertRaises(ValueError):
             validate(release, release)
+
+    @patch('identity.read_live')
+    def test_backend_change_blocks_promotion_even_with_old_frontend(self, live):
+        import identity
+        import tempfile
+        import json
+        release = dict(self.release, api_url='https://dev-api.run.app/api')
+        live.side_effect = [release, {'sha': release['sha'], 'digest': 'sha256:changed'}]
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json') as file:
+            json.dump(release, file)
+            file.flush()
+            with patch('sys.argv', ['identity.py', 'verify', file.name]), self.assertRaises(ValueError):
+                identity.main()

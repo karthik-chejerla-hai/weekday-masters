@@ -22,13 +22,17 @@ def main():
     command, path = sys.argv[1:]
     if command == 'write':
         release = dict(environment=os.environ['RELEASE_ENV'], sha=os.environ['RELEASE_SHA'],
-                       image=os.environ['RELEASE_IMAGE'], digest=os.environ['RELEASE_DIGEST'])
+                       image=os.environ['RELEASE_IMAGE'], digest=os.environ['RELEASE_DIGEST'],
+                       api_url=os.environ['VITE_API_URL'])
         with open(path, 'w') as file:
             json.dump(release, file)
     elif command == 'verify':
         with open(path) as file:
             expected = json.load(file)
         validate(expected, read_live('https://rally-club-app-dev.web.app/release.json'))
+        health = read_live(expected['api_url'].removesuffix('/api') + '/health')
+        if health.get('sha') != expected['sha'] or health.get('digest') != expected['digest']:
+            raise ValueError('Dev API changed or does not identify the tested image.')
     elif command == 'live':
         with open('/tmp/release.json') as file:
             expected = json.load(file)

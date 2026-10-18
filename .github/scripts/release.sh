@@ -45,10 +45,10 @@ if [[ "$RELEASE_ENV" == prod ]]; then
 fi
 (cd backend && go run ./cmd/migrate)
 flags=(--project="$GCP_PROJECT_ID" --region="$region" --image="${image%:*}@$digest"
-  --service-account="$RUNTIME_SA" --allow-unauthenticated --min-instances=1 --max-instances=1 --no-cpu-throttling
-  --update-env-vars="GIN_MODE=release,TIMEZONE=Australia/Sydney,FRONTEND_URL=$frontend,FIREBASE_PROJECT_ID=$GCP_PROJECT_ID,AUTH0_DOMAIN=$AUTH0_DOMAIN,AUTH0_AUDIENCE=$AUTH0_AUDIENCE,ADMIN_EMAIL=$ADMIN_EMAIL,NOTIFICATIONS_DISABLED=$NOTIFICATIONS_DISABLED,NOTIFICATION_WORKER_ENABLED=$worker,INVITATION_TEST_EMAILS_ENABLED=false,SESSION_REMINDER_HOURS_24=24,SESSION_REMINDER_HOURS_12=12,DEADLINE_REMINDER_HOURS=6")
+  --service-account="$RUNTIME_SA" --allow-unauthenticated
+  --update-env-vars="RALLY_RELEASE_SHA=$RELEASE_SHA,RALLY_IMAGE_DIGEST=$digest,GIN_MODE=release,TIMEZONE=Australia/Sydney,FRONTEND_URL=$frontend,FIREBASE_PROJECT_ID=$GCP_PROJECT_ID,AUTH0_DOMAIN=$AUTH0_DOMAIN,AUTH0_AUDIENCE=$AUTH0_AUDIENCE,ADMIN_EMAIL=$ADMIN_EMAIL,NOTIFICATIONS_DISABLED=$NOTIFICATIONS_DISABLED,NOTIFICATION_WORKER_ENABLED=$worker,SESSION_REMINDER_HOURS_24=24,SESSION_REMINDER_HOURS_12=12,DEADLINE_REMINDER_HOURS=6")
 if [[ "$RELEASE_ENV" == dev ]]; then
-  flags+=(--update-secrets="DATABASE_URL=$secret:latest" --update-env-vars='OTEL_ENABLED=false,SENDGRID_API_KEY=,GROQ_API_KEY=')
+  flags+=(--min-instances=1 --max-instances=1 --no-cpu-throttling --update-env-vars=INVITATION_TEST_EMAILS_ENABLED=false --update-secrets="DATABASE_URL=$secret:latest" --update-env-vars='OTEL_ENABLED=false,SENDGRID_API_KEY=,GROQ_API_KEY=')
   # Synthetic rows only. This command cannot read production data.
   (cd backend && SEED_ALLOW_PREVIEW=true go run ./cmd/seed -env=preview)
 else
@@ -64,6 +64,7 @@ if [[ "$worker" == true ]]; then
 fi
 # Repeated update flags preserve settings not owned by this release script.
 gcloud run deploy rally-club-api "${flags[@]}" --quiet
+gcloud run services update-traffic rally-club-api --project="$GCP_PROJECT_ID" --region="$region" --to-latest --quiet
 url=$(gcloud run services describe rally-club-api --project="$GCP_PROJECT_ID" --region="$region" --format='value(status.url)')
 curl --fail --retry 8 --retry-all-errors --retry-delay 5 "$url/health"
 {
