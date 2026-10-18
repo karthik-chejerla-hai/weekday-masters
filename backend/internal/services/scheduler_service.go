@@ -85,8 +85,9 @@ func (s *SchedulerService) sendSessionRemindersForWindow(now time.Time, hoursAhe
 	// Find sessions starting within this window
 	var sessions []models.Session
 	err := database.DB.Where(
-		"session_date = ? AND status = ?",
+		"session_date >= ? AND session_date <= ? AND status = ?",
 		windowStart.Format("2006-01-02"),
+		windowEnd.Format("2006-01-02"),
 		models.SessionStatusOpen,
 	).Find(&sessions).Error
 
@@ -103,7 +104,7 @@ func (s *SchedulerService) sendSessionRemindersForWindow(now time.Time, hoursAhe
 			continue
 		}
 
-		if sessionStart.After(windowStart) && sessionStart.Before(windowEnd) {
+		if !sessionStart.Before(windowStart) && sessionStart.Before(windowEnd) {
 			s.sendSessionReminders(session, label)
 		}
 	}
@@ -128,6 +129,7 @@ func (s *SchedulerService) sendSessionReminders(session models.Session, label st
 	// Format session date for display
 	dateStr := utils.FormatDateForDisplay(session.SessionDate)
 
+	createdCount := 0
 	for _, rsvp := range rsvps {
 		title := fmt.Sprintf("Session Reminder (%s)", label)
 		body := fmt.Sprintf("Don't forget! %s is on %s at %s", session.Title, dateStr, session.StartTime)
@@ -136,12 +138,18 @@ func (s *SchedulerService) sendSessionReminders(session models.Session, label st
 			"session_id": session.ID.String(),
 		}
 
-		if err := s.notificationService.SendNotification(ctx, rsvp.UserID, models.NotificationSessionReminder, title, body, data); err != nil {
-			log.Printf("Error sending session reminder to user %s: %v", rsvp.UserID, err)
+		created, err := s.sendReminder(ctx, rsvp.UserID, session, models.NotificationSessionReminder, label, title, body, data)
+		if created {
+			createdCount++
+		}
+		if err != nil {
+			log.Printf("Error processing session reminder for user %s: %v", rsvp.UserID, err)
 		}
 	}
 
-	log.Printf("Sent %s session reminders to %d users for session %s", label, len(rsvps), session.Title)
+	if createdCount > 0 {
+		log.Printf("Created %s session reminder records for %d users for session %s", label, createdCount, session.Title)
+	}
 }
 
 // checkDeadlineReminders checks for sessions with approaching RSVP deadlines
@@ -184,7 +192,10 @@ func (s *SchedulerService) sendDeadlineReminders(ctx context.Context, session mo
 
 	// Get existing RSVPs for this session
 	var existingRSVPs []models.RSVP
-	database.DB.Where("session_id = ?", session.ID).Find(&existingRSVPs)
+	if err := database.DB.Where("session_id = ?", session.ID).Find(&existingRSVPs).Error; err != nil {
+		log.Printf("Error fetching RSVPs for deadline reminders: %v", err)
+		return
+	}
 
 	// Build map of users who have already RSVP'd
 	rsvpUserMap := make(map[uuid.UUID]bool)
@@ -196,7 +207,7 @@ func (s *SchedulerService) sendDeadlineReminders(ctx context.Context, session mo
 	deadlineStr := session.RSVPDeadline.In(utils.SydneyLocation).Format("Monday 3:04 PM")
 	dateStr := utils.FormatDateForDisplay(session.SessionDate)
 
-	notifiedCount := 0
+	createdCount := 0
 	for _, user := range users {
 		// Skip users who have already RSVP'd
 		if rsvpUserMap[user.ID] {
@@ -210,15 +221,17 @@ func (s *SchedulerService) sendDeadlineReminders(ctx context.Context, session mo
 			"session_id": session.ID.String(),
 		}
 
-		if err := s.notificationService.SendNotification(ctx, user.ID, models.NotificationRSVPDeadline, title, body, data); err != nil {
-			log.Printf("Error sending deadline reminder to user %s: %v", user.ID, err)
-		} else {
-			notifiedCount++
+		created, err := s.sendReminder(ctx, user.ID, session, models.NotificationRSVPDeadline, "deadline", title, body, data)
+		if created {
+			createdCount++
+		}
+		if err != nil {
+			log.Printf("Error processing deadline reminder for user %s: %v", user.ID, err)
 		}
 	}
 
-	if notifiedCount > 0 {
-		log.Printf("Sent RSVP deadline reminders to %d users for session %s", notifiedCount, session.Title)
+	if createdCount > 0 {
+		log.Printf("Created RSVP deadline reminder records for %d users for session %s", createdCount, session.Title)
 	}
 }
 

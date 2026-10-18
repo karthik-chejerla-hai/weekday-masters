@@ -78,6 +78,9 @@ func (t *UserPushToken) BeforeCreate(tx *gorm.DB) error {
 
 // Notification represents a notification sent to a user
 type Notification struct {
+	// Nullable so legacy and non-scheduled notifications do not share an identity.
+	ReminderKey *string `gorm:"uniqueIndex" json:"-"`
+
 	ID               uuid.UUID        `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
 	UserID           uuid.UUID        `gorm:"type:uuid;not null;index" json:"user_id"`
 	NotificationType NotificationType `gorm:"type:text;not null" json:"notification_type"`

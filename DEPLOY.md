@@ -338,3 +338,33 @@ See [OBSERVABILITY.md](OBSERVABILITY.md) for backend OTLP logs and metrics,
 Secret Manager credentials, GitHub deployment variables and Grafana verification.
 Export is disabled by default. Enabling it in production also selects
 instance-based Cloud Run billing to support background telemetry export.
+
+### Reminder scheduling limits
+
+The API checks reminders hourly. A unique `notifications.reminder_key` identifies
+one recipient, session, reminder kind and session-start/deadline instant. Only the
+process that inserts that history row attempts push delivery. The 24-hour and
+12-hour reminders remain separate. Session windows include their lower bound and
+exclude their upper bound, including windows that cross Sydney midnight.
+
+Deployment stops, club pause, current membership, push preferences and current RSVP eligibility are
+checked before the row is inserted. Stopped or ineligible checks do not reserve a
+reminder. Delivery checks the notification stops again before contacting Firebase.
+A stop that changes after insertion can therefore suppress that one attempt.
+Legacy notification rows have no reminder key and are not used as proof that a
+specific scheduled reminder was attempted.
+
+This is duplicate prevention, not a durable delivery queue. A process exit after
+history insertion but before provider submission can lose the attempt. Failed or
+uncertain submissions are not automatically retried. `push_sent` records provider
+acceptance, not browser receipt. Issue #81 tracks the durable worker and retry
+foundation.
+
+The deployment workflow adds `--no-cpu-throttling` only when `OTEL_ENABLED=true`.
+It does not set a minimum instance count or configure an external reminder
+trigger. The in-process clock can stop during scale-to-zero, restart or throttling.
+The session reminder query scans a one-hour future window and does not catch up
+missed windows. Deadline checks stop when the deadline passes. These limits still
+require an external scheduled worker and durable intent for reliable catch-up.
+Check live Cloud Run settings separately; this description covers repository
+configuration and does not confirm the current cloud settings.
