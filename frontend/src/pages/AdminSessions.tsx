@@ -19,6 +19,7 @@ export default function AdminSessions() {
   const [timeFormat, setTimeFormat] = useState<TimeFormat>('24h');
   const [isLoading, setIsLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [createError, setCreateError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -107,12 +108,18 @@ export default function AdminSessions() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setDeadlineError('');
+    setCreateError('');
 
     // Client-side deadline validation
     if (useCustomDeadline) {
       const deadline = computeRsvpDeadline();
       if (deadline && new Date(deadline) < new Date()) {
         setDeadlineError('RSVP deadline cannot be in the past');
+        return;
+      }
+      const startsAt = fromZonedTime(`${formData.session_date}T${formData.start_time}`, 'Australia/Sydney');
+      if (deadline && new Date(deadline) > startsAt) {
+        setDeadlineError('RSVP deadline cannot be after the session starts');
         return;
       }
     }
@@ -146,7 +153,8 @@ export default function AdminSessions() {
       setDeadlineTime('23:59');
       await loadSessions();
     } catch (error) {
-      console.error('Failed to create session:', error);
+      const response = error as { response?: { data?: { error?: string } } };
+      setCreateError(response.response?.data?.error || 'Failed to create the session. Try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -239,6 +247,7 @@ export default function AdminSessions() {
       {showForm && (
         <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
           <h2 className="font-semibold text-slate-900 mb-4">Create New Session</h2>
+          {createError && <p role="alert" className="text-sm text-red-700">{createError}</p>}
 
           {/* Session Type Radio Buttons */}
           <div>

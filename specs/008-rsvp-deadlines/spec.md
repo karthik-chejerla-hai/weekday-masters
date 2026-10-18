@@ -27,4 +27,5 @@ Implementation rules:
 - Default deadlines can already be past for short-notice sessions.
 - All date and time inputs refer to Sydney time, independent of the browser timezone.
 - New default recurring deadlines use elapsed hours. Custom recurring deadlines keep their day and clock offset.
+- Editing one session does not change the original recurring rule.
 - Default changes also clear recurring custom rules so later generated sessions use the new default.

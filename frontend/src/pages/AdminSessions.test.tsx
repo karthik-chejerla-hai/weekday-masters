@@ -193,6 +193,30 @@ describe('AdminSessions page', () => {
       );
     });
 
+    it('shows server errors when session creation fails', async () => {
+      vi.mocked(api.createSession).mockRejectedValueOnce({ response: { data: { error: 'Could not save this session.' } } });
+      const user = userEvent.setup();
+      renderPage();
+      await screen.findByText(/click "new session"/i);
+      const form = await openForm(user);
+      await user.type(form.querySelector('input[type="date"]')!, '2026-12-11');
+      await user.click(screen.getByRole('button', { name: /create session/i }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('Could not save this session.');
+    });
+
+    it('rejects a deadline after the session starts', async () => {
+      const user = userEvent.setup();
+      renderPage();
+      await screen.findByText(/click "new session"/i);
+      const form = await openForm(user);
+      await user.type(form.querySelector('input[type="date"]')!, '2026-12-11');
+      await user.click(deadlineToggle());
+      await user.type(form.querySelector('input[type="datetime-local"]')!, '2026-12-12T18:00');
+      await user.click(screen.getByRole('button', { name: /create session/i }));
+      expect(await screen.findByText('RSVP deadline cannot be after the session starts')).toBeInTheDocument();
+      expect(api.createSession).not.toHaveBeenCalled();
+    });
+
     it('refuses a deadline in the past without calling the API', async () => {
       const user = userEvent.setup();
       renderPage();

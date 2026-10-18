@@ -92,7 +92,9 @@ func TestClubDefaultAppliesToRefreshAfterCustomParentHasStarted(t *testing.T) {
 	date := utils.NowInSydney().AddDate(0, 0, -1)
 	day := int(date.Weekday())
 	parent := models.Session{Title: "Old custom series", SessionDate: date, StartTime: "18:00", EndTime: "20:00", Courts: 1,
-		RSVPDeadline: date.AddDate(0, 0, -2), RSVPDeadlineCustom: true, IsRecurring: true, RecurringDayOfWeek: &day, Status: models.SessionStatusOpen, CreatedBy: admin.ID}
+		RSVPDeadline: date.AddDate(0, 0, -2), IsRecurring: true, RecurringDayOfWeek: &day, Status: models.SessionStatusOpen, CreatedBy: admin.ID}
+	custom := parent.RSVPDeadline
+	parent.RecurringRSVPDeadline = &custom
 	if err := database.DB.Create(&parent).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -127,8 +129,11 @@ func TestRSVPSettingsMigrationPreservesLegacyDeadlines(t *testing.T) {
 	_, ss, _ := newTestServices(t)
 	admin := newUser(t, "admin")
 	session := newSession(t, ss, admin.ID, 1)
+	if err := database.DB.Model(session).UpdateColumn("is_recurring", true).Error; err != nil {
+		t.Fatal(err)
+	}
 	// Emulate the schema before configurable deadlines existed.
-	if err := database.DB.Exec("ALTER TABLE sessions DROP COLUMN rsvp_deadline_custom").Error; err != nil {
+	if err := database.DB.Exec("ALTER TABLE sessions DROP COLUMN recurring_rsvp_deadline").Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := database.DB.Exec("ALTER TABLE clubs DROP COLUMN rsvp_deadline_hours").Error; err != nil {
@@ -146,8 +151,11 @@ func TestRSVPSettingsMigrationPreservesLegacyDeadlines(t *testing.T) {
 	if err := database.DB.First(&saved, "id = ?", session.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if !saved.RSVPDeadline.Equal(session.RSVPDeadline) || !saved.RSVPDeadlineCustom {
-		t.Fatal("migration changed a legacy deadline or recurring rule")
+	if !saved.RSVPDeadline.Equal(session.RSVPDeadline) {
+		t.Fatal("migration changed a legacy deadline")
+	}
+	if saved.RecurringRSVPDeadline == nil || !saved.RecurringRSVPDeadline.Equal(session.RSVPDeadline) {
+		t.Fatal("migration lost the legacy recurring rule")
 	}
 	var club models.Club
 	if err := database.DB.First(&club).Error; err != nil {
@@ -168,5 +176,97 @@ func TestRSVPSettingsMigrationPreservesLegacyDeadlines(t *testing.T) {
 	}
 	if club.RSVPDeadlineHours != 24 {
 		t.Fatal("repeat migration reset chosen default")
+	}
+}
+
+func TestEditingParentDeadlineDoesNotChangeLaterRecurringDates(t *testing.T) {
+	_, ss, _ := newTestServices(t)
+	admin := newUser(t, "admin")
+	date := utils.NowInSydney().AddDate(0, 0, 14)
+	day, occurrences := int(date.Weekday()), 1
+	parent, err := ss.CreateSession(CreateSessionInput{Title: "One initial occurrence", SessionDate: date, StartTime: "18:00", EndTime: "20:00", Courts: 1, IsRecurring: true, RecurringDayOfWeek: &day, Occurrences: &occurrences, CreatedBy: admin.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	custom := parent.StartsAt.Add(-24 * time.Hour)
+	if _, err := ss.UpdateSession(parent.ID, UpdateSessionInput{RSVPDeadline: &custom}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ss.RefreshRecurringSessions(); err != nil {
+		t.Fatal(err)
+	}
+	var children []models.Session
+	if err := database.DB.Where("recurring_parent_id = ?", parent.ID).Find(&children).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(children) != 3 {
+		t.Fatalf("got %d children", len(children))
+	}
+	for _, child := range children {
+		if child.StartsAt.Sub(child.RSVPDeadline) != 72*time.Hour {
+			t.Fatal("one-session edit changed later recurring dates")
+		}
+	}
+}
+
+func TestEditingCustomParentDeadlinePreservesTheOriginalRecurringRule(t *testing.T) {
+	_, ss, _ := newTestServices(t)
+	admin := newUser(t, "admin")
+	date := utils.NowInSydney().AddDate(0, 0, 14)
+	original := time.Date(date.Year(), date.Month(), date.Day()-5, 18, 0, 0, 0, utils.SydneyLocation)
+	day, occurrences := int(date.Weekday()), 1
+	parent, err := ss.CreateSession(CreateSessionInput{Title: "Custom series", SessionDate: date, StartTime: "18:00", EndTime: "20:00", Courts: 1, IsRecurring: true, RecurringDayOfWeek: &day, Occurrences: &occurrences, CreatedBy: admin.ID, RSVPDeadline: &original})
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := parent.StartsAt.Add(-24 * time.Hour)
+	if _, err := ss.UpdateSession(parent.ID, UpdateSessionInput{RSVPDeadline: &edited}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ss.RefreshRecurringSessions(); err != nil {
+		t.Fatal(err)
+	}
+	var children []models.Session
+	if err := database.DB.Where("recurring_parent_id = ?", parent.ID).Order("session_date").Find(&children).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(children) != 3 {
+		t.Fatalf("got %d children", len(children))
+	}
+	for i, child := range children {
+		if !child.RSVPDeadline.Equal(original.AddDate(0, 0, 7*(i+1))) {
+			t.Fatal("individual edit replaced original recurring rule")
+		}
+	}
+}
+
+func TestMovingCustomParentPreservesItsRecurringCalendarOffset(t *testing.T) {
+	_, ss, _ := newTestServices(t)
+	admin := newUser(t, "admin")
+	date := utils.NowInSydney().AddDate(0, 0, 14)
+	original := time.Date(date.Year(), date.Month(), date.Day()-5, 18, 0, 0, 0, utils.SydneyLocation)
+	day, occurrences := int(date.Weekday()), 1
+	parent, err := ss.CreateSession(CreateSessionInput{Title: "Moved series", SessionDate: date, StartTime: "18:00", EndTime: "20:00", Courts: 1, IsRecurring: true, RecurringDayOfWeek: &day, Occurrences: &occurrences, CreatedBy: admin.ID, RSVPDeadline: &original})
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved := date.AddDate(0, 0, 7)
+	if _, err := ss.UpdateSession(parent.ID, UpdateSessionInput{SessionDate: &moved}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ss.RefreshRecurringSessions(); err != nil {
+		t.Fatal(err)
+	}
+	var children []models.Session
+	if err := database.DB.Where("recurring_parent_id = ?", parent.ID).Order("session_date").Find(&children).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(children) != 3 {
+		t.Fatalf("got %d children", len(children))
+	}
+	for i, child := range children {
+		if !child.RSVPDeadline.Equal(original.AddDate(0, 0, 7*(i+2))) {
+			t.Fatal("moving parent changed the custom calendar offset")
+		}
 	}
 }

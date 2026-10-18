@@ -34,13 +34,13 @@ func UpdateClubSettings(updates map[string]any) (*models.Club, error) {
 			}
 			now := time.Now()
 			if err := tx.Model(&models.Session{}).Where("starts_at > ?", now).
-				Updates(map[string]any{"rsvp_deadline": gorm.Expr("starts_at - (? * INTERVAL '1 hour')", hours), "rsvp_deadline_custom": false, "updated_at": now}).Error; err != nil {
+				Updates(map[string]any{"rsvp_deadline": gorm.Expr("starts_at - (? * INTERVAL '1 hour')", hours), "updated_at": now}).Error; err != nil {
 				return err
 			}
 			// Future occurrences of an older series must also use the new default.
 			// This changes only metadata on past parents, never their stored deadline.
-			if err := tx.Model(&models.Session{}).Where("is_recurring = ? AND rsvp_deadline_custom = ?", true, true).
-				UpdateColumn("rsvp_deadline_custom", false).Error; err != nil {
+			if err := tx.Model(&models.Session{}).Where("is_recurring = ? AND recurring_rsvp_deadline IS NOT NULL", true).
+				UpdateColumn("recurring_rsvp_deadline", nil).Error; err != nil {
 				return err
 			}
 		}
