@@ -279,8 +279,8 @@ func TestEditingCustomParentDeadlinePreservesTheOriginalRecurringRule(t *testing
 func TestMovingCustomParentPreservesItsRecurringCalendarOffset(t *testing.T) {
 	_, ss, _ := newTestServices(t)
 	admin := newUser(t, "admin")
-	date := utils.NowInSydney().AddDate(0, 0, 14)
-	original := time.Date(date.Year(), date.Month(), date.Day()-5, 18, 0, 0, 0, utils.SydneyLocation)
+	date := time.Date(2027, time.September, 28, 0, 0, 0, 0, utils.SydneyLocation)
+	original := time.Date(2027, time.September, 26, 1, 30, 0, 0, utils.SydneyLocation)
 	day, occurrences := int(date.Weekday()), 1
 	parent, err := ss.CreateSession(CreateSessionInput{Title: "Moved series", SessionDate: date, StartTime: "18:00", EndTime: "20:00", Courts: 1, IsRecurring: true, RecurringDayOfWeek: &day, Occurrences: &occurrences, CreatedBy: admin.ID, RSVPDeadline: &original})
 	if err != nil {
@@ -304,6 +304,35 @@ func TestMovingCustomParentPreservesItsRecurringCalendarOffset(t *testing.T) {
 		if !child.RSVPDeadline.Equal(original.AddDate(0, 0, 7*(i+2))) {
 			t.Fatal("moving parent changed the custom calendar offset")
 		}
+	}
+}
+
+func TestMovingCustomParentIntoClockGapRollsBackEdit(t *testing.T) {
+	_, ss, _ := newTestServices(t)
+	admin := newUser(t, "admin")
+	date := time.Date(2027, time.September, 28, 0, 0, 0, 0, utils.SydneyLocation)
+	original := time.Date(2027, time.September, 26, 2, 30, 0, 0, utils.SydneyLocation)
+	day, occurrences := int(date.Weekday()), 1
+	parent, err := ss.CreateSession(CreateSessionInput{Title: "Original series", SessionDate: date, StartTime: "20:00", EndTime: "22:00", Courts: 1, IsRecurring: true, RecurringDayOfWeek: &day, Occurrences: &occurrences, CreatedBy: admin.ID, RSVPDeadline: &original})
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved := date.AddDate(0, 0, 7)
+	title := "Must not save"
+	// A valid occurrence override must not hide an invalid series rule.
+	override := time.Date(2027, time.October, 3, 1, 30, 0, 0, utils.SydneyLocation)
+	_, err = ss.UpdateSession(parent.ID, UpdateSessionInput{SessionDate: &moved, Title: &title, RSVPDeadline: &override})
+	if !errors.Is(err, errRecurringDeadline) {
+		t.Fatalf("expected recurring clock gap error, got %v", err)
+	}
+	var saved models.Session
+	if err := database.DB.First(&saved, "id = ?", parent.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if saved.SessionDate.In(utils.SydneyLocation).Format("2006-01-02") != date.Format("2006-01-02") || saved.Title != parent.Title ||
+		!saved.RSVPDeadline.Equal(original) || saved.RecurringRSVPDeadline == nil || !saved.RecurringRSVPDeadline.Equal(original) ||
+		saved.StartsAt == nil || !saved.StartsAt.Equal(*parent.StartsAt) {
+		t.Fatal("rejected date edit changed the parent or recurring rule")
 	}
 }
 

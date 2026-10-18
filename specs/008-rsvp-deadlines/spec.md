@@ -39,3 +39,4 @@ Implementation rules:
 - Deadline forms reject nonexistent Sydney clock times during the daylight saving jump. They retain the selected input for correction.
 
 - Every generated custom recurring deadline must retain its selected Sydney clock time. A daylight saving gap rejects the series creation without saving a parent or partial children. Refresh rejects that series without saving partial children and continues independent valid series.
+- Moving a recurring parent date must preserve the stored rule's Sydney clock time. If the shifted clock time does not exist, reject the entire edit, including any occurrence deadline override.
