@@ -46,6 +46,8 @@ After this setup PR is merged, open **Actions > Dev then prod > Run workflow**. 
 
 The old automatic PR preview deployment is retired. It used the production Cloud Run service and copies of production data. PRs now run checks and provide instructions for dev testing.
 
+If a PR branch predates this setup, merge the latest main into that branch first. It needs the dev release support before you can deploy it.
+
 Dev is shared. A deployment replaces its previous version. Do not approve an old run after someone deploys a different dev version. The production check rejects approval if dev no longer matches the release artifact. Run the intended source through dev again and repeat the tests.
 
 During setup, pushes to `feat/development-environment` can deploy dev. GitHub restricts dev deployment workflows to this branch and main. The setup branch cannot release to prod. Remove this temporary trigger and its GitHub environment branch policy after setup merges.
