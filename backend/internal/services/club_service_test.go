@@ -1,6 +1,7 @@
 package services
 
 import (
+	"errors"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -377,4 +378,86 @@ func TestRefreshRejectsInvalidLegacyRulesWithoutBlockingValidSeries(t *testing.T
 		t.Fatalf("invalid series blocked a valid series: got %d children", count)
 	}
 
+}
+
+func TestRecurringCustomDeadlineGapRollsBackCreation(t *testing.T) {
+	_, ss, _ := newTestServices(t)
+	admin := newUser(t, "gapseries")
+	date := time.Date(2027, time.September, 21, 0, 0, 0, 0, utils.SydneyLocation)
+	custom := time.Date(2027, time.September, 19, 2, 30, 59, 0, utils.SydneyLocation)
+	day, occurrences := int(time.Tuesday), 3
+	_, err := ss.CreateSession(CreateSessionInput{Title: "Gap series", SessionDate: date, StartTime: "20:00", EndTime: "22:00", Courts: 1, IsRecurring: true, RecurringDayOfWeek: &day, Occurrences: &occurrences, CreatedBy: admin.ID, RSVPDeadline: &custom})
+	if !errors.Is(err, errRecurringDeadline) {
+		t.Fatalf("expected invalid recurring rule, got %v", err)
+	}
+	var count int64
+	if err := database.DB.Model(&models.Session{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("failed create left %d parent or child sessions", count)
+	}
+}
+
+func TestRecurringCustomClockOutsideGapKeepsSydneyTime(t *testing.T) {
+	_, ss, _ := newTestServices(t)
+	admin := newUser(t, "validclock")
+	date := time.Date(2027, time.September, 21, 0, 0, 0, 0, utils.SydneyLocation)
+	custom := time.Date(2027, time.September, 19, 1, 30, 59, 0, utils.SydneyLocation)
+	day, occurrences := int(time.Tuesday), 4
+	parent, err := ss.CreateSession(CreateSessionInput{Title: "Valid custom clock", SessionDate: date, StartTime: "20:00", EndTime: "22:00", Courts: 1, IsRecurring: true, RecurringDayOfWeek: &day, Occurrences: &occurrences, CreatedBy: admin.ID, RSVPDeadline: &custom})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var children []models.Session
+	if err := database.DB.Where("recurring_parent_id = ?", parent.ID).Order("session_date").Find(&children).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(children) != 3 {
+		t.Fatalf("got %d children", len(children))
+	}
+	for _, child := range children {
+		deadline := child.RSVPDeadline.In(utils.SydneyLocation)
+		if deadline.Weekday() != time.Sunday || deadline.Hour() != 1 || deadline.Minute() != 30 || deadline.Second() != 59 {
+			t.Fatalf("custom clock changed: %v", deadline)
+		}
+	}
+}
+
+func TestRecurringRefreshGapRollsBackOnlyInvalidSeries(t *testing.T) {
+	_, ss, _ := newTestServices(t)
+	admin := newUser(t, "refreshgap")
+	date := time.Date(2027, time.September, 21, 0, 0, 0, 0, utils.SydneyLocation)
+	custom := time.Date(2027, time.September, 19, 2, 30, 59, 0, utils.SydneyLocation)
+	day, occurrences := int(time.Tuesday), 1
+	invalid, err := ss.CreateSession(CreateSessionInput{Title: "Invalid on refresh", SessionDate: date, StartTime: "20:00", EndTime: "22:00", Courts: 1, IsRecurring: true, RecurringDayOfWeek: &day, Occurrences: &occurrences, CreatedBy: admin.ID, RSVPDeadline: &custom})
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid, err := ss.CreateSession(CreateSessionInput{Title: "Default hours remain valid", SessionDate: date, StartTime: "20:00", EndTime: "22:00", Courts: 1, IsRecurring: true, RecurringDayOfWeek: &day, Occurrences: &occurrences, CreatedBy: admin.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ss.RefreshRecurringSessions(); !errors.Is(err, errRecurringDeadline) {
+		t.Fatalf("expected invalid series error, got %v", err)
+	}
+	var invalidChildren int64
+	if err := database.DB.Model(&models.Session{}).Where("recurring_parent_id = ?", invalid.ID).Count(&invalidChildren).Error; err != nil {
+		t.Fatal(err)
+	}
+	if invalidChildren != 0 {
+		t.Fatalf("invalid series kept %d partial children", invalidChildren)
+	}
+	var validChildren []models.Session
+	if err := database.DB.Where("recurring_parent_id = ?", valid.ID).Find(&validChildren).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(validChildren) != 3 {
+		t.Fatalf("valid series has %d children", len(validChildren))
+	}
+	for _, child := range validChildren {
+		if child.StartsAt.Sub(child.RSVPDeadline) != 50*time.Hour {
+			t.Fatalf("elapsed-hour default changed across DST: %+v", child)
+		}
+	}
 }
