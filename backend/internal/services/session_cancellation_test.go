@@ -23,7 +23,7 @@ func cancellationCounts(t *testing.T, announcements, notifications int64) {
 	for _, item := range []struct {
 		model any
 		want  int64
-	}{{&models.Announcement{}, announcements}, {&models.Notification{}, notifications}} {
+	}{{&models.Announcement{}, announcements}, {&models.Notification{}, notifications}, {&models.NotificationOutbox{}, notifications}} {
 		var count int64
 		if err := database.DB.Model(item.model).Count(&count).Error; err != nil || count != item.want {
 			t.Fatalf("%T count = %d, want %d: %v", item.model, count, item.want, err)
@@ -277,6 +277,9 @@ func TestCancellationOutboundSettings(t *testing.T) {
 			// Retrying never sends again, including when the provider rejected the first attempt.
 			if _, err := ss.CancelSession(session.ID, "Changed", admin.ID); err != nil {
 				t.Fatal(err)
+			}
+			if requests.Load() != 0 {
+				t.Fatal("cancellation invoked provider before durable dispatch")
 			}
 			if _, err := ns.ProcessNotificationWork(context.Background(), 10); err != nil {
 				t.Fatal(err)
