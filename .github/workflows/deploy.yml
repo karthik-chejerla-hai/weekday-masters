@@ -95,14 +95,11 @@ jobs:
       FIREBASE_APP_ID: ${{ vars.DEV_FIREBASE_APP_ID }}
       FIREBASE_MESSAGING_SENDER_ID: ${{ vars.DEV_FIREBASE_MESSAGING_SENDER_ID }}
       FIREBASE_VAPID_KEY: ${{ vars.DEV_FIREBASE_VAPID_KEY }}
-      NEON_REFERENCE_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ needs.verify.outputs.sha }}
       - uses: ./.github/actions/release
-        with:
-          neon_api_key: ${{ secrets.NEON_API_KEY }}
       - uses: actions/upload-artifact@v6
         with:
           name: dev-release

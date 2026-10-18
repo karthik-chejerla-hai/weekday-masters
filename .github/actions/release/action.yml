@@ -1,9 +1,6 @@
 name: Deploy Rally release
 description: Deploy one tested commit using the caller environment credentials
 inputs:
-  neon_api_key:
-    description: Organization key used only to create the isolated dev database
-    required: false
   database_url:
     description: Production migration connection, never exposed to frontend builds
     required: false
@@ -44,12 +41,6 @@ runs:
     - name: Install Firebase CLI
       shell: bash
       run: npm install --global firebase-tools@15.1.0
-    - name: Prepare dev database
-      if: env.RELEASE_ENV == 'dev'
-      shell: bash
-      env:
-        NEON_API_KEY: ${{ inputs.neon_api_key }}
-      run: python3 scripts/release/neon_dev.py
     - name: Deploy release
       shell: bash
       env:

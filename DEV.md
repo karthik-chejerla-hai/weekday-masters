@@ -83,7 +83,7 @@ The pending durable-notification PRs replace the in-process scheduler with a pri
 
 ## Setup configuration
 
-The `dev` GitHub environment uses `DEV_*` variables for its WIF provider, Auth0 settings and public Firebase settings. Missing settings stop deployment. It never uses production Auth0 or Firebase values as a fallback. `NEON_API_KEY` creates a fresh project in the same Neon organization and region, with no production branch or copied rows. Its connection URI stays in the dev Secret Manager.
+The `dev` GitHub environment uses `DEV_*` variables for its WIF provider, Auth0 settings and public Firebase settings. Missing settings stop deployment. It never uses production Auth0 or Firebase values as a fallback. Run **Set up dev database** once before the first dev release. Only this setup workflow receives `NEON_API_KEY`. Regular dev and prod releases do not receive it. The setup creates a fresh project in the same Neon organization and region, with no production branch or copied rows. The connection URI stays in the dev Secret Manager.
 
 Until this setup PR merges, the existing `production-api` environment also requires approval. This prevents automatic production releases through the old workflow.
 

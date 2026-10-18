@@ -2,6 +2,7 @@
 """Provision a fresh dev Neon project. Never branch or read production data."""
 import json
 import os
+import re
 import subprocess
 import urllib.error
 import urllib.request
@@ -22,7 +23,13 @@ def neon(path, method='GET', body=None):
         with urllib.request.urlopen(request, timeout=90) as response:
             return json.load(response)
     except urllib.error.HTTPError as error:
-        raise RuntimeError(f'Neon request failed with HTTP {error.code}; no credential payload logged') from None
+        try:
+            message = json.loads(error.read()).get('message', 'No error detail')
+        except (ValueError, AttributeError):
+            message = 'No JSON error detail'
+        message = message.replace(os.environ['NEON_API_KEY'], '[redacted]')
+        message = re.sub(r'postgres(?:ql)?://\S+', '[redacted]', message)
+        raise RuntimeError(f'Neon HTTP {error.code}: {message[:300]}') from None
 
 
 def store(name, value):
