@@ -168,6 +168,7 @@ func run() (runErr error) {
 		// Protected routes (requires valid JWT)
 		protected := api.Group("")
 		protected.Use(middleware.AuthMiddleware(auth0Config))
+		protected.POST("/telemetry/browser-logs", obs.BrowserLogsHandler())
 		ledgerHandler.RegisterRoutes(protected)
 		adminHandler.RegisterMemberPushRoutes(protected)
 		notificationHandler.RegisterAdminRoutes(protected)
