@@ -15,10 +15,10 @@ func init() {
 	}
 }
 
-// CalculateRSVPDeadline closes RSVP exactly 48 elapsed hours before the
-// resolved session start. Elapsed time stays correct across Sydney DST changes.
-func CalculateRSVPDeadline(startsAt time.Time) time.Time {
-	return startsAt.Add(-48 * time.Hour).In(SydneyLocation)
+// CalculateRSVPDeadline subtracts elapsed hours from the resolved session start.
+// Sydney daylight saving changes do not change the number of hours available.
+func CalculateRSVPDeadline(startsAt time.Time, hours int) time.Time {
+	return startsAt.Add(-time.Duration(hours) * time.Hour)
 }
 
 // NowInSydney returns the current time in Sydney timezone

@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -13,6 +14,7 @@ import (
 	"github.com/weekday-masters/backend/internal/models"
 	"github.com/weekday-masters/backend/internal/services"
 	"github.com/weekday-masters/backend/internal/utils"
+	"gorm.io/gorm"
 )
 
 type AdminHandler struct {
@@ -265,8 +267,8 @@ type CreateSessionRequest struct {
 	Courts             int     `json:"courts" binding:"required,min=1,max=3"`
 	IsRecurring        bool    `json:"is_recurring"`
 	RecurringDayOfWeek *int    `json:"recurring_day_of_week"`
-	Occurrences        *int    `json:"occurrences"`   // Number of recurring sessions to create
-	RSVPDeadline       *string `json:"rsvp_deadline"` // Obsolete input; provided values are rejected
+	Occurrences        *int    `json:"occurrences"` // Number of recurring sessions to create
+	RSVPDeadline       *string `json:"rsvp_deadline"`
 }
 
 // CreateSession creates a new session
@@ -303,8 +305,12 @@ func (h *AdminHandler) CreateSession(c *gin.Context) {
 	}
 
 	if req.RSVPDeadline != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": services.ErrFixedRSVPDeadline.Error()})
-		return
+		deadline, err := time.Parse(time.RFC3339, *req.RSVPDeadline)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid RSVP deadline"})
+			return
+		}
+		input.RSVPDeadline = &deadline
 	}
 
 	session, err := h.sessionService.CreateSession(input)
@@ -325,7 +331,7 @@ type UpdateSessionRequest struct {
 	EndTime      *string `json:"end_time"`     // HH:MM
 	Courts       *int    `json:"courts"`
 	Status       *string `json:"status"`
-	RSVPDeadline *string `json:"rsvp_deadline"` // Obsolete input; provided values are rejected
+	RSVPDeadline *string `json:"rsvp_deadline"`
 }
 
 // UpdateSession updates a session
@@ -365,8 +371,12 @@ func (h *AdminHandler) UpdateSession(c *gin.Context) {
 	}
 
 	if req.RSVPDeadline != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": services.ErrFixedRSVPDeadline.Error()})
-		return
+		deadline, err := time.Parse(time.RFC3339, *req.RSVPDeadline)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid RSVP deadline"})
+			return
+		}
+		input.RSVPDeadline = &deadline
 	}
 
 	session, err := h.sessionService.UpdateSession(id, input)
@@ -466,6 +476,12 @@ func (h *AdminHandler) AddPlayerRSVP(c *gin.Context) {
 		return
 	}
 
+	var member models.User
+	if err := database.DB.Where("id = ? AND membership_status = ?", userID, models.MembershipApproved).First(&member).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Player must be an approved member"})
+		return
+	}
+
 	rsvp, err := h.rsvpService.CreateOrUpdateRSVP(services.RSVPInput{
 		SessionID: sessionID,
 		UserID:    userID,
@@ -497,6 +513,7 @@ type UpdateClubRequest struct {
 	VenueName           *string `json:"venue_name"`
 	VenueAddress        *string `json:"venue_address"`
 	CourtNumber         *int    `json:"court_number" binding:"omitempty,gte=0,lte=999"`
+	RSVPDeadlineHours   *int    `json:"rsvp_deadline_hours" binding:"omitempty,gte=0,lte=8760"`
 	TimeFormat          *string `json:"time_format" binding:"omitempty,oneof=12h 24h"`
 }
 
@@ -508,35 +525,36 @@ func (h *AdminHandler) UpdateClub(c *gin.Context) {
 		return
 	}
 
-	var club models.Club
-	if err := database.DB.First(&club).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Club not found"})
-		return
-	}
-
+	updates := map[string]any{}
 	if req.Name != nil {
-		club.Name = *req.Name
+		updates["name"] = *req.Name
 	}
 	if req.NotificationsPaused != nil {
-		club.NotificationsPaused = *req.NotificationsPaused
+		updates["notifications_paused"] = *req.NotificationsPaused
 	}
 	if req.VenueName != nil {
-		club.VenueName = *req.VenueName
+		updates["venue_name"] = *req.VenueName
 	}
 	if req.VenueAddress != nil {
-		club.VenueAddress = *req.VenueAddress
+		updates["venue_address"] = *req.VenueAddress
 	}
 	if req.CourtNumber != nil {
-		club.CourtNumber = *req.CourtNumber
+		updates["court_number"] = *req.CourtNumber
 	}
 	if req.TimeFormat != nil {
-		club.TimeFormat = *req.TimeFormat
+		updates["time_format"] = *req.TimeFormat
 	}
-
-	if err := database.DB.Save(&club).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update club"})
+	if req.RSVPDeadlineHours != nil {
+		updates["rsvp_deadline_hours"] = *req.RSVPDeadlineHours
+	}
+	club, err := services.UpdateClubSettings(updates)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			status = http.StatusNotFound
+		}
+		c.JSON(status, gin.H{"error": "Failed to update club"})
 		return
 	}
-
 	c.JSON(http.StatusOK, club)
 }

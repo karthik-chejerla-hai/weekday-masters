@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func TestRSVPDeadlineMigrationNormalizesOpenFutureWindowsOnly(t *testing.T) {
+func TestRSVPReminderMigrationPreservesEveryStoredDeadline(t *testing.T) {
 	_, ss, _ := newTestServices(t)
 	creator := newUser(t, "admin")
 	cutoff := time.Date(2030, 1, 1, 12, 0, 0, 0, utils.SydneyLocation)
@@ -40,7 +40,7 @@ func TestRSVPDeadlineMigrationNormalizesOpenFutureWindowsOnly(t *testing.T) {
 		}
 		sessions[i] = *session
 	}
-	if err := database.DB.Transaction(func(tx *gorm.DB) error { return database.ApplyRSVPDeadline48hWithin(tx, cutoff) }); err != nil {
+	if err := database.DB.Transaction(func(tx *gorm.DB) error { return database.ApplyRSVPReminderCutoverWithin(tx, cutoff) }); err != nil {
 		t.Fatal(err)
 	}
 	for i, c := range cases {
@@ -49,15 +49,12 @@ func TestRSVPDeadlineMigrationNormalizesOpenFutureWindowsOnly(t *testing.T) {
 			t.Fatal(err)
 		}
 		expected := c.deadline
-		if c.changes {
-			expected = utils.CalculateRSVPDeadline(*stored.StartsAt)
-		}
 		if !stored.RSVPDeadline.Equal(expected) {
 			t.Fatalf("%s: expected %v, got %v", c.name, expected, stored.RSVPDeadline)
 		}
 	}
 }
-func TestRSVPDeadlineMigrationUsesElapsedHoursAcrossDST(t *testing.T) {
+func TestRSVPReminderMigrationPreservesCustomDeadlinesAcrossDST(t *testing.T) {
 	_, ss, _ := newTestServices(t)
 	creator := newUser(t, "admin")
 	for _, date := range []string{"2026-10-05", "2026-04-06"} {
@@ -74,15 +71,15 @@ func TestRSVPDeadlineMigrationUsesElapsedHoursAcrossDST(t *testing.T) {
 		if err := database.DB.Model(session).UpdateColumn("rsvp_deadline", custom).Error; err != nil {
 			t.Fatal(err)
 		}
-		if err := database.DB.Transaction(func(tx *gorm.DB) error { return database.ApplyRSVPDeadline48hWithin(tx, cutoff) }); err != nil {
+		if err := database.DB.Transaction(func(tx *gorm.DB) error { return database.ApplyRSVPReminderCutoverWithin(tx, cutoff) }); err != nil {
 			t.Fatal(err)
 		}
 		var stored models.Session
 		if err := database.DB.First(&stored, "id = ?", session.ID).Error; err != nil {
 			t.Fatal(err)
 		}
-		if stored.StartsAt.Sub(stored.RSVPDeadline) != 48*time.Hour {
-			t.Fatalf("SQL deadline drifted over DST: %s", date)
+		if !stored.RSVPDeadline.Equal(custom) {
+			t.Fatalf("notification migration changed custom deadline over DST: %s", date)
 		}
 	}
 }
@@ -92,7 +89,7 @@ func TestRSVPDeadlineMigrationVersionDoesNotRerunBusinessNormalization(t *testin
 	calls := 0
 	apply := func(tx *gorm.DB, cutoff time.Time) error {
 		calls++
-		return database.ApplyRSVPDeadline48hWithin(tx, cutoff)
+		return database.ApplyRSVPReminderCutoverWithin(tx, cutoff)
 	}
 	if err := database.RunNotificationMigration(database.DB, database.RSVP48HourMigrationVersion, apply); err != nil {
 		t.Fatal(err)

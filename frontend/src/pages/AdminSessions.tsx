@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, Calendar, Trash2, Loader2, XCircle, X } from 'lucide-react';
+import { ArrowLeft, Plus, Calendar, Trash2, Loader2, XCircle, X, Pencil } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
+import { formatInTimeZone, fromZonedTime } from 'date-fns-tz';
 import { api } from '../services/api';
 import type { Session, CreateSessionInput, TimeFormat } from '../types';
 import { formatSessionTimeRange } from '../utils/session-display';
@@ -10,9 +11,15 @@ import Badge from '../components/ui/Badge';
 export default function AdminSessions() {
   const navigate = useNavigate();
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [defaultDeadlineHours, setDefaultDeadlineHours] = useState(50);
+  const [editingDeadlineId, setEditingDeadlineId] = useState<string | null>(null);
+  const [editedDeadline, setEditedDeadline] = useState('');
+  const [isSavingDeadline, setIsSavingDeadline] = useState(false);
+  const [editDeadlineError, setEditDeadlineError] = useState('');
   const [timeFormat, setTimeFormat] = useState<TimeFormat>('24h');
   const [isLoading, setIsLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [createError, setCreateError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -48,6 +55,13 @@ export default function AdminSessions() {
     occurrences: 4,
   });
 
+  // Deadline customisation state
+  const [useCustomDeadline, setUseCustomDeadline] = useState(false);
+  const [deadlineDatetime, setDeadlineDatetime] = useState(''); // for one-off (datetime-local value)
+  const [deadlineDaysBefore, setDeadlineDaysBefore] = useState(3); // for recurring
+  const [deadlineTime, setDeadlineTime] = useState('23:59'); // for recurring
+  const [deadlineError, setDeadlineError] = useState('');
+
   // Auto-generate title based on date
   const generateTitle = (dateStr: string) => {
     if (!dateStr) return '';
@@ -65,6 +79,7 @@ export default function AdminSessions() {
       setSessions([...data, ...cancelled].sort((a, b) =>
         a.session_date.localeCompare(b.session_date) || a.start_time.localeCompare(b.start_time)));
       setTimeFormat(club?.time_format || '24h');
+      setDefaultDeadlineHours(club?.rsvp_deadline_hours ?? 50);
     } catch (error) {
       console.error('Failed to load sessions:', error);
     } finally {
@@ -72,8 +87,43 @@ export default function AdminSessions() {
     }
   };
 
+  const computeRsvpDeadline = (): string | undefined => {
+    if (!useCustomDeadline) return undefined;
+
+    if (formData.is_recurring) {
+      // Compute deadline relative to the first session date
+      if (!formData.session_date) return undefined;
+      const date = new Date(`${formData.session_date}T00:00:00Z`);
+      date.setUTCDate(date.getUTCDate() - deadlineDaysBefore);
+      const deadline = fromZonedTime(`${date.toISOString().slice(0, 10)}T${deadlineTime}:59`, 'Australia/Sydney');
+      return formatInTimeZone(deadline, 'Australia/Sydney', "yyyy-MM-dd'T'HH:mm:ssXXX");
+    } else {
+      // One-off: use the datetime-local value directly
+      if (!deadlineDatetime) return undefined;
+      const dt = fromZonedTime(deadlineDatetime, 'Australia/Sydney');
+      return formatInTimeZone(dt, 'Australia/Sydney', "yyyy-MM-dd'T'HH:mm:ssXXX");
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setDeadlineError('');
+    setCreateError('');
+
+    // Client-side deadline validation
+    if (useCustomDeadline) {
+      const deadline = computeRsvpDeadline();
+      if (deadline && new Date(deadline) < new Date()) {
+        setDeadlineError('RSVP deadline cannot be in the past');
+        return;
+      }
+      const startsAt = fromZonedTime(`${formData.session_date}T${formData.start_time}`, 'Australia/Sydney');
+      if (deadline && new Date(deadline) > startsAt) {
+        setDeadlineError('RSVP deadline cannot be after the session starts');
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     try {
       const input: CreateSessionInput = {
@@ -83,6 +133,7 @@ export default function AdminSessions() {
           ? new Date(formData.session_date).getDay()
           : undefined,
         occurrences: formData.is_recurring ? formData.occurrences : undefined,
+        rsvp_deadline: computeRsvpDeadline(),
       };
       await api.createSession(input);
       setShowForm(false);
@@ -96,11 +147,41 @@ export default function AdminSessions() {
         is_recurring: false,
         occurrences: 4,
       });
+      setUseCustomDeadline(false);
+      setDeadlineDatetime('');
+      setDeadlineDaysBefore(3);
+      setDeadlineTime('23:59');
       await loadSessions();
     } catch (error) {
-      console.error('Failed to create session:', error);
+      const response = error as { response?: { data?: { error?: string } } };
+      setCreateError(response.response?.data?.error || 'Failed to create the session. Try again.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const saveDeadline = async (event: React.FormEvent, session: Session) => {
+    event.preventDefault();
+    if (isSavingDeadline) return;
+    const deadline = fromZonedTime(editedDeadline, 'Australia/Sydney');
+    const start = session.starts_at
+      ? new Date(session.starts_at)
+      : fromZonedTime(`${session.session_date.slice(0, 10)}T${session.start_time}`, 'Australia/Sydney');
+    if (Number.isNaN(deadline.getTime()) || deadline < new Date() || deadline > start) {
+      setEditDeadlineError('Choose a future deadline at or before the session starts.');
+      return;
+    }
+    setEditDeadlineError('');
+    setIsSavingDeadline(true);
+    try {
+      const updated = await api.updateSession(session.id, { rsvp_deadline: deadline.toISOString() });
+      setSessions(previous => previous.map(item => item.id === updated.id ? { ...item, ...updated } : item));
+      setEditingDeadlineId(null);
+    } catch (error) {
+      const response = error as { response?: { data?: { error?: string } } };
+      setEditDeadlineError(response.response?.data?.error || 'Failed to save the RSVP deadline. Try again.');
+    } finally {
+      setIsSavingDeadline(false);
     }
   };
 
@@ -166,6 +247,7 @@ export default function AdminSessions() {
       {showForm && (
         <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
           <h2 className="font-semibold text-slate-900 mb-4">Create New Session</h2>
+          {createError && <p role="alert" className="text-sm text-red-700">{createError}</p>}
 
           {/* Session Type Radio Buttons */}
           <div>
@@ -176,7 +258,7 @@ export default function AdminSessions() {
                   type="radio"
                   name="session_type"
                   checked={!formData.is_recurring}
-                  onChange={() => { setFormData({ ...formData, is_recurring: false }); }}
+                  onChange={() => { setFormData({ ...formData, is_recurring: false }); setDeadlineError(''); }}
                   className="w-4 h-4 text-primary-600"
                 />
                 <span className="text-sm text-slate-700">One-off Session</span>
@@ -186,7 +268,7 @@ export default function AdminSessions() {
                   type="radio"
                   name="session_type"
                   checked={formData.is_recurring}
-                  onChange={() => { setFormData({ ...formData, is_recurring: true }); }}
+                  onChange={() => { setFormData({ ...formData, is_recurring: true }); setDeadlineError(''); }}
                   className="w-4 h-4 text-primary-600"
                 />
                 <span className="text-sm text-slate-700">Recurring Weekly</span>
@@ -268,7 +350,64 @@ export default function AdminSessions() {
             />
           </div>
 
-          <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">RSVP closes 48 hours before the session starts. Short-notice sessions may already be closed to player RSVPs.</p>
+          {/* RSVP Deadline */}
+          <div>
+            <label className="flex items-center gap-2 cursor-pointer mb-2">
+              <input
+                type="checkbox"
+                checked={useCustomDeadline}
+                onChange={(e) => setUseCustomDeadline(e.target.checked)}
+                className="w-4 h-4 text-primary-600 rounded"
+              />
+              <span className="text-sm font-medium text-slate-700">Custom RSVP Deadline</span>
+              <span className="text-xs text-slate-400">(default: {defaultDeadlineHours} hours before start)</span>
+            </label>
+
+            {useCustomDeadline && (
+              <div className="grid sm:grid-cols-2 gap-4 pl-6">
+                {formData.is_recurring ? (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Days Before Session</label>
+                      <select
+                        value={deadlineDaysBefore}
+                        onChange={(e) => setDeadlineDaysBefore(parseInt(e.target.value))}
+                        className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      >
+                        {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+                          <option key={n} value={n}>{n} day{n > 1 ? 's' : ''} before</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Deadline Time (Sydney time)</label>
+                      <input
+                        type="time"
+                        value={deadlineTime}
+                        onChange={(e) => setDeadlineTime(e.target.value)}
+                        className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div className="sm:col-span-2">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Deadline Date & Time (Sydney time)</label>
+                    <input
+                      type="datetime-local"
+                      required
+                      value={deadlineDatetime}
+                      onChange={(e) => setDeadlineDatetime(e.target.value)}
+                      className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {deadlineError && (
+              <p className="text-sm text-red-600 mt-1 pl-6">{deadlineError}</p>
+            )}
+          </div>
 
           <div className="flex gap-3 pt-2">
             <button
@@ -305,7 +444,7 @@ export default function AdminSessions() {
           {sessions.map((session) => (
             <div
               key={session.id}
-              className="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between"
+              className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-center justify-between gap-3"
             >
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
@@ -319,6 +458,9 @@ export default function AdminSessions() {
                 <p className="text-sm text-slate-500">
                   {getRsvpCount(session)} / {session.max_players} players | {session.courts} court{session.courts > 1 ? 's' : ''}
                 </p>
+                <p className="mt-1 text-sm text-slate-600">
+                  RSVP closes: {formatInTimeZone(session.rsvp_deadline, 'Australia/Sydney', `d MMM yyyy 'at' ${timeFormat === '12h' ? 'h:mm a' : 'HH:mm'}`)} (Sydney)
+                </p>
                 {session.status === 'cancelled' && session.cancellation_reason && (
                   <p className="text-sm text-red-600 mt-1">
                     Reason: {session.cancellation_reason}
@@ -326,6 +468,18 @@ export default function AdminSessions() {
                 )}
               </div>
               <div className="flex items-center gap-2">
+                {session.status !== 'cancelled' && editingDeadlineId !== session.id && (
+                  <button type="button" aria-label="Edit RSVP deadline" title="Edit RSVP deadline"
+                    disabled={isSavingDeadline}
+                    onClick={() => {
+                      setEditingDeadlineId(session.id);
+                      setEditedDeadline(formatInTimeZone(session.rsvp_deadline, 'Australia/Sydney', "yyyy-MM-dd'T'HH:mm"));
+                      setEditDeadlineError('');
+                    }}
+                    className="rounded-lg p-2 text-primary-600 hover:bg-primary-50">
+                    <Pencil className="h-5 w-5" aria-hidden="true" />
+                  </button>
+                )}
                 {session.status !== 'cancelled' && (
                   <button
                     onClick={(event) => {
@@ -353,6 +507,23 @@ export default function AdminSessions() {
                   )}
                 </button>}
               </div>
+              {editingDeadlineId === session.id && (
+                <form onSubmit={(event) => saveDeadline(event, session)} className="w-full border-t border-slate-200 pt-3">
+                  <label htmlFor={`deadline-${session.id}`} className="mb-1 block text-sm font-medium text-slate-700">RSVP deadline (Sydney time)</label>
+                  <input id={`deadline-${session.id}`} type="datetime-local" required autoFocus
+                    value={editedDeadline} onChange={(event) => setEditedDeadline(event.target.value)}
+                    disabled={isSavingDeadline}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 sm:max-w-xs" />
+                  <p className="mt-1 text-xs text-slate-500">This change applies to this session only.</p>
+                  {editDeadlineError && <p role="alert" className="mt-2 text-sm text-red-700">{editDeadlineError}</p>}
+                  <div className="mt-3 flex gap-3">
+                    <button type="submit" disabled={isSavingDeadline} className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
+                      {isSavingDeadline ? 'Saving...' : 'Save deadline'}
+                    </button>
+                    <button type="button" disabled={isSavingDeadline} onClick={() => setEditingDeadlineId(null)} className="rounded-lg px-4 py-2 text-sm text-slate-600">Cancel edit</button>
+                  </div>
+                </form>
+              )}
             </div>
           ))}
         </div>

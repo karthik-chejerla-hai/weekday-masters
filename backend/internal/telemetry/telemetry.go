@@ -27,19 +27,20 @@ import (
 )
 
 type Telemetry struct {
-	logs     *sdklog.LoggerProvider
-	metrics  *sdkmetric.MeterProvider
-	logger   otellog.Logger
-	requests metric.Int64Counter
-	duration metric.Float64Histogram
-	console  io.Writer
-	flags    int
+	logs        *sdklog.LoggerProvider
+	metrics     *sdkmetric.MeterProvider
+	logger      otellog.Logger
+	browserLogs *browserLogLimiter
+	requests    metric.Int64Counter
+	duration    metric.Float64Histogram
+	console     io.Writer
+	flags       int
 }
 
 // Start is opt-in. Standard exporter environment variables configure endpoint,
 // headers and timeouts; credentials never need to enter application config.
 func Start(ctx context.Context) (*Telemetry, error) {
-	t := &Telemetry{console: log.Writer(), flags: log.Flags()}
+	t := &Telemetry{console: log.Writer(), flags: log.Flags(), browserLogs: newBrowserLogLimiter()}
 	if os.Getenv("OTEL_ENABLED") != "true" {
 		return t, nil
 	}

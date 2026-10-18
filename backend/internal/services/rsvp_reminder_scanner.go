@@ -114,6 +114,12 @@ func (s *NotificationService) queueSessionRSVPStagesWithin(tx *gorm.DB, session 
 				return err
 			}
 		}
+		// A newly extended admin deadline may make a future stage useful.
+		// Do not replay a published stage, a rollout skip, or an already-due skip.
+		if stored.State == models.RSVPReminderSkipped && stored.SkipReason == "stage_expired" && now.Before(due) && expires.After(due) {
+			stored.State = models.RSVPReminderPending
+			stored.SkipReason = ""
+		}
 		stored.StartsAt, stored.DueAt, stored.ExpiresAt = *session.StartsAt, due, expires
 		if stored.State == models.RSVPReminderPending {
 			switch {
