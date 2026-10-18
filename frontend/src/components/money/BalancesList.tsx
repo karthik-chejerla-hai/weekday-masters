@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Bell, Loader2 } from 'lucide-react';
 import Avatar from '../ui/Avatar';
 import BalanceChip from './BalanceChip';
 import { balanceState, formatCents } from './format';
 import { api } from '../../services/api';
+import { balanceNudgeMessage } from '../../services/balance-nudge';
 import type { PlayerBalance } from '../../types';
 
 interface BalancesListProps {
@@ -30,6 +31,7 @@ function apiMessage(error: unknown) {
  * it saves the admin from being the only person who can answer "am I square?".
  */
 export default function BalancesList({ balances, lowThresholdCents, currentUserId, canNudge = false }: BalancesListProps) {
+  const requestIds = useRef<Record<string, string>>({});
   const [nudges, setNudges] = useState<Record<string, NudgeStatus>>({});
 
   if (balances.length === 0) {
@@ -44,14 +46,13 @@ export default function BalancesList({ balances, lowThresholdCents, currentUserI
   async function nudge(balance: PlayerBalance) {
     setNudges((current) => ({ ...current, [balance.user_id]: { state: 'sending' } }));
     try {
-      const result = await api.nudgeBalance(balance.user_id);
+      const requestId = requestIds.current[balance.user_id] ||= crypto.randomUUID();
+      const result = await api.nudgeBalance(balance.user_id, requestId);
       setNudges((current) => ({
         ...current,
         [balance.user_id]: {
           state: 'sent',
-          message: result.delivery_state === 'pending' || result.push_sent
-            ? `Push nudge queued for ${balance.name}.`
-            : `${balance.name} will see the nudge in Rally; push is unavailable or disabled.`,
+          message: balanceNudgeMessage(result, balance.name),
         },
       }));
     } catch (error) {
@@ -80,7 +81,7 @@ export default function BalancesList({ balances, lowThresholdCents, currentUserI
           const nudgeStatus = nudges[balance.user_id];
           const showNudge = canNudge
             && balance.user_id !== currentUserId
-            && balance.balance_cents < lowThresholdCents;
+            && balance.balance_cents < 2000;
           return (
             <li key={balance.user_id} className="flex items-start gap-3 px-4 py-3">
               <Avatar src={balance.profile_picture} name={balance.name} size="sm" />

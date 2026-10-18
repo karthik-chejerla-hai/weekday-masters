@@ -1,7 +1,6 @@
 package services
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -615,19 +614,14 @@ func (s *SettlementService) Settle(in SettleInput) (*models.Settlement, *Settlem
 			}
 		}
 
+		if err := s.queueChargesWithin(tx, session, record, costed.Lines, nil); err != nil {
+			return err
+		}
 		settlement = &record
 		return nil
 	})
 	if err != nil {
 		return nil, nil, err
-	}
-
-	// After the commit, deliberately. A reminder about a balance that was then
-	// rolled back would be a lie, and notification failures must not undo a
-	// settlement that already happened.
-	var session models.Session
-	if err := database.DB.Select("title").First(&session, "id = ?", in.SessionID).Error; err == nil {
-		s.notifyLowBalances(context.Background(), preview, session.Title)
 	}
 
 	return settlement, preview, nil
@@ -716,31 +710,48 @@ func settlementOccurredAt(session models.Session) time.Time {
 // reversal stay visible: the point of an append-only ledger is that a correction
 // is a second fact, not the erasure of the first.
 func (s *SettlementService) ReverseSettlement(settlementID uuid.UUID, reason string, reversedBy uuid.UUID) (*models.Transaction, error) {
-	var settlement models.Settlement
-	if err := database.DB.First(&settlement, "id = ?", settlementID).Error; err != nil {
+	var reference models.Settlement
+	if err := database.DB.First(&reference, "id = ?", settlementID).Error; err != nil {
 		return nil, err
 	}
-	if !settlement.IsLive() {
-		return nil, ErrTransactionAlreadyReversed()
-	}
-
-	if reason == "" {
-		reason = "Settlement reversed"
-	}
-
-	txn, err := s.ledger.ReverseTransaction(settlement.TransactionID, reason, reversedBy)
+	var reversal *models.Transaction
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		var session models.Session
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&session, "id = ?", reference.SessionID).Error; err != nil {
+			return err
+		}
+		var settlement models.Settlement
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Preload("Lines").First(&settlement, "id = ?", settlementID).Error; err != nil {
+			return err
+		}
+		if !settlement.IsLive() {
+			return ErrTransactionAlreadyReversed()
+		}
+		if reason == "" {
+			reason = "Settlement reversed"
+		}
+		var err error
+		reversal, err = s.ledger.ReverseTransactionWithin(tx, settlement.TransactionID, reason, reversedBy)
+		if err != nil {
+			return err
+		}
+		now := utils.NowInSydney()
+		if err := tx.Model(&settlement).Updates(map[string]any{"reversed_at": now, "reversed_by": reversedBy}).Error; err != nil {
+			return err
+		}
+		if err := suppressSettlementReceiptsWithin(tx, settlementID); err != nil {
+			return err
+		}
+		lines := make([]ChargeLineView, 0, len(settlement.Lines))
+		for _, line := range settlement.Lines {
+			lines = append(lines, ChargeLineView{UserID: line.UserID, AmountCents: line.AmountCents})
+		}
+		return s.queueChargesWithin(tx, session, settlement, lines, reversal)
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	now := utils.NowInSydney()
-	if err := database.DB.Model(&models.Settlement{}).
-		Where("id = ?", settlementID).
-		Updates(map[string]any{"reversed_at": now, "reversed_by": reversedBy}).Error; err != nil {
-		return nil, err
-	}
-
-	return txn, nil
+	return reversal, nil
 }
 
 // LiveSettlementForSession returns the settlement currently standing for a
@@ -821,14 +832,15 @@ func (s *SettlementService) ListPastSessions(limit, offset int) ([]PastSessionVi
 
 // SettlementView is the full breakdown of a settled session.
 type SettlementView struct {
-	Imported   *ImportedSessionView `json:"imported,omitempty"`
-	Session    SessionSummary       `json:"session"`
-	Rates      SettlementRates      `json:"rates"`
-	Bands      map[string]*BandView `json:"bands"`
-	Totals     SettlementTotals     `json:"totals"`
-	Lines      []ChargeLineView     `json:"lines"`
-	SettledAt  time.Time            `json:"settled_at"`
-	ReversedAt *time.Time           `json:"reversed_at"`
+	SettlementID *uuid.UUID           `json:"settlement_id,omitempty"`
+	Imported     *ImportedSessionView `json:"imported,omitempty"`
+	Session      SessionSummary       `json:"session"`
+	Rates        SettlementRates      `json:"rates"`
+	Bands        map[string]*BandView `json:"bands"`
+	Totals       SettlementTotals     `json:"totals"`
+	Lines        []ChargeLineView     `json:"lines"`
+	SettledAt    time.Time            `json:"settled_at"`
+	ReversedAt   *time.Time           `json:"reversed_at"`
 }
 
 type SessionSummary struct {
@@ -852,6 +864,21 @@ type SettlementRates struct {
 // stored, not from current club settings — a session viewed a year later still
 // shows what it actually cost.
 func (s *SettlementService) SettlementForSession(sessionID uuid.UUID) (*SettlementView, error) {
+	return s.SettlementForSessionVersion(sessionID, uuid.Nil)
+}
+
+func (s *SettlementService) SettlementForSessionVersion(sessionID, settlementID uuid.UUID) (*SettlementView, error) {
+	if settlementID != uuid.Nil {
+		var record models.Settlement
+		err := database.DB.Preload("Lines").Where("id = ? AND session_id = ?", settlementID, sessionID).First(&record).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		return s.settlementView(sessionID, &record)
+	}
 	if imported, err := importedSessionView(sessionID); err != nil || imported != nil {
 		return imported, err
 	}
@@ -863,6 +890,10 @@ func (s *SettlementService) SettlementForSession(sessionID uuid.UUID) (*Settleme
 		return nil, nil
 	}
 
+	return s.settlementView(sessionID, settlement)
+}
+
+func (s *SettlementService) settlementView(sessionID uuid.UUID, settlement *models.Settlement) (*SettlementView, error) {
 	var session models.Session
 	if err := database.DB.First(&session, "id = ?", sessionID).Error; err != nil {
 		return nil, err
@@ -937,6 +968,7 @@ func (s *SettlementService) SettlementForSession(sessionID uuid.UUID) (*Settleme
 	consumed := settlement.CourtCents() + settlement.ShuttleCents()
 
 	return &SettlementView{
+		SettlementID: &settlement.ID,
 		Session: SessionSummary{
 			ID:       session.ID,
 			Title:    session.Title,
@@ -965,84 +997,14 @@ func (s *SettlementService) SettlementForSession(sessionID uuid.UUID) (*Settleme
 	}, nil
 }
 
-// --- balance reminders ----------------------------------------------------
-
-// BalanceNotifier is the slice of NotificationService that settlement needs.
+// TransactionalNotificationQueue captures intent under the money transaction.
 type BalanceNotifier interface {
-	SendNotification(
-		ctx context.Context,
-		userID uuid.UUID,
-		notifType models.NotificationType,
-		title, body string,
-		data map[string]string,
-	) error
+	QueueNotificationWithin(*gorm.DB, *models.Notification, string, time.Time, time.Time) (*models.NotificationOutbox, error)
 }
 
-// WithNotifier attaches the notifier used for balance reminders. Optional: the
-// settlement service works without one, it just says nothing afterwards.
 func (s *SettlementService) WithNotifier(notifier BalanceNotifier) *SettlementService {
 	s.notifier = notifier
 	return s
-}
-
-// notifyLowBalances tells the people who just went below the line.
-//
-// Reminders fire on settlement rather than on a schedule for two reasons: it is
-// the moment the balance actually moved, and the message can say what the night
-// cost rather than nagging in the abstract. Only that session's participants are
-// considered — a member who did not play has not just been charged, so there is
-// nothing new to tell them.
-func (s *SettlementService) notifyLowBalances(
-	ctx context.Context,
-	preview *SettlementPreview,
-	sessionTitle string,
-) {
-	if s.notifier == nil {
-		return
-	}
-
-	var club models.Club
-	if err := database.DB.First(&club).Error; err != nil {
-		return
-	}
-
-	// One reminder per person, not one per charge line — a member who hosted a
-	// guest paid twice but is still one person.
-	charged := map[uuid.UUID]int64{}
-	order := make([]uuid.UUID, 0, len(preview.Lines))
-	for _, line := range preview.Lines {
-		if line.AmountCents == 0 {
-			continue
-		}
-		if _, seen := charged[line.UserID]; !seen {
-			order = append(order, line.UserID)
-		}
-		charged[line.UserID] += line.AmountCents
-	}
-
-	for _, userID := range order {
-		balance, err := s.ledger.BalanceOfUser(userID)
-		if err != nil {
-			continue
-		}
-		if balance >= club.LowBalanceThresholdCents {
-			continue
-		}
-
-		notifType := models.NotificationBalanceLow
-		title := "Your balance is running low"
-		if balance < 0 {
-			notifType = models.NotificationBalanceNegative
-			title = "You owe the club"
-		}
-
-		body := fmt.Sprintf("%s cost you %s. Your balance is now %s.",
-			sessionTitle, formatCents(charged[userID]), formatCents(balance))
-
-		_ = s.notifier.SendNotification(ctx, userID, notifType, title, body, map[string]string{
-			"balance_cents": fmt.Sprintf("%d", balance),
-		})
-	}
 }
 
 // settlementFingerprint binds the reviewed costs to their inputs and rates.

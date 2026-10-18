@@ -556,7 +556,26 @@ func (s *LedgerService) RecordOpeningBalances(in OpeningBalancesInput) (*models.
 // have transacted since, because entries accumulate rather than snapshot.
 func (s *LedgerService) ReverseTransaction(transactionID uuid.UUID, description string, createdBy uuid.UUID) (*models.Transaction, error) {
 	var original models.Transaction
-	if err := database.DB.Preload("Entries").First(&original, "id = ?", transactionID).Error; err != nil {
+	if err := database.DB.First(&original, "id = ?", transactionID).Error; err != nil {
+		return nil, err
+	}
+	if original.Kind == models.TxnSessionSettlement {
+		return nil, newLedgerError("settlement_reversal_required", 409, "Reverse this session split using its settlement controls.")
+	}
+	var result *models.Transaction
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		var err error
+		result, err = s.ReverseTransactionWithin(tx, transactionID, description, createdBy)
+		return err
+	})
+	return result, err
+}
+
+// ReverseTransactionWithin keeps account locks, invariant checks and an origin's
+// related history/state changes inside one transaction.
+func (s *LedgerService) ReverseTransactionWithin(tx *gorm.DB, transactionID uuid.UUID, description string, createdBy uuid.UUID) (*models.Transaction, error) {
+	var original models.Transaction
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Preload("Entries").First(&original, "id = ?", transactionID).Error; err != nil {
 		return nil, err
 	}
 	if original.Kind == models.TxnSplitwiseImport || original.Kind == models.TxnImportAssets {
@@ -567,7 +586,7 @@ func (s *LedgerService) ReverseTransaction(transactionID uuid.UUID, description 
 	}
 
 	var alreadyReversed int64
-	if err := database.DB.Model(&models.Transaction{}).
+	if err := tx.Model(&models.Transaction{}).
 		Where("reverses_transaction_id = ?", transactionID).Count(&alreadyReversed).Error; err != nil {
 		return nil, err
 	}
@@ -592,7 +611,7 @@ func (s *LedgerService) ReverseTransaction(transactionID uuid.UUID, description 
 		description = "Reversal of " + string(original.Kind)
 	}
 
-	return s.Post(PostInput{
+	return s.PostWithin(tx, PostInput{
 		Kind:                  models.TxnReversal,
 		SessionID:             original.SessionID,
 		ReversesTransactionID: &original.ID,

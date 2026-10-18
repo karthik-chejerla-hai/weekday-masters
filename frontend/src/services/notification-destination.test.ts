@@ -10,3 +10,11 @@ it('routes receipts, legacy reminders, balances and exact announcements', () => 
  expect(historyDestination({ id, notification_type: 'admin_announcement', data: 'null' })).toBe(`/notifications/${id}`);
  expect(notificationDestination({ destination_path: '//evil.test', session_id: id })).toBe(`/sessions/${id}`);
 });
+it('keeps historical receipt identity in safe routes and rejects extra query parameters', () => {
+ const split = `/sessions/${id}/settlement?settlement_id=${id}`;
+ expect(safeNotificationPath(split)).toBe(split);
+ expect(notificationDestination({ type: 'session_charge_reversed', session_id: id, settlement_id: id })).toBe(split);
+ expect(safeNotificationPath(`${split}&next=https://evil.test`)).toBeNull();
+ expect(safeNotificationPath(`/sessions/${id}?settlement_id=${id}`)).toBeNull();
+ expect(safeNotificationPath(`/sessions/${id}/settlement?settlement_id=bad`)).toBeNull();
+});

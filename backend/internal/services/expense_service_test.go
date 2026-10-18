@@ -231,6 +231,13 @@ func TestExpenseConcurrentConfirmation(t *testing.T) {
 	if success != 1 {
 		t.Fatalf("settled %d times", success)
 	}
+	var receipts int64
+	if err := database.DB.Model(&models.Notification{}).Where("notification_type = ?", models.NotificationSessionCharge).Count(&receipts).Error; err != nil {
+		t.Fatal(err)
+	}
+	if receipts != int64(len(in.ParticipantIDs)) {
+		t.Fatalf("confirmation created %d receipts for %d selected members", receipts, len(in.ParticipantIDs))
+	}
 	assertBalanced(t)
 }
 
