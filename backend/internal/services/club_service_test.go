@@ -140,12 +140,16 @@ func TestRSVPSettingsMigrationPreservesLegacyDeadlines(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		if database.DB != originalDB {
-			if pool, err := database.DB.DB(); err == nil {
-				pool.Close()
+			if pool, err := database.DB.DB(); err != nil {
+				t.Error(err)
+			} else if err := pool.Close(); err != nil {
+				t.Error(err)
 			}
 		}
 		database.DB = originalDB
-		originalDB.Exec("DROP SCHEMA rsvp_deadline_migration_test CASCADE")
+		if err := originalDB.Exec("DROP SCHEMA rsvp_deadline_migration_test CASCADE").Error; err != nil {
+			t.Error(err)
+		}
 	})
 	dsn, err := url.Parse(os.Getenv("TEST_DATABASE_URL"))
 	if err != nil {
