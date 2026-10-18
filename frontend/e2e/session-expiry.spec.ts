@@ -12,5 +12,5 @@ test('an expired saved session shows normal sign-in and allows a new login', asy
   expect(profileRequests).toBe(0);
   await page.getByRole('button', { name: 'Sign in with Google' }).click();
   await expect.poll(() => page.evaluate(() => sessionStorage.getItem('e2e:login')))
-    .toBe(JSON.stringify({ authorizationParams: { connection: 'google-oauth2' } }));
+    .toBe(JSON.stringify({ appState: { returnTo: '/' }, authorizationParams: { connection: 'google-oauth2' } }));
 });

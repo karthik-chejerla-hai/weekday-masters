@@ -304,3 +304,28 @@ func TestSendTestPushIsAdminOnlyAndFailsClosedWithoutFCM(t *testing.T) {
 	h.as(player).post("/api/admin/notifications/test-push", nil).expect(http.StatusForbidden)
 	h.as(admin).post("/api/admin/notifications/test-push", nil).expect(http.StatusServiceUnavailable)
 }
+
+func TestNotificationDetail_OwnershipAndApproval(t *testing.T) {
+	h := newHarness(t)
+	player := makePlayer(t)
+	other := makePlayer(t)
+	n := models.Notification{UserID: player.ID, NotificationType: models.NotificationAdminAnnouncement, Title: "Exact announcement", Body: "Private body", Data: "{}"}
+	if err := database.DB.Create(&n).Error; err != nil {
+		t.Fatal(err)
+	}
+	var got services.NotificationNavigation
+	h.as(player).get("/api/notifications/" + n.ID.String()).expect(http.StatusOK).decode(&got)
+	if got.DestinationPath != "/notifications/"+n.ID.String() || got.Body != n.Body {
+		t.Fatal(got)
+	}
+	h.as(other).get("/api/notifications/" + n.ID.String()).expect(http.StatusNotFound)
+	h.as(other).post("/api/notifications/"+n.ID.String()+"/read", nil).expect(http.StatusNotFound)
+	h.as(player).get("/api/notifications/bad-id").expect(http.StatusBadRequest)
+	h.as(nil).get("/api/notifications/" + n.ID.String()).expect(http.StatusUnauthorized)
+	if err := database.DB.Model(other).Update("membership_status", models.MembershipPending).Error; err != nil {
+		t.Fatal(err)
+	}
+	other.MembershipStatus = models.MembershipPending
+	h.as(other).get("/api/users/me/notifications/history").expect(http.StatusForbidden)
+	h.as(other).get("/api/notifications/" + n.ID.String()).expect(http.StatusForbidden)
+}

@@ -68,3 +68,37 @@ func TestMemberPushStatus(t *testing.T) {
 		t.Fatalf("private token or another member's device exposed: %s", raw)
 	}
 }
+
+func TestAdminMemberPushSummary(t *testing.T) {
+	h := newHarness(t)
+	admin, empty, registered := makeAdmin(t), makePlayer(t), makePlayer(t)
+	// Default flags are true but do not establish registration.
+	if err := database.DB.Create(&models.UserNotificationPreferences{UserID: empty.ID}).Error; err != nil {
+		t.Fatal(err)
+	}
+	prefs := models.UserNotificationPreferences{UserID: registered.ID}
+	if err := database.DB.Create(&prefs).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := database.DB.Model(&prefs).Update("push_enabled", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, token := range []string{"private-a", "private-b"} {
+		if err := database.DB.Create(&models.UserPushToken{UserID: registered.ID, Token: token}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	response := h.as(admin).get("/api/admin/users").expect(http.StatusOK)
+	var rows []services.AdminMember
+	response.decode(&rows)
+	counts := map[uuid.UUID]int64{}
+	for _, row := range rows {
+		counts[row.ID] = row.PushDeviceCount
+	}
+	if counts[empty.ID] != 0 || counts[registered.ID] != 2 {
+		t.Fatalf("incorrect registration counts: %v", counts)
+	}
+	if strings.Contains(string(response.Body), "private-") || strings.Contains(string(response.Body), "preferences") {
+		t.Fatal("summary exposed private registration data")
+	}
+}

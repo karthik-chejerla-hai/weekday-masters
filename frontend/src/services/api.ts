@@ -296,6 +296,11 @@ class ApiService {
     return response.data;
   }
 
+  async getNotification(notificationId: string): Promise<Notification & { destination_path: string }> {
+    const response = await this.client.get<Notification & { destination_path: string }>(`/notifications/${notificationId}`);
+    return response.data;
+  }
+
   async markNotificationRead(notificationId: string): Promise<void> {
     await this.client.post(`/notifications/${notificationId}/read`);
   }
@@ -539,6 +544,7 @@ export interface PushTestResult {
 }
 
 export interface Notification {
+  destination_path?: string;
   id: string;
   user_id: string;
   notification_type: string;

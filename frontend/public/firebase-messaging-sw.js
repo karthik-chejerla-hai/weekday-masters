@@ -3,9 +3,15 @@ self.addEventListener('notificationclick', (event) => {
   event.stopImmediatePropagation();
   event.notification.close();
   const data = event.notification.data?.FCM_MSG?.data || event.notification.data || {};
-  const path = data.session_id
-    ? `/sessions/${encodeURIComponent(data.session_id)}`
-    : data.type?.startsWith('balance_') ? '/money' : '/dashboard';
+  const id = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
+  const uuid = new RegExp(`^${id}$`);
+  const resource = new RegExp(`^/(?:sessions/${id}(?:/settlement)?|notifications/${id})$`);
+  const safePath = typeof data.destination_path === 'string' &&
+    (['/money', '/notifications', '/dashboard'].includes(data.destination_path) || resource.test(data.destination_path));
+  const path = safePath ? data.destination_path
+    : uuid.test(data.session_id || '') ? `/sessions/${data.session_id}${['session_charge', 'session_charge_reversed'].includes(data.type) ? '/settlement' : ''}`
+    : ['balance_low', 'balance_negative'].includes(data.type) ? '/money'
+    : uuid.test(data.notification_id || '') ? `/notifications/${data.notification_id}` : '/notifications';
   const url = new URL(path, self.location.origin).href;
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });

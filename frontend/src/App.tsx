@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { useAuth } from './context/useAuth';
 import Layout from './components/layout/Layout';
@@ -20,6 +20,9 @@ import AdminSessions from './pages/AdminSessions';
 import AdminMembers from './pages/AdminMembers';
 import PendingApproval from './pages/PendingApproval';
 import Loading from './components/ui/Loading';
+import NotificationHistory from './components/notifications/NotificationHistory';
+import NotificationDetail from './components/notifications/NotificationDetail';
+import { safeAuthReturn } from './context/auth-redirect';
 
 function ProtectedRoute({ children, requireApproved = true, requireAdmin = false }: {
   children: React.ReactNode;
@@ -27,13 +30,14 @@ function ProtectedRoute({ children, requireApproved = true, requireAdmin = false
   requireAdmin?: boolean;
 }) {
   const { isAuthenticated, isLoading, isApproved, isAdmin } = useAuth();
+  const location = useLocation();
 
   if (isLoading) {
     return <Loading />;
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/" replace />;
+    return <Navigate to={`/?returnTo=${encodeURIComponent(safeAuthReturn(location.pathname))}`} replace />;
   }
 
   if (requireApproved && !isApproved) {
@@ -66,6 +70,8 @@ function AppRoutes() {
       } />
 
       <Route element={<Layout />}>
+        <Route path="/notifications" element={<ProtectedRoute><NotificationHistory /></ProtectedRoute>} />
+        <Route path="/notifications/:id" element={<ProtectedRoute><NotificationDetail /></ProtectedRoute>} />
         <Route path="/games" element={<ProtectedRoute><HeadToHead /></ProtectedRoute>} />
         <Route path="/sessions/:id/games" element={<ProtectedRoute><SessionGames /></ProtectedRoute>} />
         <Route path="/assistant" element={<ProtectedRoute><Assistant /></ProtectedRoute>} />

@@ -10,7 +10,13 @@ const roster = [
 ];
 
 test('compact rows expose identity and editing by keyboard and preserve tabs and search', async ({ page }) => {
-  await page.route('**/api/admin/users', route => json(route, roster));
+  const alex = { ...roster[0], push_device_count: 1 };
+  const rosterWithPushCounts = [alex, { ...roster[1], push_device_count: 0 }, roster[2], roster[3]];
+  await page.route('**/api/admin/users', route => json(route, rosterWithPushCounts));
+  await page.route(`**/api/admin/users/${alex.id}`, async route => {
+    if (route.request().method() !== 'PUT') return route.continue();
+    return json(route, { ...alex, ...route.request().postDataJSON(), push_device_count: 1 });
+  });
   await page.goto('/admin/members');
   const details = page.getByRole('button', { name: `Details for ${longName}`, exact: true });
   await expect(details).toBeVisible();
@@ -27,7 +33,13 @@ test('compact rows expose identity and editing by keyboard and preserve tabs and
   await expect(page.getByLabel(/^Email/)).toBeDisabled();
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(page.getByRole('button', { name: `Edit ${longName}`, exact: true })).toBeFocused();
-  await details.click();
+  await expect(page.getByRole('img', { name: 'Push set up · 1 device', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: `Edit ${longName}`, exact: true }).click();
+  await page.getByLabel('Nickname').fill('Alex saved');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Details for Alex saved', exact: true })).toBeVisible();
+  await expect(page.getByRole('img', { name: 'Push set up · 1 device', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Details for Alex saved', exact: true }).click();
   await page.getByRole('searchbox').fill('blair@');
   await expect(page.getByRole('button', { name: 'Details for Blair', exact: true })).toBeVisible();
   await expect(details).toHaveCount(0);
@@ -64,26 +76,42 @@ test('removal refusal stays visible and removed members can be restored', async 
 
 
 test('closed rows show saved push states and detail refresh updates the icon', async ({ page }) => {
-  await page.route('**/api/admin/users', route => json(route, members));
-  let enabled = true;
+  const rosterWithDeviceCounts = members.map((member) => ({
+    ...member,
+    push_device_count: member.id === members[0].id ? 1 : member.id === members[1].id ? 0 : undefined,
+  }));
+  await page.route('**/api/admin/users', route => json(route, rosterWithDeviceCounts));
+  let registeredDevices = 1;
   await page.route('**/api/admin/users/*/push-notifications', route => {
     const id = route.request().url().split('/').slice(-2)[0];
     if (id === members[3].id) return json(route, { error: 'Unavailable' }, 503);
-    return json(route, { preferences: id === members[2].id ? null : { ...preferences, push_enabled: id === members[0].id && enabled }, devices: [] });
+    return json(route, {
+      preferences: id === members[2].id ? null : { ...preferences, push_enabled: false },
+      devices: id === members[0].id && registeredDevices > 0
+        ? [{ id: 'device-1', device_name: 'Alex browser', created_at: '2026-10-07T01:00:00Z', last_registered_at: '2026-10-07T01:00:00Z' }]
+        : [],
+    });
   });
   await page.goto('/admin/members');
-  await expect(page.getByRole('img', { name: 'Account push enabled', exact: true })).toHaveCount(1);
-  await expect(page.getByRole('img', { name: 'Account push disabled', exact: true })).toHaveCount(1);
-  await expect(page.getByRole('img', { name: 'No saved push setting', exact: true })).toBeVisible();
-  await expect(page.getByRole('img', { name: 'Push setting unavailable', exact: true })).toBeVisible();
+  await expect(page.getByRole('img', { name: 'Push set up · 1 device', exact: true })).toHaveCount(1);
+  await expect(page.getByRole('img', { name: 'No push devices', exact: true })).toHaveCount(1);
+  await expect(page.getByRole('img', { name: 'Push status unavailable', exact: true })).toHaveCount(2);
   await expect(page.getByRole('button', { name: 'Push alerts and devices' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Details for Alex', exact: true }).click();
   await page.getByRole('button', { name: 'Push alerts and devices', exact: true }).click();
-  await expect(page.getByText('Account push: On', { exact: true })).toBeVisible();
-  enabled = false;
+  await expect(page.getByText('Account push is off. These choices apply when the member turns it on.')).toBeVisible();
+  await expect(page.getByText('1 registered device', { exact: true })).toBeVisible();
+  await expect(page.getByText('Alex browser', { exact: true })).toBeVisible();
+  registeredDevices = 0;
   await page.getByRole('button', { name: 'Refresh', exact: true }).click();
-  await expect(page.getByText('Account push: Off', { exact: true })).toBeVisible();
+  await expect(page.getByText('No registered devices. Push alerts cannot reach this member.')).toBeVisible();
+  await expect(page.getByText('0 registered devices', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Details for Alex', exact: true }).click();
-  await expect(page.getByRole('img', { name: 'Account push disabled', exact: true })).toHaveCount(2);
+  await expect(page.getByRole('img', { name: 'No push devices', exact: true })).toHaveCount(2);
+  await page.getByRole('button', { name: 'Details for Drew', exact: true }).click();
+  await page.getByRole('button', { name: 'Push alerts and devices', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Could not load push settings');
+  await expect(page.getByRole('button', { name: 'Details for Drew', exact: true })
+    .getByRole('img', { name: 'Push status unavailable', exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
