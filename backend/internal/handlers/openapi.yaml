@@ -359,7 +359,7 @@ paths:
       tags: [Notifications]
       summary: Revoke a foreign unadopted legacy browser address
       operationId: revokeForeignLegacyToken
-      description: Authentication required, including pending or removed new accounts. FCM address possession permits revoke-only cleanup for installation_id NULL. Same-owner active rows and adopted v2 installations remain unchanged. Returns no identity or address.
+      description: Authentication required, including pending or removed new accounts. FCM address possession permits revoke-only cleanup for installation_id NULL. Same-owner active legacy rows and adopted v2 installations remain unchanged. Any matched adopted token requires browser cleanup because its local installation proof was lost, including for the same owner. Returns no identity or address.
       requestBody:
         required: true
         content:
