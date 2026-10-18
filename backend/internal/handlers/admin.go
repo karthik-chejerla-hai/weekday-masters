@@ -14,6 +14,7 @@ import (
 	"github.com/weekday-masters/backend/internal/models"
 	"github.com/weekday-masters/backend/internal/services"
 	"github.com/weekday-masters/backend/internal/utils"
+	"gorm.io/gorm"
 )
 
 type AdminHandler struct {
@@ -513,6 +514,7 @@ type UpdateClubRequest struct {
 	VenueName           *string `json:"venue_name"`
 	VenueAddress        *string `json:"venue_address"`
 	CourtNumber         *int    `json:"court_number" binding:"omitempty,gte=0,lte=999"`
+	RSVPDeadlineHours   *int    `json:"rsvp_deadline_hours" binding:"omitempty,gte=0,lte=8760"`
 	TimeFormat          *string `json:"time_format" binding:"omitempty,oneof=12h 24h"`
 }
 
@@ -524,35 +526,36 @@ func (h *AdminHandler) UpdateClub(c *gin.Context) {
 		return
 	}
 
-	var club models.Club
-	if err := database.DB.First(&club).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Club not found"})
-		return
-	}
-
+	updates := map[string]any{}
 	if req.Name != nil {
-		club.Name = *req.Name
+		updates["name"] = *req.Name
 	}
 	if req.NotificationsPaused != nil {
-		club.NotificationsPaused = *req.NotificationsPaused
+		updates["notifications_paused"] = *req.NotificationsPaused
 	}
 	if req.VenueName != nil {
-		club.VenueName = *req.VenueName
+		updates["venue_name"] = *req.VenueName
 	}
 	if req.VenueAddress != nil {
-		club.VenueAddress = *req.VenueAddress
+		updates["venue_address"] = *req.VenueAddress
 	}
 	if req.CourtNumber != nil {
-		club.CourtNumber = *req.CourtNumber
+		updates["court_number"] = *req.CourtNumber
 	}
 	if req.TimeFormat != nil {
-		club.TimeFormat = *req.TimeFormat
+		updates["time_format"] = *req.TimeFormat
 	}
-
-	if err := database.DB.Save(&club).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update club"})
+	if req.RSVPDeadlineHours != nil {
+		updates["rsvp_deadline_hours"] = *req.RSVPDeadlineHours
+	}
+	club, err := services.UpdateClubSettings(updates)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			status = http.StatusNotFound
+		}
+		c.JSON(status, gin.H{"error": "Failed to update club"})
 		return
 	}
-
 	c.JSON(http.StatusOK, club)
 }

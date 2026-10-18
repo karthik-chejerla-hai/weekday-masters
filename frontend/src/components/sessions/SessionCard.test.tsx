@@ -190,6 +190,17 @@ describe('SessionCard Component', () => {
       expect(screen.queryByText('RSVP Closed')).not.toBeInTheDocument();
     });
 
+    it.each([
+      ['2027-01-10T07:00:00Z', '12h', 'RSVP by Sun, 10 Jan at 6:00 PM'],
+      ['2027-01-10T07:00:00Z', '24h', 'RSVP by Sun, 10 Jan at 18:00'],
+      ['2027-07-11T08:00:00Z', '12h', 'RSVP by Sun, 11 Jul at 6:00 PM'],
+      ['2027-07-11T08:00:00Z', '24h', 'RSVP by Sun, 11 Jul at 18:00'],
+    ] as const)('shows the Sydney deadline time for %s in %s format', (deadline, timeFormat, expected) => {
+      freezeBefore();
+      render(<MemoryRouter><SessionCard session={{ ...baseSession, rsvp_deadline: deadline }} timeFormat={timeFormat} /></MemoryRouter>);
+      expect(screen.getByText(expected)).toBeInTheDocument();
+    });
+
     it('hides the RSVP deadline once it has passed', () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-04-11T00:00:00Z'));

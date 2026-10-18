@@ -196,11 +196,11 @@ func TestCreateSession_DefaultDeadlineAllowsShortNotice(t *testing.T) {
 	_, ss, _ := newTestServices(t)
 	creator := newUser(t, "admin")
 
-	// Two days out: the 3-day default deadline lands in the past. Admins must
+	// One day out: the 50-hour default deadline lands in the past. Admins must
 	// still be able to create the session.
 	session, err := ss.CreateSession(CreateSessionInput{
 		Title:       "Short Notice",
-		SessionDate: time.Now().AddDate(0, 0, 2),
+		SessionDate: time.Now().AddDate(0, 0, 1),
 		StartTime:   "18:00",
 		EndTime:     "20:00",
 		Courts:      1,
@@ -237,8 +237,8 @@ func TestCreateSession_CustomDeadline(t *testing.T) {
 		t.Fatalf("expected deadline %v, got %v", custom, session.RSVPDeadline)
 	}
 
-	// The 3-day default must not have been applied.
-	if session.RSVPDeadline.Equal(utils.CalculateRSVPDeadline(sessionDate)) {
+	// The default must not have been applied.
+	if session.RSVPDeadline.Equal(utils.CalculateRSVPDeadline(*session.StartsAt, 50)) {
 		t.Fatal("custom deadline was overwritten by the default")
 	}
 }
@@ -374,7 +374,7 @@ func TestUpdateSession_DeadlineRules(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to update date: %v", err)
 	}
-	if !updated.RSVPDeadline.Equal(utils.CalculateRSVPDeadline(laterDate)) {
+	if updated.StartsAt.Sub(updated.RSVPDeadline) != 50*time.Hour {
 		t.Fatalf("expected recalculated default deadline, got %v", updated.RSVPDeadline)
 	}
 }
@@ -467,5 +467,40 @@ func TestCreateSessionResolvesTimestamps(t *testing.T) {
 	}
 	if got := session.StartsAt.In(utils.SydneyLocation).Format("15:04"); got != "20:00" {
 		t.Errorf("resolved start reads %s in Sydney, want 20:00", got)
+	}
+}
+
+func TestRecurringDeadlinesUseElapsedHoursAcrossSydneyDST(t *testing.T) {
+	_, ss, _ := newTestServices(t)
+	creator := newUser(t, "admin")
+	if err := database.DB.Model(&models.Club{}).Where("1 = 1").Update("rsvp_deadline_hours", 72).Error; err != nil {
+		t.Fatal(err)
+	}
+	date := time.Date(time.Now().Year()+1, time.October, 1, 0, 0, 0, 0, utils.SydneyLocation)
+	day, occurrences := int(date.Weekday()), 3
+	parent, err := ss.CreateSession(CreateSessionInput{Title: "DST weekly", SessionDate: date, StartTime: "18:00", EndTime: "20:00", Courts: 1, IsRecurring: true, RecurringDayOfWeek: &day, Occurrences: &occurrences, CreatedBy: creator.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sessions []models.Session
+	if err := database.DB.Where("id = ? OR recurring_parent_id = ?", parent.ID, parent.ID).Find(&sessions).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 3 {
+		t.Fatalf("got %d sessions", len(sessions))
+	}
+	for _, session := range sessions {
+		if session.StartsAt.Sub(session.RSVPDeadline) != 72*time.Hour {
+			t.Fatalf("wrong DST offset: %v to %v", session.RSVPDeadline, session.StartsAt)
+		}
+	}
+	// A new start time uses the saved club default.
+	start := "19:00"
+	updated, err := ss.UpdateSession(parent.ID, UpdateSessionInput{StartTime: &start})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.StartsAt.Sub(updated.RSVPDeadline) != 72*time.Hour {
+		t.Fatal("start time edit ignored default")
 	}
 }

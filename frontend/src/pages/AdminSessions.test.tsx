@@ -12,6 +12,7 @@ vi.mock('../services/api', () => ({
     listSessions: vi.fn(),
     listCancelledSessions: vi.fn(),
     createSession: vi.fn(),
+    updateSession: vi.fn(),
     deleteSession: vi.fn(),
     cancelSession: vi.fn(),
   },
@@ -159,7 +160,7 @@ describe('AdminSessions page', () => {
       const sent = vi.mocked(api.createSession).mock.calls[0][0].rsvp_deadline;
       expect(sent).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/);
       // Whatever the runner's zone, it must denote the instant the admin picked.
-      expect(new Date(sent!).getTime()).toBe(new Date('2026-12-08T18:00').getTime());
+      expect(new Date(sent!).getTime()).toBe(new Date('2026-12-08T18:00:00+11:00').getTime());
     });
 
     it('derives a recurring deadline from the days-before offset', async () => {
@@ -188,8 +189,32 @@ describe('AdminSessions page', () => {
       expect(sent).toBeDefined();
       // 2 days before the 11th, at the default 23:59.
       expect(new Date(sent!).getTime()).toBe(
-        new Date('2026-12-09T23:59:59').getTime()
+        new Date('2026-12-09T23:59:59+11:00').getTime()
       );
+    });
+
+    it('shows server errors when session creation fails', async () => {
+      vi.mocked(api.createSession).mockRejectedValueOnce({ response: { data: { error: 'Could not save this session.' } } });
+      const user = userEvent.setup();
+      renderPage();
+      await screen.findByText(/click "new session"/i);
+      const form = await openForm(user);
+      await user.type(form.querySelector('input[type="date"]')!, '2026-12-11');
+      await user.click(screen.getByRole('button', { name: /create session/i }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('Could not save this session.');
+    });
+
+    it('rejects a deadline after the session starts', async () => {
+      const user = userEvent.setup();
+      renderPage();
+      await screen.findByText(/click "new session"/i);
+      const form = await openForm(user);
+      await user.type(form.querySelector('input[type="date"]')!, '2026-12-11');
+      await user.click(deadlineToggle());
+      await user.type(form.querySelector('input[type="datetime-local"]')!, '2026-12-12T18:00');
+      await user.click(screen.getByRole('button', { name: /create session/i }));
+      expect(await screen.findByText('RSVP deadline cannot be after the session starts')).toBeInTheDocument();
+      expect(api.createSession).not.toHaveBeenCalled();
     });
 
     it('refuses a deadline in the past without calling the API', async () => {
@@ -293,5 +318,72 @@ describe('Session cancellation', () => {
     for (const button of within(dialog).getAllByRole('button')) expect(button).toBeDisabled();
     expect(within(dialog).getByRole('textbox')).toBeDisabled();
     expect(api.cancelSession).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Existing session RSVP deadline', () => {
+ it('edits one deadline in Sydney time and keeps the edit on failure', async () => {
+  vi.mocked(api.listSessions).mockResolvedValue([makeSession({ session_date: '2027-01-10', starts_at: '2027-01-10T09:00:00Z' })]);
+  vi.mocked(api.updateSession).mockRejectedValueOnce({ response: { data: { error: 'Save failed. Try again.' } } })
+   .mockResolvedValueOnce(makeSession({ session_date: '2027-01-10', starts_at: '2027-01-10T09:00:00Z', rsvp_deadline: '2027-01-08T07:00:00Z' }));
+  const user = userEvent.setup();
+  renderPage();
+  await user.click(await screen.findByRole('button', { name: 'Edit RSVP deadline' }));
+  const input = screen.getByLabelText('RSVP deadline (Sydney time)');
+  await user.clear(input);
+  await user.type(input, '2027-01-08T18:00');
+  await user.click(screen.getByRole('button', { name: 'Save deadline' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Save failed. Try again.');
+  expect(input).toHaveValue('2027-01-08T18:00');
+  await user.click(screen.getByRole('button', { name: 'Save deadline' }));
+  await waitFor(() => expect(api.updateSession).toHaveBeenLastCalledWith('session-1', { rsvp_deadline: '2027-01-08T07:00:00.000Z' }));
+  await waitFor(() => expect(screen.queryByLabelText('RSVP deadline (Sydney time)')).not.toBeInTheDocument());
+  expect(screen.getByText(/8 Jan 2027/)).toBeInTheDocument();
+ });
+ it('shows the configured default in the create form', async () => {
+  vi.mocked(api.getClub).mockResolvedValue({ rsvp_deadline_hours: 36 } as never);
+  const user = userEvent.setup();
+  renderPage();
+  await screen.findByText(/click "new session"/i);
+  await openForm(user);
+  expect(screen.getByText(/default: 36 hours before start/i)).toBeInTheDocument();
+ });
+});
+
+describe('Nonexistent Sydney deadline times', () => {
+  it('rejects a nonexistent time when editing a deadline', async () => {
+    vi.mocked(api.listSessions).mockResolvedValue([makeSession({ session_date: '2027-10-05', starts_at: '2027-10-05T09:00:00Z' })]);
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Edit RSVP deadline' }));
+    const input = screen.getByLabelText('RSVP deadline (Sydney time)');
+    await user.clear(input);
+    await user.type(input, '2027-10-03T02:30');
+    await user.click(screen.getByRole('button', { name: 'Save deadline' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/valid Sydney/i);
+    expect(api.updateSession).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('rejects a nonexistent time when creating a recurring=%s session', async (recurring) => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText(/click "new session"/i);
+    const form = await openForm(user);
+    await user.type(form.querySelector('input[type="date"]')!, '2027-10-05');
+    if (recurring) await user.click(screen.getByRole('radio', { name: /recurring weekly/i }));
+    await user.click(deadlineToggle());
+    if (recurring) {
+      const offset = Array.from(form.querySelectorAll('select')).find(el => within(el).queryByText('2 days before'))!;
+      await user.selectOptions(offset, '2');
+      const times = form.querySelectorAll('input[type="time"]');
+      const time = times[times.length - 1];
+      await user.clear(time);
+      await user.type(time, '02:30');
+    } else {
+      await user.type(form.querySelector('input[type="datetime-local"]')!, '2027-10-03T02:30');
+    }
+    await user.click(screen.getByRole('button', { name: /create session/i }));
+    expect(await screen.findByText(/valid Sydney/i)).toBeInTheDocument();
+    expect(api.createSession).not.toHaveBeenCalled();
   });
 });

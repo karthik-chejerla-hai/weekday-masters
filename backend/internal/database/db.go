@@ -33,6 +33,19 @@ func Connect(databaseURL string) error {
 func Migrate() error {
 	log.Println("Running database migrations...")
 
+	// Keep legacy recurring rules separate from edits to individual deadlines.
+	// AutoMigrate must not recalculate stored deadlines during this upgrade.
+	if DB.Migrator().HasTable(&models.Session{}) && !DB.Migrator().HasColumn(&models.Session{}, "recurring_rsvp_deadline") {
+		if err := DB.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Exec("ALTER TABLE sessions ADD COLUMN recurring_rsvp_deadline timestamptz").Error; err != nil {
+				return err
+			}
+			return tx.Exec("UPDATE sessions SET recurring_rsvp_deadline = rsvp_deadline WHERE is_recurring = true").Error
+		}); err != nil {
+			return err
+		}
+	}
+
 	err := DB.AutoMigrate(
 		&models.Club{},
 		&models.User{},

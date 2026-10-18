@@ -36,7 +36,7 @@ schedule game days, track RSVPs, and send notifications, all from one place.
 |---|---------|-------------|
 | 🔐 | **Auth & Approval** | Google OAuth via Auth0 with admin approval workflow for new members |
 | 📅 | **Session Scheduling** | Create one-off or recurring game days with court-based player limits |
-| ✋ | **Smart RSVPs** | 3-day deadline enforcement, late RSVP tracking, admin overrides |
+| ✋ | **Smart RSVPs** | Configurable deadlines in hours, per-session edits, admin overrides |
 | ⏳ | **Waitlist** | Once a session is full, further RSVPs queue up and are auto-promoted (with a notification) when a spot frees |
 | 🏟️ | **Court Calculator** | Auto max players: 1 court → 6, 2 courts → 10, 3 courts → 16 |
 | 🔔 | **Push & Email** | FCM push notifications + SendGrid emails for reminders & announcements |

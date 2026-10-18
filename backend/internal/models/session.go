@@ -17,19 +17,20 @@ const (
 )
 
 type Session struct {
-	ID                 uuid.UUID     `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	Title              string        `gorm:"size:255;not null" json:"title"`
-	Description        string        `gorm:"type:text" json:"description"`
-	SessionDate        time.Time     `gorm:"type:date;not null" json:"session_date"`
-	StartTime          string        `gorm:"size:10;not null" json:"start_time"` // HH:MM format
-	EndTime            string        `gorm:"size:10;not null" json:"end_time"`   // HH:MM format
-	Courts             int           `gorm:"not null;check:courts >= 1 AND courts <= 3" json:"courts"`
-	MaxPlayers         int           `gorm:"not null" json:"max_players"`
-	RSVPDeadline       time.Time     `gorm:"not null" json:"rsvp_deadline"`
-	IsRecurring        bool          `gorm:"default:false" json:"is_recurring"`
-	RecurringDayOfWeek *int          `json:"recurring_day_of_week"` // 0=Sunday, 1=Monday, etc.
-	RecurringParentID  *uuid.UUID    `gorm:"type:uuid" json:"recurring_parent_id"`
-	Status             SessionStatus `gorm:"size:50;default:'open'" json:"status"`
+	ID                    uuid.UUID     `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	Title                 string        `gorm:"size:255;not null" json:"title"`
+	Description           string        `gorm:"type:text" json:"description"`
+	SessionDate           time.Time     `gorm:"type:date;not null" json:"session_date"`
+	StartTime             string        `gorm:"size:10;not null" json:"start_time"` // HH:MM format
+	EndTime               string        `gorm:"size:10;not null" json:"end_time"`   // HH:MM format
+	Courts                int           `gorm:"not null;check:courts >= 1 AND courts <= 3" json:"courts"`
+	MaxPlayers            int           `gorm:"not null" json:"max_players"`
+	RecurringRSVPDeadline *time.Time    `json:"-"` // Original series rule, independent of edits to this occurrence.
+	RSVPDeadline          time.Time     `gorm:"not null" json:"rsvp_deadline"`
+	IsRecurring           bool          `gorm:"default:false" json:"is_recurring"`
+	RecurringDayOfWeek    *int          `json:"recurring_day_of_week"` // 0=Sunday, 1=Monday, etc.
+	RecurringParentID     *uuid.UUID    `gorm:"type:uuid" json:"recurring_parent_id"`
+	Status                SessionStatus `gorm:"size:50;default:'open'" json:"status"`
 
 	// Resolved instants, derived from SessionDate plus StartTime/EndTime in
 	// Sydney. The strings above stay as the editing interface; these are what
