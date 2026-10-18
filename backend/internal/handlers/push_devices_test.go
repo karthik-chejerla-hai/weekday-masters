@@ -40,7 +40,7 @@ func TestPushDeviceAPIApprovalOwnershipAndProofCleanup(t *testing.T) {
 }
 
 func TestLegacyRevokeAllowsAuthenticatedPendingAccountWithoutOwnerDisclosure(t *testing.T) {
-	for _, status := range []models.MembershipStatus{models.MembershipApproved, models.MembershipPending} {
+	for _, status := range []models.MembershipStatus{models.MembershipApproved, models.MembershipPending, models.MembershipRemoved} {
 		t.Run(string(status), func(t *testing.T) {
 			h := newHarness(t)
 			owner := makePlayer(t)
@@ -65,6 +65,21 @@ func TestLegacyRevokeAllowsAuthenticatedPendingAccountWithoutOwnerDisclosure(t *
 			database.DB.First(&stored, "id = ?", row.ID)
 			if stored.UserID != owner.ID || stored.RevokedAt == nil {
 				t.Fatal("legacy cleanup transferred row")
+			}
+			installation := uuid.New()
+			secret := strings.Repeat("ab", 32)
+			h.as(owner).post("/api/users/me/push-devices/enroll", map[string]any{"installation_id": installation, "token": "adopted-private", "revocation_secret": secret, "generation": 0}).expect(http.StatusOK)
+			var orphaned map[string]any
+			h.as(other).post("/api/push-devices/legacy-revoke", map[string]any{"token": "adopted-private"}).expect(http.StatusOK).decode(&orphaned)
+			if orphaned["cleanup_required"] != true || len(orphaned) != 1 {
+				t.Fatal(orphaned)
+			}
+			var adopted models.UserPushToken
+			if err := database.DB.Where("token = ?", "adopted-private").First(&adopted).Error; err != nil {
+				t.Fatal(err)
+			}
+			if adopted.UserID != owner.ID || adopted.RevokedAt != nil || adopted.Generation != 1 || adopted.InstallationID == nil || *adopted.InstallationID != installation || adopted.RevocationHash == "" {
+				t.Fatal("orphan cleanup changed adopted row", adopted)
 			}
 			h.as(nil).post("/api/push-devices/legacy-revoke", map[string]any{"token": row.Token}).expect(http.StatusUnauthorized)
 		})
