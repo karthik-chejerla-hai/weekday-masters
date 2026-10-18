@@ -74,3 +74,9 @@
     @apply mt-1 max-w-2xl text-sm leading-6 text-slate-600;
   }
 }
+
+/* Keep app navigation below the persistent dev label. */
+body:has([data-rally-environment="dev"]) header.sticky,
+body:has([data-rally-environment="dev"]) aside.fixed {
+  top: 1.75rem;
+}
