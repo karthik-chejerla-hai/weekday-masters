@@ -95,13 +95,14 @@ jobs:
       FIREBASE_APP_ID: ${{ vars.DEV_FIREBASE_APP_ID }}
       FIREBASE_MESSAGING_SENDER_ID: ${{ vars.DEV_FIREBASE_MESSAGING_SENDER_ID }}
       FIREBASE_VAPID_KEY: ${{ vars.DEV_FIREBASE_VAPID_KEY }}
-      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
       NEON_REFERENCE_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ needs.verify.outputs.sha }}
       - uses: ./.github/actions/release
+        with:
+          neon_api_key: ${{ secrets.NEON_API_KEY }}
       - uses: actions/upload-artifact@v6
         with:
           name: dev-release
@@ -145,10 +146,6 @@ jobs:
       FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
       FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
       FIREBASE_VAPID_KEY: ${{ secrets.FIREBASE_VAPID_KEY }}
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-      SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
-      SENDGRID_FROM_EMAIL: ${{ secrets.SENDGRID_FROM_EMAIL }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -165,3 +162,8 @@ jobs:
       - name: Check that dev still runs this release
         run: python3 scripts/release/identity.py verify /tmp/dev-release/release.json
       - uses: ./.github/actions/release
+        with:
+          database_url: ${{ secrets.DATABASE_URL }}
+          groq_api_key: ${{ secrets.GROQ_API_KEY }}
+          sendgrid_api_key: ${{ secrets.SENDGRID_API_KEY }}
+          sendgrid_from_email: ${{ secrets.SENDGRID_FROM_EMAIL }}

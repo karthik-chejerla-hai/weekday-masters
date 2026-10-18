@@ -1,5 +1,21 @@
 name: Deploy Rally release
 description: Deploy one tested commit using the caller environment credentials
+inputs:
+  neon_api_key:
+    description: Organization key used only to create the isolated dev database
+    required: false
+  database_url:
+    description: Production migration connection, never exposed to frontend builds
+    required: false
+  groq_api_key:
+    description: Production assistant credential
+    required: false
+  sendgrid_api_key:
+    description: Production invitation credential
+    required: false
+  sendgrid_from_email:
+    description: Production invitation sender
+    required: false
 runs:
   using: composite
   steps:
@@ -31,9 +47,16 @@ runs:
     - name: Prepare dev database
       if: env.RELEASE_ENV == 'dev'
       shell: bash
+      env:
+        NEON_API_KEY: ${{ inputs.neon_api_key }}
       run: python3 scripts/release/neon_dev.py
     - name: Deploy release
       shell: bash
+      env:
+        DATABASE_URL: ${{ inputs.database_url }}
+        GROQ_API_KEY: ${{ inputs.groq_api_key }}
+        SENDGRID_API_KEY: ${{ inputs.sendgrid_api_key }}
+        SENDGRID_FROM_EMAIL: ${{ inputs.sendgrid_from_email }}
       run: bash .github/scripts/release.sh
     - name: Use production frontend identity
       if: env.RELEASE_ENV == 'prod'
