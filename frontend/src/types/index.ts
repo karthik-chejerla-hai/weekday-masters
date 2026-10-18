@@ -90,6 +90,7 @@ export interface Club {
   venue_address: string;
   court_number?: number;
   time_format?: TimeFormat;
+  rsvp_deadline_hours?: number;
   created_at: string;
   updated_at: string;
   // Settlement defaults. Present on the admin view of the club; the public
@@ -170,6 +171,7 @@ export interface CreateSessionInput {
   is_recurring?: boolean;
   recurring_day_of_week?: number;
   occurrences?: number;
+  rsvp_deadline?: string; // RFC3339 datetime
 }
 
 export interface UpdateSessionInput {
@@ -180,6 +182,7 @@ export interface UpdateSessionInput {
   end_time?: string;
   courts?: number;
   status?: SessionStatus;
+  rsvp_deadline?: string; // RFC3339 datetime
 }
 
 // --- Ledger ---------------------------------------------------------------

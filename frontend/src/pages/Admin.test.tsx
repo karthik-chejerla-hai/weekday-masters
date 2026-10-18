@@ -27,7 +27,7 @@ describe('Club display settings', () => {
     await user.selectOptions(screen.getByLabelText('Time display'), '12h');
     await user.click(screen.getByRole('button', { name: 'Save Club Settings' }));
     expect(await screen.findByText('Club settings saved!')).toBeInTheDocument();
-    expect(api.updateClub).toHaveBeenCalledWith({ name: 'Rally', venue_name: 'BadmintonWorx Norwest', venue_address: 'Local venue', court_number: 8, time_format: '12h' });
+    expect(api.updateClub).toHaveBeenCalledWith({ name: 'Rally', venue_name: 'BadmintonWorx Norwest', venue_address: 'Local venue', court_number: 8, time_format: '12h', rsvp_deadline_hours: 50 });
   });
 
   it('can clear the assigned court without changing the time choice', async () => {
@@ -50,4 +50,29 @@ describe('Club display settings', () => {
     expect(await screen.findByText(/Enter a whole court number/)).toBeInTheDocument();
     expect(api.updateClub).not.toHaveBeenCalled();
   });
+});
+
+describe('Default RSVP deadline', () => {
+ it('loads and saves hours and explains the effect on future sessions', async () => {
+  vi.mocked(api.getClub).mockResolvedValue({ name: 'Rally', rsvp_deadline_hours: 48 } as never);
+  const user = userEvent.setup();
+  renderPage();
+  const input = await screen.findByLabelText('Default RSVP deadline (hours before start)');
+  await waitFor(() => expect(input).toHaveValue(48));
+  expect(screen.getByText(/including custom deadlines/i)).toBeInTheDocument();
+  await user.clear(input);
+  await user.type(input, '24');
+  await user.click(screen.getByRole('button', { name: 'Save Club Settings' }));
+  await waitFor(() => expect(api.updateClub).toHaveBeenCalledWith(expect.objectContaining({ rsvp_deadline_hours: 24 })));
+ });
+ it.each(['', '-1', '1.5', '8761'])('rejects invalid default %j', async (value) => {
+  const user = userEvent.setup();
+  renderPage();
+  const input = await screen.findByLabelText('Default RSVP deadline (hours before start)');
+  await user.clear(input);
+  if (value) await user.type(input, value);
+  await user.click(screen.getByRole('button', { name: 'Save Club Settings' }));
+  expect(await screen.findByText(/Enter whole hours from 0 to 8760/)).toBeInTheDocument();
+  expect(api.updateClub).not.toHaveBeenCalled();
+ });
 });

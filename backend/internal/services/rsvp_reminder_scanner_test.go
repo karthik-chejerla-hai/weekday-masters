@@ -390,15 +390,12 @@ func TestRSVPScannerRolloutCutoffAtomicAndRepeatSafe(t *testing.T) {
 	now := utils.NowInSydney().Truncate(time.Minute)
 	session := scannerSession(t, ss, user, now.Add(80*time.Hour))
 	cutoff := session.StartsAt.Add(-80 * time.Hour)
-	custom := cutoff.Add(time.Hour)
+	custom := session.StartsAt.Add(-55 * time.Hour)
 	if err := database.DB.Model(session).UpdateColumn("rsvp_deadline", custom).Error; err != nil {
 		t.Fatal(err)
 	}
 	sentinel := errors.New("stage rollout unavailable")
 	err := database.RunNotificationMigration(database.DB, database.RSVP48HourMigrationVersion, func(tx *gorm.DB, _ time.Time) error {
-		if err := database.ApplyRSVPDeadline48hWithin(tx, cutoff); err != nil {
-			return err
-		}
 		if err := database.ApplyRSVPReminderCutoverWithin(tx, cutoff); err != nil {
 			return err
 		}
@@ -422,9 +419,6 @@ func TestRSVPScannerRolloutCutoffAtomicAndRepeatSafe(t *testing.T) {
 	calls := 0
 	apply := func(tx *gorm.DB, _ time.Time) error {
 		calls++
-		if err := database.ApplyRSVPDeadline48hWithin(tx, cutoff); err != nil {
-			return err
-		}
 		return database.ApplyRSVPReminderCutoverWithin(tx, cutoff)
 	}
 	if err := database.RunNotificationMigration(database.DB, database.RSVP48HourMigrationVersion, apply); err != nil {
@@ -595,5 +589,90 @@ func TestRSVPScannerPausedPublicationDoesNotReplayOnResume(t *testing.T) {
 				t.Fatal("future stage lost after resume")
 			}
 		})
+	}
+}
+
+func TestRSVPReminderTimesCapsAtConfiguredDeadline(t *testing.T) {
+	start := time.Date(2030, 1, 10, 20, 0, 0, 0, utils.SydneyLocation)
+	for _, hours := range []int{0, 50, 70, 100, 8760} {
+		deadline := start.Add(-time.Duration(hours) * time.Hour)
+		for _, stage := range []int{1, 2} {
+			_, expiry := RSVPReminderTimes(start, deadline, stage)
+			if expiry.After(deadline) {
+				t.Fatalf("stage %d expires after %dh deadline", stage, hours)
+			}
+		}
+	}
+}
+
+func TestRSVPScannerRearmsOnlyFutureStageAfterDeadlineExtension(t *testing.T) {
+	for _, beforeDue := range []bool{true, false} {
+		t.Run(fmt.Sprintf("before_due_%t", beforeDue), func(t *testing.T) {
+			s, ss, user := rsvpScannerFixture(t)
+			session := scannerSession(t, ss, user, utils.NowInSydney().AddDate(0, 0, 7).Truncate(time.Minute))
+			addDeliveryDevice(t, user, "deadline-change")
+			earlyDeadline := session.StartsAt.Add(-80 * time.Hour)
+			if _, err := ss.UpdateSession(session.ID, UpdateSessionInput{RSVPDeadline: &earlyDeadline}); err != nil {
+				t.Fatal(err)
+			}
+			scanRSVP(t, s, session.StartsAt.Add(-96*time.Hour))
+			if stageOf(t, *session, 2).State != models.RSVPReminderSkipped {
+				t.Fatal("early deadline did not skip unusable second stage")
+			}
+			laterDeadline := session.StartsAt.Add(-50 * time.Hour)
+			if _, err := ss.UpdateSession(session.ID, UpdateSessionInput{RSVPDeadline: &laterDeadline}); err != nil {
+				t.Fatal(err)
+			}
+			now := session.StartsAt.Add(-90 * time.Hour)
+			if !beforeDue {
+				now = session.StartsAt.Add(-59 * time.Hour)
+			}
+			scanRSVP(t, s, now)
+			if beforeDue {
+				if stageOf(t, *session, 2).State != models.RSVPReminderPending {
+					t.Fatal("future stage did not follow extended deadline")
+				}
+				scanRSVP(t, s, session.StartsAt.Add(-60*time.Hour))
+				if countRSVPEvents(t) != 2 {
+					t.Fatal("future reminder was omitted after deadline extension")
+				}
+			} else if stageOf(t, *session, 2).State != models.RSVPReminderSkipped || countRSVPEvents(t) != 1 {
+				t.Fatal("deadline extension replayed an already-due skipped stage")
+			}
+		})
+	}
+}
+
+func TestRSVPCutoverClosedWindowCanReopenBeforeReminderIsDue(t *testing.T) {
+	s, ss, user := rsvpScannerFixture(t)
+	session := scannerSession(t, ss, user, utils.NowInSydney().AddDate(0, 0, 7).Truncate(time.Minute))
+	addDeliveryDevice(t, user, "reopened-after-cutover")
+	cutoff := session.StartsAt.Add(-110 * time.Hour)
+	closedDeadline := cutoff.Add(-time.Hour)
+	if err := database.DB.Model(session).UpdateColumn("rsvp_deadline", closedDeadline).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := database.DB.Transaction(func(tx *gorm.DB) error { return database.ApplyRSVPReminderCutoverWithin(tx, cutoff) }); err != nil {
+		t.Fatal(err)
+	}
+	for _, stage := range []int{1, 2} {
+		stored := stageOf(t, *session, stage)
+		if stored.State != models.RSVPReminderSkipped || stored.SkipReason != "stage_expired" {
+			t.Fatalf("future closed stage mislabeled: %+v", stored)
+		}
+	}
+	if _, err := UpdateClubSettings(map[string]any{"rsvp_deadline_hours": 49}); err != nil {
+		t.Fatal(err)
+	}
+	scanRSVP(t, s, cutoff)
+	for _, stage := range []int{1, 2} {
+		if stageOf(t, *session, stage).State != models.RSVPReminderPending {
+			t.Fatal("future stage stayed skipped after explicit admin reopen")
+		}
+	}
+	scanRSVP(t, s, session.StartsAt.Add(-96*time.Hour))
+	scanRSVP(t, s, session.StartsAt.Add(-60*time.Hour))
+	if countRSVPEvents(t) != 2 {
+		t.Fatal("future reminders missing after admin reopened window")
 	}
 }
