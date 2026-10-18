@@ -1,6 +1,11 @@
 package services
 
 import (
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+	"net/url"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -89,7 +94,7 @@ func TestClubDefaultChangeSerializesWithSessionCreation(t *testing.T) {
 func TestClubDefaultAppliesToRefreshAfterCustomParentHasStarted(t *testing.T) {
 	_, ss, _ := newTestServices(t)
 	admin := newUser(t, "admin")
-	date := utils.NowInSydney().AddDate(0, 0, -1)
+	date := utils.NowInSydney().AddDate(0, 0, -1).Truncate(time.Microsecond)
 	day := int(date.Weekday())
 	parent := models.Session{Title: "Old custom series", SessionDate: date, StartTime: "18:00", EndTime: "20:00", Courts: 1,
 		RSVPDeadline: date.AddDate(0, 0, -2), IsRecurring: true, RecurringDayOfWeek: &day, Status: models.SessionStatusOpen, CreatedBy: admin.ID}
@@ -126,7 +131,38 @@ func TestClubDefaultAppliesToRefreshAfterCustomParentHasStarted(t *testing.T) {
 }
 
 func TestRSVPSettingsMigrationPreservesLegacyDeadlines(t *testing.T) {
-	_, ss, _ := newTestServices(t)
+	requireDB(t)
+	originalDB := database.DB
+	// Schema changes invalidate cached SELECT * plans. Give this test its own
+	// schema and connection, as the production migration process has.
+	if err := originalDB.Exec("CREATE SCHEMA rsvp_deadline_migration_test").Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if database.DB != originalDB {
+			if pool, err := database.DB.DB(); err == nil {
+				pool.Close()
+			}
+		}
+		database.DB = originalDB
+		originalDB.Exec("DROP SCHEMA rsvp_deadline_migration_test CASCADE")
+	})
+	dsn, err := url.Parse(os.Getenv("TEST_DATABASE_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := dsn.Query()
+	query.Set("search_path", "rsvp_deadline_migration_test,public")
+	dsn.RawQuery = query.Encode()
+	isolated, err := gorm.Open(postgres.New(postgres.Config{DSN: dsn.String(), PreferSimpleProtocol: true}), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	database.DB = isolated
+	if err := database.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	ss := NewSessionService()
 	admin := newUser(t, "admin")
 	session := newSession(t, ss, admin.ID, 1)
 	if err := database.DB.Model(session).UpdateColumn("is_recurring", true).Error; err != nil {
@@ -139,11 +175,6 @@ func TestRSVPSettingsMigrationPreservesLegacyDeadlines(t *testing.T) {
 	if err := database.DB.Exec("ALTER TABLE clubs DROP COLUMN rsvp_deadline_hours").Error; err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		if err := database.Migrate(); err != nil {
-			t.Error(err)
-		}
-	})
 	if err := database.Migrate(); err != nil {
 		t.Fatal(err)
 	}
