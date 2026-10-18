@@ -13,6 +13,7 @@ export default function Admin() {
 
   // Club settings state
   const [clubForm, setClubForm] = useState({ name: '', venue_name: '', venue_address: '', court_number: '', time_format: '24h' as TimeFormat, rsvp_deadline_hours: '50' });
+  const [savedDeadlineHours, setSavedDeadlineHours] = useState(50);
   const [isSavingClub, setIsSavingClub] = useState(false);
   const [notificationsPaused, setNotificationsPaused] = useState(false);
   const [clubMessage, setClubMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -34,6 +35,7 @@ export default function Admin() {
       ]);
       setJoinRequests(requestsData);
       setNotificationsPaused(clubData.notifications_paused ?? false);
+      setSavedDeadlineHours(clubData.rsvp_deadline_hours ?? 50);
       setClubForm({
         name: clubData.name || '',
         venue_name: clubData.venue_name || '',
@@ -79,15 +81,23 @@ export default function Admin() {
       setClubMessage({ type: 'error', text: 'Enter a whole court number from 1 to 999, or leave it blank.' });
       return;
     }
-    const deadlineHours = Number(clubForm.rsvp_deadline_hours);
-    if (clubForm.rsvp_deadline_hours.trim() === '' || !Number.isInteger(deadlineHours) || deadlineHours < 0 || deadlineHours > 8760) {
+    const { rsvp_deadline_hours: deadlineValue, ...settings } = clubForm;
+    const deadlineHours = Number(deadlineValue);
+    if (deadlineValue.trim() === '' || !Number.isInteger(deadlineHours) || deadlineHours < 0 || deadlineHours > 8760) {
       setClubMessage({ type: 'error', text: 'Enter whole hours from 0 to 8760 for the RSVP deadline.' });
       return;
     }
     setIsSavingClub(true);
     setClubMessage(null);
     try {
-      await api.updateClub({ ...clubForm, court_number: courtNumber, rsvp_deadline_hours: deadlineHours });
+      const saved = await api.updateClub({
+        ...settings,
+        court_number: courtNumber,
+        ...(deadlineHours !== savedDeadlineHours ? { rsvp_deadline_hours: deadlineHours } : {}),
+      });
+      const currentDeadlineHours = saved.rsvp_deadline_hours ?? deadlineHours;
+      setSavedDeadlineHours(currentDeadlineHours);
+      setClubForm(current => ({ ...current, rsvp_deadline_hours: String(currentDeadlineHours) }));
       setClubMessage({ type: 'success', text: 'Club settings saved!' });
     } catch (error) {
       console.error('Failed to save club:', error);

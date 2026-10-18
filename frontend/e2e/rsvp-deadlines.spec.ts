@@ -66,3 +66,44 @@ for (const [timeFormat, expected] of [['12h', '6:00 PM'], ['24h', '18:00']] as c
     }
   });
 }
+
+test('a venue-only save does not restore a stale deadline default', async ({ page }) => {
+  await page.route('**/api/admin/join-requests', route => json(route, []));
+  let currentHours = 50;
+  await page.route('**/api/club', route => json(route, { ...club, rsvp_deadline_hours: currentHours }));
+  let submitted: Record<string, unknown> | undefined;
+  await page.route('**/api/admin/club', async route => {
+    submitted = route.request().postDataJSON();
+    await json(route, { ...club, ...submitted, rsvp_deadline_hours: currentHours });
+  });
+  await page.goto('/admin');
+  const input = page.getByLabel('Default RSVP deadline (hours before start)');
+  await expect(input).toHaveValue('50');
+  // Another admin changes the saved default while this page remains open.
+  currentHours = 48;
+  await page.getByPlaceholder('e.g., Sydney Olympic Park Sports Centre').fill('New venue');
+  await page.getByRole('button', { name: 'Save Club Settings' }).click();
+  await expect(page.getByText('Club settings saved!')).toBeVisible();
+  expect(submitted).toMatchObject({ venue_name: 'New venue' });
+  expect(submitted).not.toHaveProperty('rsvp_deadline_hours');
+  await expect(input).toHaveValue('48');
+});
+
+test('deadline edits reject the Sydney daylight saving gap', async ({ page }) => {
+  await page.route(/\/api\/sessions(?:\?.*)?$/, route => json(route, [{ ...session,
+    session_date: '2027-10-05', starts_at: '2027-10-05T09:00:00Z',
+  }]));
+  let saves = 0;
+  await page.route('**/api/admin/sessions/session-1', async route => { saves++; await json(route, session); });
+  await page.goto('/admin/sessions');
+  await page.getByRole('button', { name: 'Edit RSVP deadline' }).click();
+  const input = page.getByLabel('RSVP deadline (Sydney time)');
+  await input.fill('2027-10-03T02:30');
+  await page.getByRole('button', { name: 'Save deadline' }).click();
+  await expect(page.getByRole('alert')).toHaveText('Choose a valid Sydney date and time. This clock time does not exist.');
+  await expect(input).toHaveValue('2027-10-03T02:30');
+  expect(saves).toBe(0);
+  if (process.env.RSVP_SCREENSHOTS_DIR) {
+    await page.screenshot({ path: `${process.env.RSVP_SCREENSHOTS_DIR}/sydney-gap-${test.info().project.name}.png`, fullPage: true });
+  }
+});
