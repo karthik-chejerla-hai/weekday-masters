@@ -29,8 +29,10 @@ jobs:
           workload_identity_provider: ${{ vars.DEV_WIF_PROVIDER }}
           service_account: rally-dev-deployer@rally-club-app-dev.iam.gserviceaccount.com
       - uses: google-github-actions/setup-gcloud@v3
-      - name: Create a separate empty dev database
+      - name: Connect the separate dev database
         env:
-          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
-          NEON_REFERENCE_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          DEV_NEON_API_KEY: ${{ secrets.DEV_NEON_API_KEY }}
+          DEV_NEON_PROJECT_ID: ${{ vars.DEV_NEON_PROJECT_ID }}
+          DEV_NEON_DB_NAME: ${{ vars.DEV_NEON_DB_NAME || 'neondb' }}
+          DEV_NEON_DB_ROLE: ${{ vars.DEV_NEON_DB_ROLE || 'neondb_owner' }}
         run: python3 scripts/release/neon_dev.py

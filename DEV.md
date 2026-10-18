@@ -83,7 +83,9 @@ The pending durable-notification PRs replace the in-process scheduler with a pri
 
 ## Setup configuration
 
-The `dev` GitHub environment uses `DEV_*` variables for its WIF provider, Auth0 settings and public Firebase settings. Missing settings stop deployment. It never uses production Auth0 or Firebase values as a fallback. Run **Set up dev database** once before the first dev release. Only this setup workflow receives `NEON_API_KEY`. Regular dev and prod releases do not receive it. The setup creates a fresh project in the same Neon organization and region, with no production branch or copied rows. The connection URI stays in the dev Secret Manager.
+The `dev` GitHub environment uses `DEV_*` variables for its WIF provider, Auth0 settings and public Firebase settings. Missing settings stop deployment. It never uses production Auth0 or Firebase values as a fallback. Create a separate empty Neon project named `Rally Dev` in the Neon console. Do not create a branch of production. Add its project ID as `DEV_NEON_PROJECT_ID` in GitHub's `dev` environment. Store a key restricted to that project as `DEV_NEON_API_KEY` in the same environment. The default database and role are `neondb` and `neondb_owner`. Set `DEV_NEON_DB_NAME` and `DEV_NEON_DB_ROLE` if they differ.
+
+Run **Set up dev database** once before the first dev release. It reads only the separate dev project and saves its URI in the dev Secret Manager. Normal releases do not receive a Neon administration key. The production project ID is explicitly forbidden. A changed saved project ID requires review before setup can continue.
 
 Until this setup PR merges, the existing `production-api` environment also requires approval. This prevents automatic production releases through the old workflow.
 
