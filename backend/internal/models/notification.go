@@ -85,6 +85,13 @@ type Notification struct {
 	Body             string           `gorm:"type:text;not null" json:"body"`
 	Data             string           `gorm:"type:jsonb" json:"data,omitempty"` // JSON string for additional payload
 
+	// PushSent means at least one device submission was accepted by FCM.
+	// Counts describe the latest attempt, not browser receipt. Historical and
+	// unattempted counts are NULL. Provider errors leave acceptance unknown,
+	// but retain the number of attempted devices.
+	PushAcceptedDevices  *int `json:"push_accepted_devices"`
+	PushAttemptedDevices *int `json:"push_attempted_devices"`
+
 	PushSent    bool       `gorm:"default:false" json:"push_sent"`
 	PushSentAt  *time.Time `json:"push_sent_at,omitempty"`
 	EmailSent   bool       `gorm:"default:false" json:"email_sent"`

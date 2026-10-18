@@ -93,6 +93,9 @@ func TestNotificationService_SendAndHistory(t *testing.T) {
 	if len(history) != 1 {
 		t.Fatalf("expected 1 notification in history, got %d", len(history))
 	}
+	if history[0].PushAcceptedDevices != nil || history[0].PushAttemptedDevices != nil {
+		t.Fatal("disabled provider must leave delivery counts unknown")
+	}
 	if history[0].Title != "Spot Available!" {
 		t.Fatalf("unexpected title: %q", history[0].Title)
 	}
@@ -154,7 +157,7 @@ func (f stubPushClient) SendEachForMulticast(ctx context.Context, msg *messaging
 }
 
 func TestPushDeliveryRequiresAcceptedDevice(t *testing.T) {
-	for _, mode := range []string{"no_devices", "all_failed", "partial", "accepted"} {
+	for _, mode := range []string{"no_devices", "all_failed", "partial", "accepted", "provider_error"} {
 		t.Run(mode, func(t *testing.T) {
 			requireDB(t)
 			user := newUser(t, "pushplayer")
@@ -162,6 +165,9 @@ func TestPushDeliveryRequiresAcceptedDevice(t *testing.T) {
 			sessionID := uuid.NewString()
 			ns := &NotificationService{fcmEnabled: true, frontendURL: "https://rally.test", fcmClient: stubPushClient(func(_ context.Context, msg *messaging.MulticastMessage) (*messaging.BatchResponse, error) {
 				calls++
+				if mode == "provider_error" {
+					return nil, errors.New("provider unavailable")
+				}
 				if msg.Webpush.FCMOptions.Link != "https://rally.test/sessions/"+sessionID {
 					t.Fatal("wrong notification link")
 				}
@@ -193,6 +199,26 @@ func TestPushDeliveryRequiresAcceptedDevice(t *testing.T) {
 			wantSent := mode == "partial" || mode == "accepted"
 			if notices[0].PushSent != wantSent || (notices[0].PushSentAt != nil) != wantSent || notices[0].EmailSent {
 				t.Fatalf("wrong delivery state: %+v", notices[0])
+			}
+			wantAttempted, wantAccepted := 1, 0
+			if mode == "no_devices" {
+				wantAttempted = 0
+			}
+			if mode == "partial" {
+				wantAttempted = 2
+			}
+			if wantSent {
+				wantAccepted = 1
+			}
+			if notices[0].PushAttemptedDevices == nil || *notices[0].PushAttemptedDevices != wantAttempted {
+				t.Fatalf("wrong attempted count: %+v", notices[0])
+			}
+			if mode == "provider_error" {
+				if notices[0].PushAcceptedDevices != nil {
+					t.Fatal("provider error must leave acceptance unknown")
+				}
+			} else if notices[0].PushAcceptedDevices == nil || *notices[0].PushAcceptedDevices != wantAccepted {
+				t.Fatalf("wrong accepted count: %+v", notices[0])
 			}
 			if mode == "no_devices" && calls != 0 {
 				t.Fatal("called FCM without devices")
@@ -492,5 +518,39 @@ func TestBalanceNudgeReportsAcceptedBackgroundPush(t *testing.T) {
 	}
 	if delivered.Data["type"] != string(models.NotificationBalanceLow) || delivered.Webpush.FCMOptions.Link != "https://rally.test/money" {
 		t.Fatalf("wrong push payload: %+v", delivered)
+	}
+}
+
+func TestPushHistoryPreservesUnknownCounts(t *testing.T) {
+	requireDB(t)
+	user := newUser(t, "legacyhistory")
+	notice := models.Notification{UserID: user.ID, NotificationType: models.NotificationSessionReminder,
+		Title: "Legacy", Body: "Legacy", Data: "{}", PushSent: true}
+	if err := database.DB.Create(&notice).Error; err != nil {
+		t.Fatal(err)
+	}
+	ns := &NotificationService{fcmEnabled: true, fcmClient: stubPushClient(func(context.Context, *messaging.MulticastMessage) (*messaging.BatchResponse, error) {
+		t.Fatal("must not resend a previously accepted notification")
+		return nil, nil
+	})}
+	if err := ns.deliverNotification(context.Background(), &notice); err != nil {
+		t.Fatal(err)
+	}
+	history, err := ns.GetUserNotifications(user.ID, 10, 0)
+	if err != nil || len(history) != 1 {
+		t.Fatalf("history: %v, %v", history, err)
+	}
+	encoded, err := json.Marshal(history[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(encoded, &payload); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"push_accepted_devices", "push_attempted_devices"} {
+		if value, exists := payload[key]; !exists || value != nil {
+			t.Fatalf("legacy %s must be null: %s", key, encoded)
+		}
 	}
 }

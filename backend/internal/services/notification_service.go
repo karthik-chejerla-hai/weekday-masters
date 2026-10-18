@@ -340,7 +340,12 @@ func (s *NotificationService) deliverNotification(ctx context.Context, notificat
 	}
 	data["type"] = string(notification.NotificationType)
 	if prefs.IsPushEnabledForType(notification.NotificationType) && s.fcmEnabled && !notification.PushSent {
-		if err := s.sendPushNotification(ctx, userID, notification.Title, notification.Body, data); err != nil {
+		result, err := s.sendPushNotificationOutcome(ctx, userID, notification.Title, notification.Body, data)
+		if result != nil {
+			notification.PushAttemptedDevices = &result.attemptedDevices
+			notification.PushAcceptedDevices = result.acceptedDevices
+		}
+		if err != nil {
 			log.Printf("Failed to send push to user %s: %v", userID, err)
 		} else {
 			now := time.Now()
@@ -349,18 +354,13 @@ func (s *NotificationService) deliverNotification(ctx context.Context, notificat
 		}
 	}
 	// Preserve read_at if the member opens the notification while delivery runs.
-	return database.DB.Model(notification).Select("push_sent", "push_sent_at").Updates(notification).Error
+	return database.DB.Model(notification).Select("push_sent", "push_sent_at", "push_accepted_devices", "push_attempted_devices").Updates(notification).Error
 }
 
-// sendPushNotification sends a push notification to all user devices
-func (s *NotificationService) sendPushNotification(
-	ctx context.Context,
-	userID uuid.UUID,
-	title, body string,
-	data map[string]string,
-) error {
-	_, err := s.sendPushNotificationWithResult(ctx, userID, title, body, data)
-	return err
+// pushDeliveryOutcome preserves uncertainty when the provider request fails.
+type pushDeliveryOutcome struct {
+	attemptedDevices int
+	acceptedDevices  *int
 }
 
 func (s *NotificationService) sendPushNotificationWithResult(
@@ -369,6 +369,19 @@ func (s *NotificationService) sendPushNotificationWithResult(
 	title, body string,
 	data map[string]string,
 ) (*PushTestResult, error) {
+	result, err := s.sendPushNotificationOutcome(ctx, userID, title, body, data)
+	if err != nil {
+		return nil, err
+	}
+	return &PushTestResult{AcceptedDevices: *result.acceptedDevices, AttemptedDevices: result.attemptedDevices}, nil
+}
+
+func (s *NotificationService) sendPushNotificationOutcome(
+	ctx context.Context,
+	userID uuid.UUID,
+	title, body string,
+	data map[string]string,
+) (*pushDeliveryOutcome, error) {
 	if !s.fcmEnabled {
 		return nil, ErrPushUnavailable
 	}
@@ -380,7 +393,8 @@ func (s *NotificationService) sendPushNotificationWithResult(
 	}
 
 	if len(tokens) == 0 {
-		return nil, ErrNoPushDevices
+		zero := 0
+		return &pushDeliveryOutcome{acceptedDevices: &zero}, ErrNoPushDevices
 	}
 
 	// Build token strings
@@ -409,10 +423,12 @@ func (s *NotificationService) sendPushNotificationWithResult(
 	}
 
 	// Send
+	result := &pushDeliveryOutcome{attemptedDevices: len(tokens)}
 	response, err := s.fcmClient.SendEachForMulticast(ctx, message)
 	if err != nil {
-		return nil, err
+		return result, err
 	}
+	result.acceptedDevices = &response.SuccessCount
 
 	// Remove invalid tokens
 	for i, result := range response.Responses {
@@ -425,10 +441,10 @@ func (s *NotificationService) sendPushNotificationWithResult(
 	}
 
 	if response.SuccessCount == 0 {
-		return nil, errors.New("FCM rejected all device deliveries")
+		return result, errors.New("FCM rejected all device deliveries")
 	}
 	log.Printf("Push notification sent to %d/%d devices for user %s", response.SuccessCount, len(tokens), userID)
-	return &PushTestResult{AcceptedDevices: response.SuccessCount, AttemptedDevices: len(tokens)}, nil
+	return result, nil
 }
 
 func (s *NotificationService) notificationURL(data map[string]string) string {

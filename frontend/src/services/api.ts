@@ -547,6 +547,9 @@ export interface Notification {
   data?: string;
   push_sent: boolean;
   push_sent_at?: string;
+  // Provider acceptance counts, not confirmed browser delivery.
+  push_accepted_devices?: number | null;
+  push_attempted_devices?: number | null;
   email_sent: boolean;
   email_sent_at?: string;
   read_at?: string;

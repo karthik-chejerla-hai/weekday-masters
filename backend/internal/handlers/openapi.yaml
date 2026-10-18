@@ -2669,6 +2669,15 @@ components:
           description: JSON-encoded additional payload
         push_sent:
           type: boolean
+          description: True when FCM accepted at least one device submission. This does not confirm browser delivery.
+        push_accepted_devices:
+          type: integer
+          nullable: true
+          description: Devices accepted by FCM in the latest attempt. Null when unknown. This does not confirm browser delivery.
+        push_attempted_devices:
+          type: integer
+          nullable: true
+          description: Devices submitted in the latest attempt. Null for historical or unattempted records.
         push_sent_at:
           type: string
           format: date-time
