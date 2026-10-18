@@ -2418,7 +2418,7 @@ components:
           type: integer
           minimum: 0
           maximum: 8760
-          default: 72
+          default: 50
           description: Hours before the session start when RSVPs close. Changing this value replaces all future session deadlines, including custom deadlines.
         time_format:
           type: string
@@ -2887,7 +2887,7 @@ components:
           type: integer
           minimum: 0
           maximum: 8760
-          default: 72
+          default: 50
           description: Hours before the session start when RSVPs close. Changing this value replaces all future session deadlines, including custom deadlines.
         time_format:
           type: string

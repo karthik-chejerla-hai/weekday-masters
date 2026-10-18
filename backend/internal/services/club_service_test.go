@@ -196,7 +196,7 @@ func TestRSVPSettingsMigrationPreservesLegacyDeadlines(t *testing.T) {
 	if err := database.DB.First(&club).Error; err != nil {
 		t.Fatal(err)
 	}
-	if club.RSVPDeadlineHours != 72 {
+	if club.RSVPDeadlineHours != 50 {
 		t.Fatal("migration did not initialize default")
 	}
 	if _, err := UpdateClubSettings(map[string]any{"rsvp_deadline_hours": 24}); err != nil {
@@ -238,7 +238,7 @@ func TestEditingParentDeadlineDoesNotChangeLaterRecurringDates(t *testing.T) {
 		t.Fatalf("got %d children", len(children))
 	}
 	for _, child := range children {
-		if child.StartsAt.Sub(child.RSVPDeadline) != 72*time.Hour {
+		if child.StartsAt.Sub(child.RSVPDeadline) != 50*time.Hour {
 			t.Fatal("one-session edit changed later recurring dates")
 		}
 	}

@@ -12,7 +12,7 @@ export default function Admin() {
   const [processingId, setProcessingId] = useState<string | null>(null);
 
   // Club settings state
-  const [clubForm, setClubForm] = useState({ name: '', venue_name: '', venue_address: '', court_number: '', time_format: '24h' as TimeFormat, rsvp_deadline_hours: '72' });
+  const [clubForm, setClubForm] = useState({ name: '', venue_name: '', venue_address: '', court_number: '', time_format: '24h' as TimeFormat, rsvp_deadline_hours: '50' });
   const [isSavingClub, setIsSavingClub] = useState(false);
   const [notificationsPaused, setNotificationsPaused] = useState(false);
   const [clubMessage, setClubMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -40,7 +40,7 @@ export default function Admin() {
         venue_address: clubData.venue_address || '',
         court_number: clubData.court_number ? String(clubData.court_number) : '',
         time_format: clubData.time_format || '24h',
-        rsvp_deadline_hours: String(clubData.rsvp_deadline_hours ?? 72),
+        rsvp_deadline_hours: String(clubData.rsvp_deadline_hours ?? 50),
       });
     } catch (error) {
       console.error('Failed to load data:', error);

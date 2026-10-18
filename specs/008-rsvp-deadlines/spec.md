@@ -17,7 +17,8 @@ Acceptance criteria:
 Link the implementation PR with a closing reference so GitHub closes this issue when the PR merges.
 
 Implementation rules:
-- The initial default is 72 elapsed hours before the resolved session start.
+- The initial default is 50 elapsed hours before the resolved session start.
+- A Tuesday 20:00 session closes RSVPs on Sunday at 18:00, Sydney time.
 - Admins can select whole hours from 0 to 8760. Zero closes RSVPs at the start.
 - Introducing the setting does not rewrite existing deadlines.
 - Saving an unchanged default preserves session-specific changes.

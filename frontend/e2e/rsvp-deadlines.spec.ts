@@ -5,7 +5,7 @@ test.use({ identity: 'admin', timezoneId: 'UTC' });
 
 test('admin changes the default in hours and sees the effect on future sessions', async ({ page }) => {
   await page.route('**/api/admin/join-requests', route => json(route, []));
-  await page.route('**/api/club', route => json(route, { ...club, rsvp_deadline_hours: 72 }));
+  await page.route('**/api/club', route => json(route, { ...club, rsvp_deadline_hours: 50 }));
   let hours: number | undefined;
   await page.route('**/api/admin/club', async route => {
     hours = route.request().postDataJSON().rsvp_deadline_hours;
@@ -13,7 +13,7 @@ test('admin changes the default in hours and sees the effect on future sessions'
   });
   await page.goto('/admin');
   const input = page.getByLabel('Default RSVP deadline (hours before start)');
-  await expect(input).toHaveValue('72');
+  await expect(input).toHaveValue('50');
   await expect(page.getByText(/including custom deadlines/)).toBeVisible();
   await input.fill('48');
   if (process.env.RSVP_SCREENSHOTS_DIR) {

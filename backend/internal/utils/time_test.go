@@ -11,7 +11,7 @@ func TestCalculateRSVPDeadline(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, hours := range []int{0, 24, 72, 8760} {
+		for _, hours := range []int{0, 24, 50, 72, 8760} {
 			deadline := CalculateRSVPDeadline(start, hours)
 			if start.Sub(deadline) != time.Duration(hours)*time.Hour {
 				t.Fatalf("wrong deadline for %s, %d", date, hours)
@@ -174,5 +174,14 @@ func TestResolveSessionTimesRejectsNonsense(t *testing.T) {
 	}
 	if _, _, err := ResolveSessionTimes(day, "20:00", "25:99"); err == nil {
 		t.Error("expected an impossible end time to be refused")
+	}
+}
+
+func TestFiftyHourDeadlineForTuesdayEvening(t *testing.T) {
+	start := time.Date(2027, time.January, 12, 20, 0, 0, 0, SydneyLocation)
+	want := time.Date(2027, time.January, 10, 18, 0, 0, 0, SydneyLocation)
+	deadline := CalculateRSVPDeadline(start, 50)
+	if start.Weekday() != time.Tuesday || deadline.Weekday() != time.Sunday || !deadline.Equal(want) {
+		t.Fatalf("expected Sunday 18:00 before Tuesday 20:00, got %s", deadline)
 	}
 }

@@ -27,7 +27,7 @@ describe('Club display settings', () => {
     await user.selectOptions(screen.getByLabelText('Time display'), '12h');
     await user.click(screen.getByRole('button', { name: 'Save Club Settings' }));
     expect(await screen.findByText('Club settings saved!')).toBeInTheDocument();
-    expect(api.updateClub).toHaveBeenCalledWith({ name: 'Rally', venue_name: 'BadmintonWorx Norwest', venue_address: 'Local venue', court_number: 8, time_format: '12h', rsvp_deadline_hours: 72 });
+    expect(api.updateClub).toHaveBeenCalledWith({ name: 'Rally', venue_name: 'BadmintonWorx Norwest', venue_address: 'Local venue', court_number: 8, time_format: '12h', rsvp_deadline_hours: 50 });
   });
 
   it('can clear the assigned court without changing the time choice', async () => {

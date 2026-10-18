@@ -121,7 +121,7 @@ func TestCreateSession_CalculatesCapacityFromCourts(t *testing.T) {
 	}
 }
 
-func TestCreateSession_SetsTheRSVPDeadline72HoursBeforeStart(t *testing.T) {
+func TestCreateSession_SetsTheRSVPDeadline50HoursBeforeStart(t *testing.T) {
 	h := newHarness(t)
 	admin := makeAdmin(t)
 
@@ -134,8 +134,8 @@ func TestCreateSession_SetsTheRSVPDeadline72HoursBeforeStart(t *testing.T) {
 		"courts":       2,
 	}).expect(http.StatusCreated).decode(&session)
 
-	if session.StartsAt == nil || session.StartsAt.Sub(session.RSVPDeadline) != 72*time.Hour {
-		t.Fatalf("expected deadline 72 hours before start, got %v", session.RSVPDeadline)
+	if session.StartsAt == nil || session.StartsAt.Sub(session.RSVPDeadline) != 50*time.Hour {
+		t.Fatalf("expected deadline 50 hours before start, got %v", session.RSVPDeadline)
 	}
 }
 

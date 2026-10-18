@@ -11,7 +11,7 @@ import Badge from '../components/ui/Badge';
 export default function AdminSessions() {
   const navigate = useNavigate();
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [defaultDeadlineHours, setDefaultDeadlineHours] = useState(72);
+  const [defaultDeadlineHours, setDefaultDeadlineHours] = useState(50);
   const [editingDeadlineId, setEditingDeadlineId] = useState<string | null>(null);
   const [editedDeadline, setEditedDeadline] = useState('');
   const [isSavingDeadline, setIsSavingDeadline] = useState(false);
@@ -79,7 +79,7 @@ export default function AdminSessions() {
       setSessions([...data, ...cancelled].sort((a, b) =>
         a.session_date.localeCompare(b.session_date) || a.start_time.localeCompare(b.start_time)));
       setTimeFormat(club?.time_format || '24h');
-      setDefaultDeadlineHours(club?.rsvp_deadline_hours ?? 72);
+      setDefaultDeadlineHours(club?.rsvp_deadline_hours ?? 50);
     } catch (error) {
       console.error('Failed to load sessions:', error);
     } finally {

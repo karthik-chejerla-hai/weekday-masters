@@ -196,11 +196,11 @@ func TestCreateSession_DefaultDeadlineAllowsShortNotice(t *testing.T) {
 	_, ss, _ := newTestServices(t)
 	creator := newUser(t, "admin")
 
-	// Two days out: the 3-day default deadline lands in the past. Admins must
+	// One day out: the 50-hour default deadline lands in the past. Admins must
 	// still be able to create the session.
 	session, err := ss.CreateSession(CreateSessionInput{
 		Title:       "Short Notice",
-		SessionDate: time.Now().AddDate(0, 0, 2),
+		SessionDate: time.Now().AddDate(0, 0, 1),
 		StartTime:   "18:00",
 		EndTime:     "20:00",
 		Courts:      1,
@@ -237,8 +237,8 @@ func TestCreateSession_CustomDeadline(t *testing.T) {
 		t.Fatalf("expected deadline %v, got %v", custom, session.RSVPDeadline)
 	}
 
-	// The 3-day default must not have been applied.
-	if session.RSVPDeadline.Equal(utils.CalculateRSVPDeadline(*session.StartsAt, 72)) {
+	// The default must not have been applied.
+	if session.RSVPDeadline.Equal(utils.CalculateRSVPDeadline(*session.StartsAt, 50)) {
 		t.Fatal("custom deadline was overwritten by the default")
 	}
 }
@@ -374,7 +374,7 @@ func TestUpdateSession_DeadlineRules(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to update date: %v", err)
 	}
-	if updated.StartsAt.Sub(updated.RSVPDeadline) != 72*time.Hour {
+	if updated.StartsAt.Sub(updated.RSVPDeadline) != 50*time.Hour {
 		t.Fatalf("expected recalculated default deadline, got %v", updated.RSVPDeadline)
 	}
 }
