@@ -27,6 +27,7 @@ import type {
   LedgerActivityView,
   Transaction,
   BalanceCorrection,
+  AssetPurchase,
   SettlementInput,
   SettlementPreview,
   SettlementView,
@@ -393,6 +394,16 @@ class ApiService {
   async listBalanceCorrections(limit = 20, offset = 0): Promise<{ items: BalanceCorrection[]; total: number }> {
     const response = await this.client.get<{ items: BalanceCorrection[]; total: number }>('/admin/balance-corrections', { params: { limit, offset } });
     return { items: response.data.items ?? [], total: response.data.total ?? 0 };
+  }
+
+  async listAssetPurchases(limit = 20, offset = 0): Promise<{ items: AssetPurchase[]; total: number }> {
+    const response = await this.client.get<{ items: AssetPurchase[]; total: number }>('/admin/asset-purchases', { params: { limit, offset } });
+    return { items: response.data.items ?? [], total: response.data.total ?? 0 };
+  }
+
+  async correctAssetPurchase(id: string, input: { amount_cents: number; units: number; reason: string }): Promise<Transaction> {
+    const response = await this.client.post<Transaction>(`/admin/asset-purchases/${id}/correct`, input);
+    return response.data;
   }
 
   async recordShuttlePurchase(units: number, amountCents: number, description?: string, occurredAt?: string): Promise<Transaction> {
