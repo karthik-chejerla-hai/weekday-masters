@@ -555,62 +555,91 @@ func (s *LedgerService) RecordOpeningBalances(in OpeningBalancesInput) (*models.
 //
 // Negation is correct by construction: if the original balanced, so does its
 // mirror image, which means a reversal can never fail the invariant check. It
-// also means reversal needs to understand nothing about what the original meant
-// — only what it moved. Balances unwind correctly even if the members involved
-// have transacted since, because entries accumulate rather than snapshot.
+// also means the inverse needs only the original movements. Session reversals
+// additionally coordinate settlement state through SettlementService. Balances
+// unwind correctly even if the members involved have transacted since, because
+// entries accumulate rather than snapshot.
 func (s *LedgerService) ReverseTransaction(transactionID uuid.UUID, description string, createdBy uuid.UUID) (*models.Transaction, error) {
+	// Transaction identity/kind is immutable. Discover session transactions before
+	// locking anything: settlement and reversal must both lock the session first.
+	var original models.Transaction
+	if err := database.DB.Select("id", "kind").First(&original, "id = ?", transactionID).Error; err != nil {
+		return nil, err
+	}
+	if original.Kind == models.TxnSessionSettlement {
+		var settlement models.Settlement
+		if err := database.DB.Where("transaction_id = ?", transactionID).First(&settlement).Error; err != nil {
+			return nil, err
+		}
+		return NewSettlementService(s).ReverseSettlement(settlement.ID, description, createdBy)
+	}
+
 	var result *models.Transaction
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
-		var original models.Transaction
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Preload("Entries").First(&original, "id = ?", transactionID).Error; err != nil {
-			return err
-		}
-		if original.Kind == models.TxnSplitwiseImport || original.Kind == models.TxnImportAssets {
-			return errors.New("imported history requires a reviewed correction, not an individual reversal")
-		}
-		if original.Kind == models.TxnBalanceCorrection {
-			return errors.New("correct the current asset balance with a new audited correction instead of reversing this snapshot")
-		}
-
-		var alreadyReversed int64
-		if err := tx.Model(&models.Transaction{}).
-			Where("reverses_transaction_id = ?", transactionID).Count(&alreadyReversed).Error; err != nil {
-			return err
-		}
-		if alreadyReversed > 0 {
-			return ErrTransactionAlreadyReversed()
-		}
-
-		movements := make([]Movement, 0, len(original.Entries))
-		for _, entry := range original.Entries {
-			movement := Movement{AccountID: entry.AccountID, AmountCents: -entry.AmountCents}
-			if entry.Units != nil {
-				negated := -*entry.Units
-				movement.Units = &negated
-			}
-			movements = append(movements, movement)
-		}
-		if len(movements) == 0 {
-			return errors.New("ledger: nothing to reverse")
-		}
-
-		if description == "" {
-			description = "Reversal of " + string(original.Kind)
-		}
-
 		var err error
-		result, err = s.PostWithin(tx, PostInput{
-			Kind:                  models.TxnReversal,
-			SessionID:             original.SessionID,
-			ReversesTransactionID: &original.ID,
-			Description:           description,
-			OccurredAt:            utils.NowInSydney(),
-			CreatedBy:             createdBy,
-			Movements:             movements,
-		})
+		result, err = s.reverseTransactionWithin(tx, transactionID, description, createdBy)
 		return err
 	})
-	return result, err
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// reverseTransactionWithin appends an exact inverse in the caller's transaction.
+// For a session transaction, only settlement orchestration may call this, with
+// the session and settlement already locked. Lock order is session -> settlement
+// -> original transaction -> affected accounts in ID order. Settle shares the
+// session-first order; asset purchase correction also locks its original before accounts.
+func (s *LedgerService) reverseTransactionWithin(tx *gorm.DB, transactionID uuid.UUID, description string, createdBy uuid.UUID) (*models.Transaction, error) {
+	var original models.Transaction
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Preload("Entries").First(&original, "id = ?", transactionID).Error; err != nil {
+		return nil, err
+	}
+	if original.Kind == models.TxnReversal {
+		return nil, newLedgerError(CodeReversalNotAllowed, 422, "A reversal cannot be reversed. Record a new transaction instead.")
+	}
+	if original.Kind == models.TxnSplitwiseImport || original.Kind == models.TxnImportAssets {
+		return nil, errors.New("imported history requires a reviewed correction, not an individual reversal")
+	}
+	if original.Kind == models.TxnBalanceCorrection {
+		return nil, errors.New("correct the current asset balance with a new audited correction instead of reversing this snapshot")
+	}
+
+	var alreadyReversed int64
+	if err := tx.Model(&models.Transaction{}).
+		Where("reverses_transaction_id = ?", transactionID).Count(&alreadyReversed).Error; err != nil {
+		return nil, err
+	}
+	if alreadyReversed > 0 {
+		return nil, ErrTransactionAlreadyReversed()
+	}
+
+	movements := make([]Movement, 0, len(original.Entries))
+	for _, entry := range original.Entries {
+		movement := Movement{AccountID: entry.AccountID, AmountCents: -entry.AmountCents}
+		if entry.Units != nil {
+			negated := -*entry.Units
+			movement.Units = &negated
+		}
+		movements = append(movements, movement)
+	}
+	if len(movements) == 0 {
+		return nil, errors.New("ledger: nothing to reverse")
+	}
+	if description == "" {
+		description = "Reversal of " + string(original.Kind)
+	}
+
+	return s.PostWithin(tx, PostInput{
+		Kind:                  models.TxnReversal,
+		SessionID:             original.SessionID,
+		ReversesTransactionID: &original.ID,
+		Description:           description,
+		OccurredAt:            utils.NowInSydney(),
+		CreatedBy:             createdBy,
+		Movements:             movements,
+	})
 }
 
 // --- club position --------------------------------------------------------

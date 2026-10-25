@@ -716,31 +716,50 @@ func settlementOccurredAt(session models.Session) time.Time {
 // reversal stay visible: the point of an append-only ledger is that a correction
 // is a second fact, not the erasure of the first.
 func (s *SettlementService) ReverseSettlement(settlementID uuid.UUID, reason string, reversedBy uuid.UUID) (*models.Transaction, error) {
-	var settlement models.Settlement
-	if err := database.DB.First(&settlement, "id = ?", settlementID).Error; err != nil {
+	// Read immutable routing information without taking the settlement lock first.
+	// Settle also starts with the session lock, so it cannot observe a half undo.
+	var initial models.Settlement
+	if err := database.DB.Select("id", "session_id").First(&initial, "id = ?", settlementID).Error; err != nil {
 		return nil, err
 	}
-	if !settlement.IsLive() {
-		return nil, ErrTransactionAlreadyReversed()
-	}
-
 	if reason == "" {
 		reason = "Settlement reversed"
 	}
 
-	txn, err := s.ledger.ReverseTransaction(settlement.TransactionID, reason, reversedBy)
+	var result *models.Transaction
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		var session models.Session
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&session, "id = ?", initial.SessionID).Error; err != nil {
+			return err
+		}
+		var settlement models.Settlement
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&settlement, "id = ?", settlementID).Error; err != nil {
+			return err
+		}
+		if !settlement.IsLive() {
+			return ErrTransactionAlreadyReversed()
+		}
+		var original models.Transaction
+		if err := tx.First(&original, "id = ?", settlement.TransactionID).Error; err != nil {
+			return err
+		}
+		if original.Kind != models.TxnSessionSettlement || original.SessionID == nil || *original.SessionID != session.ID {
+			return ErrNotSettleable("The settlement does not reference its session's charge transaction.")
+		}
+
+		var err error
+		result, err = s.ledger.reverseTransactionWithin(tx, settlement.TransactionID, reason, reversedBy)
+		if err != nil {
+			return err
+		}
+		return tx.Model(&settlement).Updates(map[string]any{
+			"reversed_at": utils.NowInSydney(), "reversed_by": reversedBy,
+		}).Error
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	now := utils.NowInSydney()
-	if err := database.DB.Model(&models.Settlement{}).
-		Where("id = ?", settlementID).
-		Updates(map[string]any{"reversed_at": now, "reversed_by": reversedBy}).Error; err != nil {
-		return nil, err
-	}
-
-	return txn, nil
+	return result, nil
 }
 
 // LiveSettlementForSession returns the settlement currently standing for a

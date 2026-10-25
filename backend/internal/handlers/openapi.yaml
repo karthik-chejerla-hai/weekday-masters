@@ -1397,7 +1397,9 @@ paths:
       description: >
         Posts the exact negation of the original. This is the only way to undo
         anything — there is deliberately no edit or delete endpoint, and both the
-        original and its reversal stay visible.
+        original and its reversal stay visible. Approved admins only. Session charges
+        use the same atomic reversal as the settlement endpoint: ledger effects and
+        settlement status commit together. Reversal transactions cannot be reversed.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -1412,6 +1414,11 @@ paths:
       responses:
         "201":
           $ref: "#/components/responses/TransactionCreated"
+        "422":
+          description: Reversing a reversal is forbidden (reversal_not_allowed).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LedgerError" }
         "409":
           $ref: "#/components/responses/LedgerConflict"
         "403":
@@ -1787,7 +1794,9 @@ paths:
       description: >
         Unwinds the charges, the court credit and the shuttle count, and frees the
         session to be settled again. Both the settlement and its reversal remain
-        visible.
+        visible. Approved admins only. Ledger undo and settlement reversal metadata
+        commit atomically under the session lock; competing reversals cannot both
+        succeed. A failed write leaves the original settlement and money unchanged.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -3061,6 +3070,7 @@ components:
             - shuttle_stock_short
             - session_already_settled
             - transaction_already_reversed
+            - reversal_not_allowed
             - opening_balances_already_recorded
             - not_settleable
             - invariant_violated
