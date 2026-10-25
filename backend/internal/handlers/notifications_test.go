@@ -22,7 +22,7 @@ func TestGetPreferences_CreatesDefaultsOnFirstRead(t *testing.T) {
 	if prefs.UserID != player.ID {
 		t.Fatalf("expected preferences for %s, got %s", player.ID, prefs.UserID)
 	}
-	// A new member should be opted in, otherwise reminders silently never arrive.
+	// Compatibility reads retain defaults; these flags no longer govern delivery.
 	if !prefs.PushEnabled || prefs.EmailEnabled {
 		t.Fatalf("expected push on and email off by default, got push=%v email=%v",
 			prefs.PushEnabled, prefs.EmailEnabled)
@@ -35,77 +35,22 @@ func TestGetPreferences_RequiresAuthentication(t *testing.T) {
 	h.as(nil).get("/api/users/me/notifications").expect(http.StatusUnauthorized)
 }
 
-func TestUpdatePreferences_TogglesOnlyTheFieldsProvided(t *testing.T) {
+func TestObsoleteNotificationMutationsRequireUpdateAndPreserveTokens(t *testing.T) {
 	h := newHarness(t)
 	player := makePlayer(t)
-
-	var before models.UserNotificationPreferences
-	h.as(player).get("/api/users/me/notifications").expect(http.StatusOK).decode(&before)
-
-	var after models.UserNotificationPreferences
-	h.as(player).put("/api/users/me/notifications",
-		map[string]any{"push_enabled": false}).expect(http.StatusOK).decode(&after)
-
-	if after.PushEnabled {
-		t.Fatal("expected push to be switched off")
+	token := models.UserPushToken{UserID: player.ID, Token: "retained-token"}
+	if err := database.DB.Create(&token).Error; err != nil {
+		t.Fatal(err)
 	}
-	// Omitted fields are pointers on the request, so they must be left alone.
-	if after.PushSessionReminders != before.PushSessionReminders {
-		t.Fatal("expected an omitted preference to keep its previous value")
+	h.as(player).put("/api/users/me/notifications", map[string]any{"push_enabled": false}).expect(http.StatusConflict)
+	h.as(player).post("/api/users/me/push-tokens", map[string]any{"token": "replacement"}).expect(http.StatusConflict)
+	h.as(player).request(http.MethodDelete, "/api/users/me/push-tokens", nil).expect(http.StatusConflict)
+	var stored models.UserPushToken
+	if err := database.DB.First(&stored, "id = ?", token.ID).Error; err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestUpdatePreferences_RejectsAMalformedBody(t *testing.T) {
-	h := newHarness(t)
-	player := makePlayer(t)
-
-	h.as(player).put("/api/users/me/notifications",
-		map[string]any{"push_enabled": "yes please"}).expect(http.StatusBadRequest)
-}
-
-// --- push tokens ----------------------------------------------------------
-
-func TestRegisterPushToken_StoresTheToken(t *testing.T) {
-	h := newHarness(t)
-	player := makePlayer(t)
-
-	h.as(player).post("/api/users/me/push-tokens", map[string]string{
-		"token":       "fcm-token-abc",
-		"device_name": "Pixel 8",
-	}).expect(http.StatusOK)
-
-	var count int64
-	database.DB.Model(&models.UserPushToken{}).
-		Where("user_id = ? AND token = ?", player.ID, "fcm-token-abc").Count(&count)
-	if count != 1 {
-		t.Fatalf("expected the token to be stored once, found %d", count)
-	}
-}
-
-func TestRegisterPushToken_RequiresAToken(t *testing.T) {
-	h := newHarness(t)
-	player := makePlayer(t)
-
-	h.as(player).post("/api/users/me/push-tokens",
-		map[string]string{"device_name": "Pixel 8"}).expect(http.StatusBadRequest)
-}
-
-func TestUnregisterPushToken_RemovesTheNamedToken(t *testing.T) {
-	h := newHarness(t)
-	player := makePlayer(t)
-
-	h.as(player).post("/api/users/me/push-tokens",
-		map[string]string{"token": "fcm-token-abc"}).expect(http.StatusOK)
-	h.as(player).post("/api/users/me/push-tokens",
-		map[string]string{"token": "fcm-token-def"}).expect(http.StatusOK)
-
-	h.as(player).request(http.MethodDelete, "/api/users/me/push-tokens",
-		map[string]string{"token": "fcm-token-abc"}).expect(http.StatusOK)
-
-	var remaining []models.UserPushToken
-	database.DB.Where("user_id = ?", player.ID).Find(&remaining)
-	if len(remaining) != 1 || remaining[0].Token != "fcm-token-def" {
-		t.Fatalf("expected only the other token to survive, got %+v", remaining)
+	if stored.Token != token.Token || stored.UserID != player.ID || stored.RevokedAt != nil {
+		t.Fatal("legacy mutation changed enrollment")
 	}
 }
 
@@ -235,22 +180,6 @@ func TestSendAnnouncement_RequiresATitleAndBody(t *testing.T) {
 
 	h.as(admin).post("/api/admin/announcements",
 		map[string]string{"title": "Only a title"}).expect(http.StatusBadRequest)
-}
-
-func TestEmailPreferencesRemovedAndBalancePushPreferenceSaved(t *testing.T) {
-	h := newHarness(t)
-	player := makePlayer(t)
-	var prefs map[string]any
-	h.as(player).get("/api/users/me/notifications").expect(http.StatusOK).decode(&prefs)
-	if _, exists := prefs["email_enabled"]; exists {
-		t.Fatal("email preferences remain exposed")
-	}
-	h.as(player).put("/api/users/me/notifications", map[string]any{"email_enabled": true}).expect(http.StatusBadRequest)
-	var updated models.UserNotificationPreferences
-	h.as(player).put("/api/users/me/notifications", map[string]any{"push_balance_alerts": false}).expect(http.StatusOK).decode(&updated)
-	if updated.PushBalanceAlerts {
-		t.Fatal("balance preference not saved")
-	}
 }
 
 func TestSendBalanceNudge_TargetsOneLowBalanceMember(t *testing.T) {
