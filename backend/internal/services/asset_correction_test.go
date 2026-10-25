@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/weekday-masters/backend/internal/database"
 	"github.com/weekday-masters/backend/internal/models"
@@ -15,7 +16,10 @@ func assetCorrectionFixture(t *testing.T, shuttle bool) (*LedgerService, *models
 	if err := database.DB.Model(&actor).Update("role", models.RoleAdmin).Error; err != nil {
 		t.Fatal(err)
 	}
-	input := AssetPurchaseInput{AmountCents: 5000, Units: 12, Description: "Original purchase", CreatedBy: actor.ID}
+	// Deliberately use sub-microsecond precision: PostgreSQL persists only
+	// microseconds, while Go timestamps on CI can carry nanoseconds.
+	input := AssetPurchaseInput{AmountCents: 5000, Units: 12, Description: "Original purchase", CreatedBy: actor.ID,
+		OccurredAt: time.Date(2026, time.October, 1, 7, 0, 0, 123456789, time.UTC)}
 	var original *models.Transaction
 	var err error
 	if shuttle {
@@ -38,7 +42,9 @@ func TestAssetPurchaseCorrectionAuditAndRetry(t *testing.T) {
 		t.Run(map[bool]string{true: "shuttles", false: "court"}[shuttle], func(t *testing.T) {
 			ls, original, in := assetCorrectionFixture(t, shuttle)
 			var before models.Transaction
-			database.DB.Preload("Entries").First(&before, "id = ?", original.ID)
+			if err := database.DB.Preload("Entries").First(&before, "id = ?", original.ID).Error; err != nil {
+				t.Fatal(err)
+			}
 			corrected, err := ls.CorrectAssetPurchase(in)
 			if err != nil {
 				t.Fatal(err)
@@ -47,11 +53,18 @@ func TestAssetPurchaseCorrectionAuditAndRetry(t *testing.T) {
 			if err != nil || retry.ID != corrected.ID {
 				t.Fatalf("unsafe retry: %v %v", retry, err)
 			}
-			if corrected.CorrectsTransactionID == nil || *corrected.CorrectsTransactionID != original.ID || corrected.CorrectionReason != in.Reason || corrected.CreatedBy != in.CreatedBy || !corrected.OccurredAt.Equal(original.OccurredAt) {
+			if corrected.CorrectsTransactionID == nil || *corrected.CorrectsTransactionID != original.ID || corrected.CorrectionReason != in.Reason || corrected.CreatedBy != in.CreatedBy {
 				t.Fatalf("missing audit: %+v", corrected)
 			}
+			// Compare against the stored original, not the higher-precision value
+			// returned in memory when the purchase was first recorded.
+			if !corrected.OccurredAt.Equal(before.OccurredAt) || !retry.OccurredAt.Equal(before.OccurredAt) {
+				t.Fatalf("purchase date changed: stored original %s, correction %s, retry %s", before.OccurredAt, corrected.OccurredAt, retry.OccurredAt)
+			}
 			var after models.Transaction
-			database.DB.Preload("Entries").First(&after, "id = ?", original.ID)
+			if err := database.DB.Preload("Entries").First(&after, "id = ?", original.ID).Error; err != nil {
+				t.Fatal(err)
+			}
 			if !reflect.DeepEqual(before, after) {
 				t.Fatal("original changed")
 			}
