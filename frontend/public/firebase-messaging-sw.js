@@ -10,6 +10,7 @@ self.addEventListener('notificationclick', (event) => {
     (['/money', '/notifications', '/dashboard'].includes(data.destination_path) || resource.test(data.destination_path));
   const path = safePath ? data.destination_path
     : uuid.test(data.session_id || '') ? `/sessions/${data.session_id}${['session_charge', 'session_charge_reversed'].includes(data.type) ? '/settlement' : ''}`
+    : data.type === 'push_test' ? '/dashboard'
     : ['balance_low', 'balance_negative'].includes(data.type) ? '/money'
     : uuid.test(data.notification_id || '') ? `/notifications/${data.notification_id}` : '/notifications';
   const url = new URL(path, self.location.origin).href;
