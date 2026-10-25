@@ -1,49 +1,26 @@
-# Grafana Cloud logs and metrics
+# Production logs, metrics and billing
 
-Rally's API sends OTLP/HTTP protobuf directly to Grafana Cloud. No collector is
-required for backend application telemetry. Export is off until `OTEL_ENABLED=true`.
+Production and pull request previews use Google Cloud's built-in Cloud Run
+request/platform logs and metrics. Rally writes application logs to stdout/stderr,
+where Cloud Logging collects them. The Go OTLP instrumentation and authenticated
+browser-error instrumentation remain in the codebase for local use, but both
+deployment workflows set `OTEL_ENABLED=false` and remove OTLP endpoint/header
+bindings. Browser clients send only allowlisted error category/type events to the
+API; with the exporter disabled, the API does not forward them to Grafana. No
+Grafana OTLP logs or metrics are exported by production or preview revisions.
 
-## What is collected
+Cloud Run deployments explicitly use request-based billing (`--cpu-throttling`)
+with zero service- and revision-level minimum instances. This allows scale to
+zero. Preview revisions have no default traffic, but their tagged URLs remain
+callable: requests to a preview can start instances and incur normal request-based
+charges. The preview workflow applies the same billing and telemetry settings
+because previews and production share one Cloud Run service.
 
-- Existing Go `log` messages, including notification and scheduler messages.
-- GORM query logs through the same bridge, with query parameters omitted.
-- HTTP request logs with method, route template, status and duration.
-- Authenticated browser error events (`console.error`, uncaught errors and
-  unhandled promise rejections), recorded by category and JavaScript error type.
-- Request counts and duration histograms by method, route and response status.
-- Go heap allocation and goroutine count.
-- Database pool connections by used/idle state and cumulative connection waits.
+## Local Grafana verification
 
-Logs also stay on stderr for Cloud Logging. Legacy Go log messages have INFO severity.
-HTTP logging omits raw URLs, query strings, headers and bodies; unmatched paths use
-one `unmatched` label. Existing service messages can contain member UUIDs and error
-details. Query parameter masking does not redact database error text.
-
-This covers the API process and selected browser error categories, not raw
-browser console output, individual browser messages or stack traces,
-migration/seed commands, Cloud Run platform logs/CPU metrics, Neon server
-metrics or distributed traces. Browser telemetry requires a signed-in user and
-sends no message text, stack, URL, request data or user identifier. Each user
-has a 40-event burst allowance, refilling at 60 events per minute. SDK
-versions are pinned to support this repository's Go 1.22 build and CI toolchain.
-
-## 1. Get Grafana's connection settings
-
-Open your Grafana Cloud stack's OpenTelemetry connection instructions and copy
-the **OTLP endpoint** and generated **OTLP authorization headers**. Use a
-stack-scoped access policy token with `logs:write` and `metrics:write`.
-
-The endpoint is the base URL, typically ending in `/otlp`; the SDK appends
-`/v1/logs` and `/v1/metrics`. Use HTTP/protobuf, not gRPC or Grafana's UI URL.
-Keep the header secret. Use the generated header string exactly, including URL
-encoding (for example `Authorization=Basic%20...`).
-
-References: [Grafana OTLP connection instructions](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp/)
-and [access policies](https://grafana.com/docs/grafana-cloud/platform/security-and-account-management/security-and-access/authentication-and-permissions/access-policies/).
-
-## 2. Verify locally
-
-Set these values in the ignored `backend/.env`:
+To exercise the retained exporter locally, set the following in the ignored
+`backend/.env` and use a test Grafana stack or local OTLP receiver. Never copy
+these values to production or GitHub Actions.
 
 ```dotenv
 OTEL_ENABLED=true
@@ -55,89 +32,129 @@ OTEL_EXPORTER_OTLP_TIMEOUT=3000
 OTEL_METRIC_EXPORT_INTERVAL=30000
 ```
 
-Start the backend normally against your local database. Request `/health` a few
-times, then allow at least 30 seconds for metrics to export. Logs are batched.
-SIGINT/SIGTERM drains HTTP requests and flushes exporters before exiting.
+The endpoint is the base URL, typically ending in `/otlp`; the SDK appends
+`/v1/logs` and `/v1/metrics`. Use HTTP/protobuf, not gRPC or Grafana's UI URL.
+Keep the header secret and use the generated header string exactly, including
+URL encoding. See [Grafana OTLP connection
+instructions](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp/)
+and [access policies](https://grafana.com/docs/grafana-cloud/platform/security-and-account-management/security-and-access/authentication-and-permissions/access-policies/).
 
-In Grafana Explore, choose the Logs data source and query:
-
-```logql
-{service_name="rally-api"} |= "HTTP"
-```
-
-Browser error categories are available with:
-
-```logql
-{service_name="rally-api"} |= "Browser client error"
-```
-
-In the Metrics data source, look for:
-
-```promql
-sum(rate(http_server_requests_total{service_name="rally-api"}[5m]))
-```
-
-```promql
-histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name="rally-api"}[5m])))
-```
-
-Grafana's metric translation settings can change suffixes; use the metric browser
-to find `http_server_requests`, `http_server_request_duration`, `go_memory_heap`,
-`go_goroutines`, `db_client_connections` and `db_client_connection_waits` if needed.
-Each process has a unique `service.instance.id`, so concurrent Cloud Run instances
-do not write to the same metric series.
-
-## 3. Configure production
-
-Create a Secret Manager secret named `rally-otel-headers` in your GCP project.
-Store the complete generated `OTEL_EXPORTER_OTLP_HEADERS` value as its secret
-payload, using Secret Manager's console so it stays out of shell history.
-
-Grant **Secret Manager Secret Accessor** on that secret to the Cloud Run runtime
-service account. This may differ from the GitHub deployment account. Find it with:
-
-```bash
-gcloud run services describe rally-club-api \
-  --project <project-id> --region australia-southeast1 \
-  --format='value(spec.template.spec.serviceAccountName)'
-```
-
-The deploying account must also be permitted to configure that secret reference.
-Create these GitHub Actions variables in repository settings (or on the
-`production-api` environment):
-
-- `OTEL_EXPORTER_OTLP_ENDPOINT`: your Grafana Cloud base endpoint.
-- `OTEL_HEADERS_SECRET`: `rally-otel-headers` (the secret name, never its payload).
-- `OTEL_ENABLED`: `true` once the endpoint and secret are ready.
-
-The production deploy workflow reads these variables, attaches the header as a
-Secret Manager environment variable, and sets the production resource attribute.
-It also uses `--no-cpu-throttling`: batching and periodic metric exports need CPU
-outside request handling. **This selects instance-based Cloud Run billing** and
-can change cost. It does not add minimum instances. See
-[Cloud Run billing settings](https://docs.cloud.google.com/run/docs/configuring/billing-settings).
-
-Deploy through the existing main-branch workflow after reviewing the change.
-Preview revisions explicitly disable export so synthetic fixtures do not enter
-production telemetry. The shared service means previews can still inherit its
-CPU allocation setting. Verify production with `/health` and Explore as above.
-
-## Troubleshooting and disabling
-
-- Export failures remain on stderr as `OpenTelemetry export failed` and do not
-  recursively generate OTLP logs. HTTP 401/403 usually means wrong headers,
-  token realm or write permissions; 404 usually means the wrong base endpoint.
-- An unavailable Grafana endpoint does not block HTTP requests; exporters batch,
-  retry and use bounded queues. Telemetry can be dropped during long outages or
-  forced termination. This is observability, not an audit archive.
-- Set `OTEL_ENABLED=false` locally or in GitHub variables and redeploy to stop
-  sending telemetry. This does not automatically restore request-based billing;
-  restore CPU throttling explicitly if desired.
-- Rotate the secret by adding a version and redeploying. Cloud Run reads the
-  environment secret at instance startup; existing instances keep the old value.
-
-## Tests
-
-`cd backend && go test -race ./...` includes a local OTLP receiver test that checks
+Start the backend against a local database, request `/health`, and allow at least
+30 seconds for metrics export. In Grafana Explore, the Logs data source query
+`{service_name="rally-api"} |= "HTTP"` shows request logs. Browser error
+categories use `{service_name="rally-api"} |= "Browser client error"`. Metrics
+include `http_server_requests`, `http_server_request_duration`, `go_memory_heap`,
+`go_goroutines`, `db_client_connections` and `db_client_connection_waits`.
+SIGINT/SIGTERM drains requests and flushes exporters. Local receiver tests cover
 protobuf delivery, authentication, endpoint suffixes, request-data exclusion and
-shutdown flushing. It needs no Grafana credentials or database.
+shutdown flushing without Grafana credentials or a database.
+
+## Production operational views
+
+- [Logs Explorer](https://console.cloud.google.com/logs/query): select resource
+  type `cloud_run_revision` and filter to service `rally-club-api` in
+  `australia-southeast1`.
+- [Cloud Run service metrics](https://console.cloud.google.com/run/detail/australia-southeast1/rally-club-api/metrics): inspect request count and latency, instance count, CPU and memory.
+- [Cloud Monitoring Metrics Explorer](https://console.cloud.google.com/monitoring/metrics-explorer): use resource type **Cloud Run Revision** and metrics such as request count, request latencies, billable instance time, container CPU utilization, memory utilization and instance count.
+- [Cloud Run service revisions](https://console.cloud.google.com/run/detail/australia-southeast1/rally-club-api/revisions): verify the serving revision, traffic allocation, revision settings and tagged previews.
+
+Useful Logs Explorer queries (adjust the project and time range in the console):
+
+```text
+resource.type="cloud_run_revision"
+resource.labels.service_name="rally-club-api"
+resource.labels.location="australia-southeast1"
+```
+
+```text
+resource.type="cloud_run_revision"
+resource.labels.service_name="rally-club-api"
+resource.labels.location="australia-southeast1"
+severity>=ERROR
+```
+
+```text
+resource.type="cloud_run_revision"
+resource.labels.service_name="rally-club-api"
+resource.labels.location="australia-southeast1"
+(logName="projects/PROJECT_ID/logs/run.googleapis.com%2Fstdout" OR
+ logName="projects/PROJECT_ID/logs/run.googleapis.com%2Fstderr")
+```
+
+To inspect request logs, filter
+`logName="projects/PROJECT_ID/logs/run.googleapis.com%2Frequests"`. Request logs
+include status, latency and route URL. Application messages can contain member
+UUIDs and error details; operational logs are not an audit archive. Avoid broad
+exports and extended retention unless there is a specific need.
+
+## Cost notes
+
+Request-based Cloud Run billing charges for request processing and startup and
+shutdown, not idle CPU between requests. At zero minimum instances an idle service
+can scale down, with possible cold starts. The Cloud Run free tier currently
+includes, across projects on a billing account, 2 million requests, 180,000
+vCPU-seconds and 360,000 GiB-seconds per month for request-based services. Usage
+beyond the free tier, outbound transfer and other Google Cloud resources can still
+cost money; the free tier is not a project-level budget cap.
+
+Cloud Logging currently includes 50 GiB of eligible log storage per project per
+month. Additional eligible ingestion and retention beyond the default period may
+be charged. Cloud Run's built-in metrics have no charge for fully managed Cloud
+Run, but other Monitoring features, alerts, uptime checks, log-based metrics and
+retention may have separate pricing. Check current scope and rates before changing
+retention or adding features.
+
+- [Cloud Run pricing and free tier](https://cloud.google.com/run/pricing)
+- [Cloud Logging pricing and free allotment](https://cloud.google.com/logging/pricing)
+- [Cloud Run monitoring and built-in metrics](https://docs.cloud.google.com/run/docs/monitoring)
+- [Google Cloud Observability pricing](https://cloud.google.com/stackdriver/pricing)
+
+Custom Grafana charts and alerts for Go runtime, HTTP middleware and database
+pool metrics stop receiving new data. Historical Grafana data and the Grafana
+account remain intact. Built-in Cloud Run metrics do not replace those custom
+application/database-pool measurements.
+
+## Rollout and verification
+
+The production and preview workflows set request-based billing, both minimum
+instance settings to zero, and `OTEL_ENABLED=false`; they remove old OTLP endpoint
+and header bindings when creating a revision. After the updated production
+workflow has deployed successfully, remove the unused `OTEL_ENABLED`,
+`OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_HEADERS_SECRET` GitHub Actions variables.
+The workflow does not delete the Secret Manager secret, Grafana account or
+historical Grafana data.
+
+For production, save a redacted pre-change service/revision configuration and
+verify after deployment that the serving revision is ready, `OTEL_ENABLED` is
+false, CPU throttling is enabled and service/revision minimum instances are zero.
+Check `/health`, authenticated app reads and writes, application stdout/stderr,
+Cloud Run request logs and built-in metrics. Use synthetic checks only; do not
+send real member notifications for verification.
+
+Review each retained tagged preview revision separately. Zero default traffic
+does not mean a tagged URL cannot run or incur charges. After this change lands on
+the base branch, trigger a fresh `synchronize` run for each active PR (a no-op
+commit may be needed); rerunning an older workflow run can use its old definition.
+Verify each existing `pr-N` tag points to the new ready revision with
+request-based billing and OTLP disabled, and that the old revision no longer has
+the tag. Review closed PRs against the cleanup workflow. Coordinate retirement
+with owners and keep active previews rather than deleting tags indiscriminately.
+
+Save post-change service/revision settings with secrets redacted and compare daily
+gross and net Cloud Run costs after billing data settles. Do not attribute every
+prior project charge to telemetry or promise zero cost.
+
+Request-based billing suspends background CPU while no request is being handled.
+The hourly reminder scheduler may therefore run late or unreliably during idle
+periods; this is an accepted interim tradeoff tracked in issue #99. User-triggered
+push notifications and explicit invitation delivery continue under their
+existing preferences and controls.
+
+## Rollback
+
+The exporter code and dependencies remain available for local diagnosis. Restoring
+production export requires a reviewed workflow change, an endpoint and existing
+Secret Manager reference, and explicit acceptance of instance-based billing if
+always-allocated CPU is needed. Do not re-enable export by changing only a runtime
+variable or delete historical data, unrelated credentials, the Grafana account
+or the existing secret as part of rollback.
