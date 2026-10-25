@@ -96,8 +96,7 @@ func newHarness(t *testing.T) *harness {
 		api.PUT("/users/me/notifications", notificationHandler.UpdatePreferences)
 		api.POST("/users/me/push-tokens", notificationHandler.RegisterPushToken)
 		api.DELETE("/users/me/push-tokens", notificationHandler.UnregisterPushToken)
-		api.GET("/users/me/notifications/history", notificationHandler.GetNotificationHistory)
-		api.POST("/notifications/:id/read", notificationHandler.MarkNotificationRead)
+		notificationHandler.RegisterHistoryRoutes(api)
 
 		api.GET("/users", userHandler.ListMembers)
 

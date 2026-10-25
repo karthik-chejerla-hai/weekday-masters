@@ -3,6 +3,7 @@ import { BellRing, Loader2, X } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/useAuth';
 import { notificationService } from '../../services/notifications';
+import { notificationDestination } from '../../services/notification-destination';
 
 const DISMISSAL_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -121,9 +122,7 @@ export default function PushNotifications() {
           if (!cancelled) setNotice({
             title,
             body,
-            path: data?.session_id
-              ? `/sessions/${encodeURIComponent(data.session_id)}`
-              : data?.type?.startsWith('balance_') ? '/money' : '/dashboard',
+            path: notificationDestination(data),
           });
         });
       } catch (error) {

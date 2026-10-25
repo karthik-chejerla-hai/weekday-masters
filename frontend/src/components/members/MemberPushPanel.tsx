@@ -60,13 +60,13 @@ export default function MemberPushPanel({ member, onStatus }: { member: User; on
           {error && <div role="alert">Could not load push settings. <button type="button" className="text-primary-700 underline" onClick={() => void load()}>Try again</button></div>}
           {status && <>
             <div className="flex flex-wrap items-center gap-2">
-              <strong>{prefs ? (prefs.push_enabled ? 'Account push: On' : 'Account push: Off') : 'No saved push settings'}</strong>
+              <strong>{status.devices.length > 0 ? 'Push set up' : 'No push devices'}</strong>
               <span className="rounded-full bg-white border border-slate-200 px-2 py-1">{status.devices.length} registered {status.devices.length === 1 ? 'device' : 'devices'}</span>
               <button type="button" className="text-primary-700 underline ml-auto" onClick={() => void load()}>Refresh</button>
             </div>
             {member.membership_status !== 'approved' && <p>This member is not approved. These are their saved settings.</p>}
             {prefs ? <div>
-              <h3 className="font-medium mb-2">Saved alert choices</h3>
+              <h3 className="font-medium mb-2">Saved delivery choices</h3>
               {!prefs.push_enabled && <p className="text-slate-600 mb-2">Account push is off. These choices apply when the member turns it on.</p>}
               <dl className="grid sm:grid-cols-2 gap-x-6 gap-y-2">
                 {alerts.map(([key, label]) => <div key={key} className="flex justify-between gap-3"><dt>{label}</dt><dd className="font-medium">{prefs[key] ? 'On' : 'Off'}</dd></div>)}
@@ -81,7 +81,7 @@ export default function MemberPushPanel({ member, onStatus }: { member: User; on
                   <p className="text-slate-600">Last registered: {registrationDate(device.last_registered_at)}</p>
                 </li>)}</ul>}
             </div>
-            <p className="text-xs text-slate-500">Times use Sydney time. Registration records past browser permission. It does not confirm current phone or browser settings, or successful delivery. Global notification pauses can also stop alerts.</p>
+            <p className="text-xs text-slate-500">Times use Sydney time. Registration records a device registered with Rally. It does not confirm current phone or browser settings, or successful delivery. Global notification pauses can also stop alerts.</p>
           </>}
         </div>
       )}

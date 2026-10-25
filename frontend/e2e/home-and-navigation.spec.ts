@@ -9,7 +9,7 @@ test.describe('Public entry', () => {
     await expect(page.getByText(club.venue_name)).toBeVisible();
     await page.getByRole('button', { name: 'Sign in with Google' }).click();
     await expect.poll(() => page.evaluate(() => JSON.parse(sessionStorage.getItem('e2e:login')!)))
-      .toEqual({ authorizationParams: { connection: 'google-oauth2' } });
+      .toEqual({ appState: { returnTo: '/' }, authorizationParams: { connection: 'google-oauth2' } });
   });
   test('invitation requests account selection and retains return route', async ({ page }) => {
     await page.goto('/welcome');

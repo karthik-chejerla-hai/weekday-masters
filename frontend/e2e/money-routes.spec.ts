@@ -8,7 +8,11 @@ test.describe('Visitor route guards', () => {
   for (const path of [...memberRoutes, ...adminRoutes, '/profile']) {
     test(`redirects ${path}`, async ({ page }) => {
       await page.goto(path);
-      await expect(page).toHaveURL('/');
+      const returnTo = ['/dashboard', '/sessions', '/money', '/profile'].includes(path) ? path : '/';
+      await expect.poll(() => page.evaluate(() => ({
+        pathname: window.location.pathname,
+        returnTo: new URLSearchParams(window.location.search).get('returnTo'),
+      }))).toEqual({ pathname: '/', returnTo });
       await expect(page.getByRole('button', { name: 'Sign in with Google' })).toBeVisible();
       await expect(page.locator('body')).not.toContainText(/\$\d/);
     });

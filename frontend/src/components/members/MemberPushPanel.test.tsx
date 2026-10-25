@@ -17,13 +17,13 @@ const saved: MemberPushStatus = {
 };
 beforeEach(() => vi.resetAllMocks());
 
-it('loads only on request and separates account settings from device registration', async () => {
+it('loads only on request and reports device setup independently of saved account flags', async () => {
   vi.mocked(api.getMemberPushStatus).mockResolvedValue(saved);
   const user = userEvent.setup();
   render(<MemberPushPanel member={member} />);
   expect(api.getMemberPushStatus).not.toHaveBeenCalled();
   await user.click(screen.getByRole('button', { name: 'Push alerts and devices' }));
-  expect(await screen.findByText('Account push: Off')).toBeInTheDocument();
+  expect(await screen.findByText('Push set up')).toBeInTheDocument();
   expect(api.getMemberPushStatus).toHaveBeenCalledWith(member.id);
   expect(screen.getByText('2 registered devices')).toBeInTheDocument();
   expect(screen.getByText('Phone')).toBeInTheDocument();
@@ -34,7 +34,7 @@ it('loads only on request and separates account settings from device registratio
   expect(screen.getByText(/does not confirm current phone or browser settings/)).toBeInTheDocument();
   vi.mocked(api.getMemberPushStatus).mockResolvedValue({ preferences: null, devices: [] });
   await user.click(screen.getByRole('button', { name: 'Refresh' }));
-  expect(await screen.findByText('No saved push settings')).toBeInTheDocument();
+  expect(await screen.findByText('No push devices')).toBeInTheDocument();
   expect(screen.getByText(/No registered devices/)).toBeInTheDocument();
   expect(screen.queryByText('Phone')).not.toBeInTheDocument();
 });
@@ -47,5 +47,14 @@ it('shows a load error instead of claiming no devices and allows retry', async (
   const alert = await screen.findByRole('alert');
   expect(screen.queryByText(/No registered devices/)).not.toBeInTheDocument();
   await user.click(within(alert).getByRole('button', { name: 'Try again' }));
-  expect(await screen.findByText('No saved push settings')).toBeInTheDocument();
+  expect(await screen.findByText('No push devices')).toBeInTheDocument();
+});
+
+it('keeps loading distinct from no devices', async () => {
+  vi.mocked(api.getMemberPushStatus).mockReturnValue(new Promise(() => {}));
+  const user = userEvent.setup();
+  render(<MemberPushPanel member={member} />);
+  await user.click(screen.getByRole('button', { name: 'Push alerts and devices' }));
+  expect(screen.getByRole('status')).toHaveTextContent('Loading push settings');
+  expect(screen.queryByText('No push devices')).not.toBeInTheDocument();
 });
