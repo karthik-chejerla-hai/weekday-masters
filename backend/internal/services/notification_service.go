@@ -250,7 +250,7 @@ func (s *NotificationService) SendBalanceNudge(
 		err := tx.Where(
 			"user_id = ? AND created_at > ? AND data ->> 'source' = ?",
 			userID, cutoff, "admin_balance_nudge",
-		).Order("created_at DESC").First(&previous).Error
+		).Order("created_at DESC, id DESC").First(&previous).Error
 		if err == nil {
 			return &BalanceNudgeCooldownError{NextAllowedAt: previous.CreatedAt.Add(BalanceNudgeCooldown)}
 		}
@@ -339,6 +339,8 @@ func (s *NotificationService) deliverNotification(ctx context.Context, notificat
 		data = make(map[string]string)
 	}
 	data["type"] = string(notification.NotificationType)
+	data["notification_id"] = notification.ID.String()
+	data["destination_path"] = NotificationDestination(data)
 	if prefs.IsPushEnabledForType(notification.NotificationType) && s.fcmEnabled && !notification.PushSent {
 		if err := s.sendPushNotification(ctx, userID, notification.Title, notification.Body, data); err != nil {
 			log.Printf("Failed to send push to user %s: %v", userID, err)
@@ -437,13 +439,11 @@ func (s *NotificationService) notificationURL(data map[string]string) string {
 	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" {
 		return ""
 	}
-	path := "/dashboard"
-	if id, err := uuid.Parse(data["session_id"]); err == nil {
-		path = "/sessions/" + id.String()
-	} else if strings.HasPrefix(data["type"], "balance_") {
-		path = "/money"
-	}
-	return base + path
+	parsed.Path = NotificationDestination(data)
+	parsed.RawPath = ""
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
 }
 
 // deliveryPolicy leaves the deployment stop in place for everyone except an
@@ -544,8 +544,8 @@ func (s *NotificationService) UnregisterPushToken(userID uuid.UUID, token string
 
 // GetUserNotifications retrieves notification history for a user
 func (s *NotificationService) GetUserNotifications(userID uuid.UUID, limit, offset int) ([]models.Notification, error) {
-	var notifications []models.Notification
-	query := database.DB.Where("user_id = ?", userID).Order("created_at DESC")
+	notifications := make([]models.Notification, 0)
+	query := database.DB.Where("user_id = ?", userID).Order("created_at DESC, id DESC")
 
 	if limit > 0 {
 		query = query.Limit(limit)
@@ -560,10 +560,26 @@ func (s *NotificationService) GetUserNotifications(userID uuid.UUID, limit, offs
 	return notifications, nil
 }
 
+// GetUserNotification intentionally returns not-found for foreign IDs as well.
+func (s *NotificationService) GetUserNotification(notificationID, userID uuid.UUID) (*models.Notification, error) {
+	var notification models.Notification
+	if err := database.DB.Where("id = ? AND user_id = ?", notificationID, userID).First(&notification).Error; err != nil {
+		return nil, err
+	}
+	return &notification, nil
+}
+
 // MarkNotificationRead marks a notification as read
 func (s *NotificationService) MarkNotificationRead(notificationID, userID uuid.UUID) error {
 	now := time.Now()
-	return database.DB.Model(&models.Notification{}).
+	result := database.DB.Model(&models.Notification{}).
 		Where("id = ? AND user_id = ?", notificationID, userID).
-		Update("read_at", &now).Error
+		Update("read_at", &now)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }

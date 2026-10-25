@@ -3,6 +3,7 @@ import { useAuth0 } from '@auth0/auth0-react';
 import { api } from '../services/api';
 import { AuthContext, type AuthContextType } from './auth-context';
 import type { User } from '../types';
+import { safeAuthReturn } from './auth-redirect';
 
 // These silent-renewal errors require a fresh interactive sign-in. They do not
 // mean the user attempted to sign in and failed. Do not apply this list to
@@ -90,6 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = () => {
     setAuthError(null);
     loginWithRedirect({
+      appState: { returnTo: safeAuthReturn(new URLSearchParams(window.location.search).get('returnTo') || window.location.pathname) },
       authorizationParams: {
         connection: 'google-oauth2',
       },

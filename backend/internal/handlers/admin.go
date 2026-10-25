@@ -112,7 +112,7 @@ func (h *AdminHandler) UpdateUserRole(c *gin.Context) {
 // GET /api/users is the approved-members list the club sees; this one is the
 // admin's, and includes the pending, rejected and removed rows they act on.
 func (h *AdminHandler) ListMembers(c *gin.Context) {
-	users, err := h.userService.ListAllMembers()
+	users, err := h.userService.ListMembersWithPushSummary()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list members"})
 		return
