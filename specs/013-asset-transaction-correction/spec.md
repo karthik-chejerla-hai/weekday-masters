@@ -1,0 +1,5 @@
+# Asset transaction corrections
+
+Approved admins can find previously recorded shuttle and court-credit purchases under Money → Club assets and review a corrected amount, shuttle count and mandatory reason before saving. The original transaction and entries remain immutable. One atomic operation appends an exact reversal and a replacement linked to the original. Corrections retain the purchase date, recorder, recording time and reason. Corrected purchases can themselves be corrected. Retries cannot duplicate a correction, and competing corrections cannot both succeed.
+
+Bank and court balance audits continue through the existing audited balance correction flow. Imports, opening balances, settlements and member transactions cannot be edited through purchase correction. Correcting purchases changes current assets only; settled player charges are retained. Shuttle corrections that leave negative stock/value or value with no shuttles are rejected atomically. Admins can browse paged purchase history including reversed entries and correction links.

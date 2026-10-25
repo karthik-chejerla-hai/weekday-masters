@@ -39,6 +39,8 @@ type PostInput struct {
 	Kind                  models.TransactionKind
 	SessionID             *uuid.UUID
 	ReversesTransactionID *uuid.UUID
+	CorrectsTransactionID *uuid.UUID
+	CorrectionReason      string
 	Description           string
 	OccurredAt            time.Time
 	CreatedBy             uuid.UUID
@@ -90,6 +92,8 @@ func (s *LedgerService) PostWithin(tx *gorm.DB, input PostInput) (*models.Transa
 		Kind:                  input.Kind,
 		SessionID:             input.SessionID,
 		ReversesTransactionID: input.ReversesTransactionID,
+		CorrectsTransactionID: input.CorrectsTransactionID,
+		CorrectionReason:      input.CorrectionReason,
 		Description:           input.Description,
 		OccurredAt:            input.OccurredAt,
 		CreatedBy:             input.CreatedBy,
@@ -555,52 +559,58 @@ func (s *LedgerService) RecordOpeningBalances(in OpeningBalancesInput) (*models.
 // — only what it moved. Balances unwind correctly even if the members involved
 // have transacted since, because entries accumulate rather than snapshot.
 func (s *LedgerService) ReverseTransaction(transactionID uuid.UUID, description string, createdBy uuid.UUID) (*models.Transaction, error) {
-	var original models.Transaction
-	if err := database.DB.Preload("Entries").First(&original, "id = ?", transactionID).Error; err != nil {
-		return nil, err
-	}
-	if original.Kind == models.TxnSplitwiseImport || original.Kind == models.TxnImportAssets {
-		return nil, errors.New("imported history requires a reviewed correction, not an individual reversal")
-	}
-	if original.Kind == models.TxnBalanceCorrection {
-		return nil, errors.New("correct the current asset balance with a new audited correction instead of reversing this snapshot")
-	}
-
-	var alreadyReversed int64
-	if err := database.DB.Model(&models.Transaction{}).
-		Where("reverses_transaction_id = ?", transactionID).Count(&alreadyReversed).Error; err != nil {
-		return nil, err
-	}
-	if alreadyReversed > 0 {
-		return nil, ErrTransactionAlreadyReversed()
-	}
-
-	movements := make([]Movement, 0, len(original.Entries))
-	for _, entry := range original.Entries {
-		movement := Movement{AccountID: entry.AccountID, AmountCents: -entry.AmountCents}
-		if entry.Units != nil {
-			negated := -*entry.Units
-			movement.Units = &negated
+	var result *models.Transaction
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		var original models.Transaction
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Preload("Entries").First(&original, "id = ?", transactionID).Error; err != nil {
+			return err
 		}
-		movements = append(movements, movement)
-	}
-	if len(movements) == 0 {
-		return nil, errors.New("ledger: nothing to reverse")
-	}
+		if original.Kind == models.TxnSplitwiseImport || original.Kind == models.TxnImportAssets {
+			return errors.New("imported history requires a reviewed correction, not an individual reversal")
+		}
+		if original.Kind == models.TxnBalanceCorrection {
+			return errors.New("correct the current asset balance with a new audited correction instead of reversing this snapshot")
+		}
 
-	if description == "" {
-		description = "Reversal of " + string(original.Kind)
-	}
+		var alreadyReversed int64
+		if err := tx.Model(&models.Transaction{}).
+			Where("reverses_transaction_id = ?", transactionID).Count(&alreadyReversed).Error; err != nil {
+			return err
+		}
+		if alreadyReversed > 0 {
+			return ErrTransactionAlreadyReversed()
+		}
 
-	return s.Post(PostInput{
-		Kind:                  models.TxnReversal,
-		SessionID:             original.SessionID,
-		ReversesTransactionID: &original.ID,
-		Description:           description,
-		OccurredAt:            utils.NowInSydney(),
-		CreatedBy:             createdBy,
-		Movements:             movements,
+		movements := make([]Movement, 0, len(original.Entries))
+		for _, entry := range original.Entries {
+			movement := Movement{AccountID: entry.AccountID, AmountCents: -entry.AmountCents}
+			if entry.Units != nil {
+				negated := -*entry.Units
+				movement.Units = &negated
+			}
+			movements = append(movements, movement)
+		}
+		if len(movements) == 0 {
+			return errors.New("ledger: nothing to reverse")
+		}
+
+		if description == "" {
+			description = "Reversal of " + string(original.Kind)
+		}
+
+		var err error
+		result, err = s.PostWithin(tx, PostInput{
+			Kind:                  models.TxnReversal,
+			SessionID:             original.SessionID,
+			ReversesTransactionID: &original.ID,
+			Description:           description,
+			OccurredAt:            utils.NowInSydney(),
+			CreatedBy:             createdBy,
+			Movements:             movements,
+		})
+		return err
 	})
+	return result, err
 }
 
 // --- club position --------------------------------------------------------

@@ -260,10 +260,19 @@ export interface Transaction {
   kind: TransactionKind;
   session_id?: string;
   reverses_transaction_id?: string;
+  corrects_transaction_id?: string;
+  correction_reason?: string;
   description: string;
   occurred_at: string;
   created_by: string;
   created_at: string;
+}
+
+export interface AssetPurchase extends Transaction {
+  actor_name: string;
+  amount_cents: number;
+  units: number;
+  reversed: boolean;
 }
 
 export interface LedgerEntryView {

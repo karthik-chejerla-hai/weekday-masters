@@ -38,6 +38,8 @@ func (h *LedgerHandler) RegisterRoutes(protected *gin.RouterGroup) {
 
 	admin := protected.Group("/admin")
 	admin.Use(middleware.RequireAdmin())
+	admin.GET("/asset-purchases", middleware.RequireApproved(), h.ListAssetPurchases)
+	admin.POST("/asset-purchases/:id/correct", middleware.RequireApproved(), h.CorrectAssetPurchase)
 	admin.POST("/transactions/topup", h.RecordTopup)
 	admin.POST("/transactions/withdrawal", h.RecordWithdrawal)
 	admin.POST("/transactions/court-credit", h.RecordCourtCredit)
