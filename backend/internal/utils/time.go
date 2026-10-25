@@ -15,25 +15,10 @@ func init() {
 	}
 }
 
-// CalculateRSVPDeadline calculates the RSVP deadline for a session
-// The deadline is 3 days before the session date at 23:59:59 Sydney time
-func CalculateRSVPDeadline(sessionDate time.Time) time.Time {
-	// Convert to Sydney time
-	sessionInSydney := sessionDate.In(SydneyLocation)
-
-	// Subtract 3 days
-	deadline := sessionInSydney.AddDate(0, 0, -3)
-
-	// Set time to end of day (23:59:59)
-	deadline = time.Date(
-		deadline.Year(),
-		deadline.Month(),
-		deadline.Day(),
-		23, 59, 59, 0,
-		SydneyLocation,
-	)
-
-	return deadline
+// CalculateRSVPDeadline subtracts elapsed hours from the resolved session start.
+// Sydney daylight saving changes do not change the number of hours available.
+func CalculateRSVPDeadline(startsAt time.Time, hours int) time.Time {
+	return startsAt.Add(-time.Duration(hours) * time.Hour)
 }
 
 // NowInSydney returns the current time in Sydney timezone

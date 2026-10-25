@@ -540,7 +540,7 @@ paths:
     post:
       tags: [RSVP]
       summary: Create RSVP for a session
-      description: Requires approved membership. Subject to 3-day deadline enforcement.
+      description: Requires approved membership. Subject to the stored session RSVP deadline.
       operationId: createRSVP
       parameters:
         - $ref: "#/components/parameters/SessionId"
@@ -2657,6 +2657,12 @@ components:
           minimum: 0
           maximum: 999
           description: Physical court number at the venue. Zero means unassigned, not the number of courts booked.
+        rsvp_deadline_hours:
+          type: integer
+          minimum: 0
+          maximum: 8760
+          default: 50
+          description: Hours before the session start when RSVPs close. Changing this value replaces all future session deadlines, including custom deadlines.
         time_format:
           type: string
           enum: [12h, 24h]
@@ -3131,6 +3137,10 @@ components:
       type: object
       required: [title, session_date, start_time, end_time, courts]
       properties:
+        rsvp_deadline:
+          type: string
+          format: date-time
+          description: Optional custom deadline. Must be in the future and at or before the session start. Omit to use the club default when creating or rescheduling a session.
         title:
           type: string
         description:
@@ -3166,6 +3176,10 @@ components:
     UpdateSessionRequest:
       type: object
       properties:
+        rsvp_deadline:
+          type: string
+          format: date-time
+          description: Optional custom deadline. Must be in the future and at or before the session start. Omit to use the club default when creating or rescheduling a session.
         title:
           type: string
         description:
@@ -3212,6 +3226,12 @@ components:
           minimum: 0
           maximum: 999
           description: Set to zero to clear the assigned court number.
+        rsvp_deadline_hours:
+          type: integer
+          minimum: 0
+          maximum: 8760
+          default: 50
+          description: Hours before the session start when RSVPs close. Changing this value replaces all future session deadlines, including custom deadlines.
         time_format:
           type: string
           enum: [12h, 24h]

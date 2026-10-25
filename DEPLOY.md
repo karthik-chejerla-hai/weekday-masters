@@ -116,9 +116,15 @@ cd backend
 gcloud run deploy rally-api \
   --source . \
   --region australia-southeast1 \
+  --cpu-throttling \
+  --min 0 \
+  --min-instances 0 \
   --allow-unauthenticated \
-  --set-env-vars "GIN_MODE=release" \
-  --set-env-vars "TIMEZONE=Australia/Sydney"
+  --update-env-vars "GIN_MODE=release" \
+  --update-env-vars "TIMEZONE=Australia/Sydney" \
+  --update-env-vars "OTEL_ENABLED=false" \
+  --remove-env-vars "OTEL_SERVICE_NAME,OTEL_RESOURCE_ATTRIBUTES,OTEL_EXPORTER_OTLP_ENDPOINT,OTEL_EXPORTER_OTLP_TIMEOUT,OTEL_METRIC_EXPORT_INTERVAL" \
+  --remove-secrets "OTEL_EXPORTER_OTLP_HEADERS"
 ```
 
 ### 2.2 Set Environment Variables
@@ -129,11 +135,17 @@ After initial deployment, set secrets:
 # Set environment variables (replace with your values)
 gcloud run services update rally-api \
   --region australia-southeast1 \
-  --set-env-vars "DATABASE_URL=postgresql://user:pass@ep-xxx.neon.tech/dbname?sslmode=require" \
-  --set-env-vars "AUTH0_DOMAIN=your-tenant.auth0.com" \
-  --set-env-vars "AUTH0_AUDIENCE=https://your-api-identifier" \
-  --set-env-vars "ADMIN_EMAIL=admin@example.com" \
-  --set-env-vars "FRONTEND_URL=https://your-project.web.app"
+  --cpu-throttling \
+  --min 0 \
+  --min-instances 0 \
+  --update-env-vars "DATABASE_URL=postgresql://user:pass@ep-xxx.neon.tech/dbname?sslmode=require" \
+  --update-env-vars "AUTH0_DOMAIN=your-tenant.auth0.com" \
+  --update-env-vars "AUTH0_AUDIENCE=https://your-api-identifier" \
+  --update-env-vars "ADMIN_EMAIL=admin@example.com" \
+  --update-env-vars "FRONTEND_URL=https://your-project.web.app" \
+  --update-env-vars "OTEL_ENABLED=false" \
+  --remove-env-vars "OTEL_SERVICE_NAME,OTEL_RESOURCE_ATTRIBUTES,OTEL_EXPORTER_OTLP_ENDPOINT,OTEL_EXPORTER_OTLP_TIMEOUT,OTEL_METRIC_EXPORT_INTERVAL" \
+  --remove-secrets "OTEL_EXPORTER_OTLP_HEADERS"
 ```
 
 ### 2.3 Get Backend URL
@@ -332,12 +344,14 @@ alone does not prove a token is registered or a notification reached the device.
 there are no tokens or all devices fail. No live notifications were sent during
 local verification.
 
-## Grafana Cloud observability
+## Production logging and metrics
 
-See [OBSERVABILITY.md](OBSERVABILITY.md) for backend OTLP logs and metrics,
-Secret Manager credentials, GitHub deployment variables and Grafana verification.
-Export is disabled by default. Enabling it in production also selects
-instance-based Cloud Run billing to support background telemetry export.
+Production and preview deployments keep the OTLP exporter disabled, use
+request-based Cloud Run billing, and scale to zero. Use Google Cloud Logs
+Explorer and Cloud Run / Cloud Monitoring for operational visibility. See
+[OBSERVABILITY.md](OBSERVABILITY.md) for queries, cost notes, rollout checks and
+rollback guidance. Background reminder timing is an accepted interim tradeoff
+under request-based billing and is tracked in issue #99.
 
 ## Private notification worker
 

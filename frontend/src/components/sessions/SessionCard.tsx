@@ -79,7 +79,7 @@ export default function SessionCard({ session, venueName, courtNumber, timeForma
         {!isCurrentSession && !isDeadlinePassed && !isCancelled && (
           <p className="mt-3 flex items-start gap-1.5 text-xs text-amber-800">
             <Timer className="h-4 w-4 shrink-0" aria-hidden="true" />
-            <span>RSVP by {formatInTimeZone(session.rsvp_deadline, 'Australia/Sydney', 'EEE, d MMM')}</span>
+            <span>RSVP by {formatInTimeZone(session.rsvp_deadline, 'Australia/Sydney', `EEE, d MMM 'at' ${timeFormat === '12h' ? 'h:mm a' : 'HH:mm'}`)}</span>
           </p>
         )}
         {!recordScore && <p className="mt-2 text-xs text-slate-500">Open session for details</p>}

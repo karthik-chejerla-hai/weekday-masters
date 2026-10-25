@@ -12,7 +12,8 @@ export default function Admin() {
   const [processingId, setProcessingId] = useState<string | null>(null);
 
   // Club settings state
-  const [clubForm, setClubForm] = useState({ name: '', venue_name: '', venue_address: '', court_number: '', time_format: '24h' as TimeFormat });
+  const [clubForm, setClubForm] = useState({ name: '', venue_name: '', venue_address: '', court_number: '', time_format: '24h' as TimeFormat, rsvp_deadline_hours: '50' });
+  const [savedDeadlineHours, setSavedDeadlineHours] = useState(50);
   const [isSavingClub, setIsSavingClub] = useState(false);
   const [notificationsPaused, setNotificationsPaused] = useState(false);
   const [clubMessage, setClubMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -34,12 +35,14 @@ export default function Admin() {
       ]);
       setJoinRequests(requestsData);
       setNotificationsPaused(clubData.notifications_paused ?? false);
+      setSavedDeadlineHours(clubData.rsvp_deadline_hours ?? 50);
       setClubForm({
         name: clubData.name || '',
         venue_name: clubData.venue_name || '',
         venue_address: clubData.venue_address || '',
         court_number: clubData.court_number ? String(clubData.court_number) : '',
         time_format: clubData.time_format || '24h',
+        rsvp_deadline_hours: String(clubData.rsvp_deadline_hours ?? 50),
       });
     } catch (error) {
       console.error('Failed to load data:', error);
@@ -78,10 +81,23 @@ export default function Admin() {
       setClubMessage({ type: 'error', text: 'Enter a whole court number from 1 to 999, or leave it blank.' });
       return;
     }
+    const { rsvp_deadline_hours: deadlineValue, ...settings } = clubForm;
+    const deadlineHours = Number(deadlineValue);
+    if (deadlineValue.trim() === '' || !Number.isInteger(deadlineHours) || deadlineHours < 0 || deadlineHours > 8760) {
+      setClubMessage({ type: 'error', text: 'Enter whole hours from 0 to 8760 for the RSVP deadline.' });
+      return;
+    }
     setIsSavingClub(true);
     setClubMessage(null);
     try {
-      await api.updateClub({ ...clubForm, court_number: courtNumber });
+      const saved = await api.updateClub({
+        ...settings,
+        court_number: courtNumber,
+        ...(deadlineHours !== savedDeadlineHours ? { rsvp_deadline_hours: deadlineHours } : {}),
+      });
+      const currentDeadlineHours = saved.rsvp_deadline_hours ?? deadlineHours;
+      setSavedDeadlineHours(currentDeadlineHours);
+      setClubForm(current => ({ ...current, rsvp_deadline_hours: String(currentDeadlineHours) }));
       setClubMessage({ type: 'success', text: 'Club settings saved!' });
     } catch (error) {
       console.error('Failed to save club:', error);
@@ -229,6 +245,19 @@ export default function Admin() {
               </select>
               <p id="club-time-help" className="mt-1 text-xs text-slate-500">Used for session times across the app.</p>
             </div>
+          </div>
+
+          <div>
+            <label htmlFor="club-rsvp-hours" className="mb-1 block text-sm font-medium text-slate-700">Default RSVP deadline (hours before start)</label>
+            <input id="club-rsvp-hours" type="number" min="0" max="8760" step="1"
+              value={clubForm.rsvp_deadline_hours}
+              onChange={(e) => setClubForm({ ...clubForm, rsvp_deadline_hours: e.target.value })}
+              aria-describedby="club-rsvp-help" disabled={isLoading || isSavingClub}
+              className="w-full rounded-lg border border-slate-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500" />
+            <p id="club-rsvp-help" className="mt-2 text-sm text-slate-600">
+              Changing this value replaces the RSVP deadlines for all future sessions, including custom deadlines.
+              Past sessions stay unchanged. Use 0 to close RSVPs when a session starts.
+            </p>
           </div>
 
           {clubMessage && (
