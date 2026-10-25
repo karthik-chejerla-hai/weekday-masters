@@ -35,6 +35,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
+      - name: Verify notification queue deployment readiness
+        env:
+          NOTIFICATIONS_DISABLED: ${{ vars.NOTIFICATIONS_DISABLED || 'true' }}
+          NOTIFICATION_WORKER_ENABLED: ${{ vars.NOTIFICATION_WORKER_ENABLED || 'false' }}
+        run: |
+          if [[ "$NOTIFICATIONS_DISABLED" == "false" && "$NOTIFICATION_WORKER_ENABLED" != "true" ]]; then
+            echo '::error::Provision the private notification worker before enabling delivery. Stopped staging requires NOTIFICATIONS_DISABLED=true.'
+            exit 1
+          fi
+
       - name: Authenticate to Google Cloud
         id: auth
         uses: google-github-actions/auth@v3
@@ -75,6 +85,20 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: go run ./cmd/migrate
 
+      - name: Deploy private notification worker
+        if: vars.NOTIFICATION_WORKER_ENABLED == 'true'
+        env:
+          IMAGE: ${{ env.IMAGE }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          NOTIFICATION_WORKER_SERVICE: rally-notifications
+          NOTIFICATION_WORKER_AUDIENCE: https://rally.internal/notifications/production
+          NOTIFICATION_WORKER_RUNTIME_EMAIL: ${{ vars.NOTIFICATION_WORKER_RUNTIME_EMAIL }}
+          NOTIFICATION_SCHEDULER_EMAIL: ${{ vars.NOTIFICATION_SCHEDULER_EMAIL }}
+          NOTIFICATIONS_DISABLED: ${{ vars.NOTIFICATIONS_DISABLED || 'true' }}
+          FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+        run: bash .github/scripts/notification-worker.sh deploy
+
       - name: Deploy to Cloud Run
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -91,6 +115,7 @@ jobs:
             --min 0 \
             --min-instances 0 \
             --allow-unauthenticated \
+            --update-env-vars="NOTIFICATION_WORKER_ENABLED=${{ vars.NOTIFICATION_WORKER_ENABLED || 'false' }}" \
             --update-env-vars="OTEL_ENABLED=false" \
             --remove-env-vars="OTEL_SERVICE_NAME,OTEL_RESOURCE_ATTRIBUTES,OTEL_EXPORTER_OTLP_ENDPOINT,OTEL_EXPORTER_OTLP_TIMEOUT,OTEL_METRIC_EXPORT_INTERVAL" \
             --remove-secrets="OTEL_EXPORTER_OTLP_HEADERS" \

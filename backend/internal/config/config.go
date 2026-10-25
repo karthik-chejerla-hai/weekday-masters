@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"strconv"
 
@@ -20,6 +21,7 @@ type Config struct {
 	FrontendURL                     string
 	GinMode                         string
 	NotificationsDisabled           bool
+	NotificationWorkerEnabled       bool
 	NotificationsDisabledAllowEmail string
 	InvitationTestEmailsEnabled     bool
 
@@ -53,6 +55,7 @@ func Load() *Config {
 		Timezone:                        getEnv("TIMEZONE", "Australia/Sydney"),
 		FrontendURL:                     getEnv("FRONTEND_URL", "http://localhost:5173"),
 		GinMode:                         getEnv("GIN_MODE", "debug"),
+		NotificationWorkerEnabled:       getEnv("NOTIFICATION_WORKER_ENABLED", "false") == "true",
 		NotificationsDisabled:           getEnv("NOTIFICATIONS_DISABLED", "false") != "false",
 		NotificationsDisabledAllowEmail: getEnv("NOTIFICATIONS_DISABLED_ALLOW_EMAIL", ""),
 		InvitationTestEmailsEnabled:     getEnv("INVITATION_TEST_EMAILS_ENABLED", "false") == "true",
@@ -87,4 +90,13 @@ func getEnvInt(key string, defaultValue int) int {
 		}
 	}
 	return defaultValue
+}
+
+// ValidateNotificationDeliveryReadiness prevents a production queue cutover
+// without the private drain worker. Stopped staging may deploy before provisioning.
+func (c *Config) ValidateNotificationDeliveryReadiness() error {
+	if c.GinMode == "release" && !c.NotificationsDisabled && !c.NotificationWorkerEnabled {
+		return errors.New("enabled notification delivery requires NOTIFICATION_WORKER_ENABLED=true and a provisioned private worker")
+	}
+	return nil
 }

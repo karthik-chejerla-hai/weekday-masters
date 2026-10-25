@@ -854,17 +854,17 @@ paths:
       summary: Remind a low-balance member to top up
       description: >
         Approved admins only. Creates a balance alert in the member's Rally
-        notification history and attempts push delivery to their registered
-        devices. The response distinguishes accepted push delivery from an
-        in-app-only reminder. Only approved members below the configured
-        low-balance threshold are eligible, and a member may be nudged at most
+        notification history and durably queues push delivery to their registered
+        devices. The response distinguishes queued delivery from suppressed
+        delivery; queued is not provider acceptance or device arrival. Only
+        approved members below the fixed $20 (2000 cents) threshold are eligible, and a member may be nudged at most
         once every 24 hours.
       operationId: sendBalanceNudge
       parameters:
         - $ref: "#/components/parameters/UserId"
       responses:
         "201":
-          description: Nudge recorded and push delivery attempted
+          description: Nudge recorded with queued or suppressed delivery state
           content:
             application/json:
               schema:
@@ -2876,6 +2876,13 @@ components:
       type: object
       required: [notification_id, balance_cents, push_sent, next_allowed_at]
       properties:
+        delivery_state:
+          type: string
+          enum: [pending, suppressed]
+          description: Durable push state at publication; pending does not claim arrival.
+        suppression_reason:
+          type: string
+          description: Safe reason code when delivery was suppressed.
         notification_id:
           type: string
           format: uuid

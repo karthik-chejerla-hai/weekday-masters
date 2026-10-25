@@ -13,6 +13,9 @@ import (
 // These are defaults, not history. Every settlement snapshots the values it
 // actually used, so changing a rate here never rewrites what a past session
 // cost — see Settlement.
+// NotificationBalanceThresholdCents is the fixed notification/nudge policy.
+const NotificationBalanceThresholdCents int64 = 2000
+
 type Club struct {
 	// Setup pause applies to all delivery channels, independent of credentials.
 	NotificationsPaused bool      `gorm:"not null;default:false" json:"notifications_paused"`

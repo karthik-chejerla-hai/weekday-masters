@@ -156,10 +156,13 @@ func (f stubPushClient) SendEachForMulticast(ctx context.Context, msg *messaging
 func TestPushDeliveryRequiresAcceptedDevice(t *testing.T) {
 	for _, mode := range []string{"no_devices", "all_failed", "partial", "accepted"} {
 		t.Run(mode, func(t *testing.T) {
-			requireDB(t)
+			rs, ss, _ := newTestServices(t)
 			user := newUser(t, "pushplayer")
 			calls := 0
-			sessionID := uuid.NewString()
+			admin := newUser(t, "pushadmin")
+			session := newSession(t, ss, admin.ID, 1)
+			sessionID := session.ID.String()
+			rsvpIn(t, rs, session.ID, user.ID)
 			ns := &NotificationService{fcmEnabled: true, frontendURL: "https://rally.test", fcmClient: stubPushClient(func(_ context.Context, msg *messaging.MulticastMessage) (*messaging.BatchResponse, error) {
 				calls++
 				if msg.Webpush.FCMOptions.Link != "https://rally.test/sessions/"+sessionID {
@@ -169,7 +172,10 @@ func TestPushDeliveryRequiresAcceptedDevice(t *testing.T) {
 					return &messaging.BatchResponse{FailureCount: 1, Responses: []*messaging.SendResponse{{Error: errors.New("rejected")}}}, nil
 				}
 				if mode == "partial" {
-					return &messaging.BatchResponse{SuccessCount: 1, FailureCount: 1, Responses: []*messaging.SendResponse{{Success: true}, {Error: errors.New("rejected")}}}, nil
+					if calls == 1 {
+						return &messaging.BatchResponse{FailureCount: 1, Responses: []*messaging.SendResponse{{Error: errors.New("rejected")}}}, nil
+					}
+					return &messaging.BatchResponse{SuccessCount: 1, Responses: []*messaging.SendResponse{{Success: true}}}, nil
 				}
 				return &messaging.BatchResponse{SuccessCount: 1, Responses: []*messaging.SendResponse{{Success: true}}}, nil
 			})}
@@ -186,6 +192,11 @@ func TestPushDeliveryRequiresAcceptedDevice(t *testing.T) {
 			if err := ns.SendNotification(context.Background(), user.ID, models.NotificationSessionReminder, "Reminder", "Play", map[string]string{"session_id": sessionID}); err != nil {
 				t.Fatal(err)
 			}
+			if mode != "no_devices" {
+				if _, err := ns.ProcessNotificationWork(context.Background(), 10); err != nil {
+					t.Fatal(err)
+				}
+			}
 			notices, err := ns.GetUserNotifications(user.ID, 10, 0)
 			if err != nil || len(notices) != 1 {
 				t.Fatalf("history: %v, %v", notices, err)
@@ -193,6 +204,9 @@ func TestPushDeliveryRequiresAcceptedDevice(t *testing.T) {
 			wantSent := mode == "partial" || mode == "accepted"
 			if notices[0].PushSent != wantSent || (notices[0].PushSentAt != nil) != wantSent || notices[0].EmailSent {
 				t.Fatalf("wrong delivery state: %+v", notices[0])
+			}
+			if calls != map[string]int{"no_devices": 0, "all_failed": 1, "partial": 2, "accepted": 1}[mode] {
+				t.Fatalf("provider calls=%d", calls)
 			}
 			if mode == "no_devices" && calls != 0 {
 				t.Fatal("called FCM without devices")
@@ -327,6 +341,9 @@ func TestDisabledDeliveryAllowlistTargetsOnlyTheConfiguredEmail(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if _, err := ns.ProcessNotificationWork(context.Background(), 10); err != nil {
+		t.Fatal(err)
+	}
 	if len(sentTokens) != 1 || sentTokens[0] != "admin-token" {
 		t.Fatalf("disabled allowlist delivered to the wrong devices: %v", sentTokens)
 	}
@@ -334,7 +351,15 @@ func TestDisabledDeliveryAllowlistTargetsOnlyTheConfiguredEmail(t *testing.T) {
 	if err := database.DB.Find(&notices).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(notices) != 1 || notices[0].UserID != admin.ID || !notices[0].PushSent {
+	var adminNotice, otherNotice *models.Notification
+	for i := range notices {
+		if notices[i].UserID == admin.ID {
+			adminNotice = &notices[i]
+		} else if notices[i].UserID == other.ID {
+			otherNotice = &notices[i]
+		}
+	}
+	if len(notices) != 2 || adminNotice == nil || !adminNotice.PushSent || otherNotice == nil || otherNotice.PushSent {
 		t.Fatalf("wrong selective notification history: %+v", notices)
 	}
 }
@@ -386,6 +411,9 @@ func TestSettlementBalancePushRoutesToMoney(t *testing.T) {
 			}
 			f.settlement.WithNotifier(notifier)
 			if _, _, err := f.settlement.Settle(SettleInput{SessionID: f.session.ID, Lines: []LineInput{{UserID: player.ID, InBase: true}}, SettledBy: f.admin.ID}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := notifier.ProcessNotificationWork(context.Background(), 10); err != nil {
 				t.Fatal(err)
 			}
 			if calls != 1 {
@@ -487,7 +515,13 @@ func TestBalanceNudgeReportsAcceptedBackgroundPush(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.PushSent || delivered == nil {
+	if result.PushSent || result.DeliveryState != models.DeliveryPending || delivered != nil {
+		t.Fatalf("nudge was not persisted as pending work: %+v", result)
+	}
+	if _, err := ns.ProcessNotificationWork(context.Background(), 10); err != nil {
+		t.Fatal(err)
+	}
+	if delivered == nil {
 		t.Fatalf("push was not accepted: %+v", result)
 	}
 	if delivered.Data["type"] != string(models.NotificationBalanceLow) || delivered.Webpush.FCMOptions.Link != "https://rally.test/money" {

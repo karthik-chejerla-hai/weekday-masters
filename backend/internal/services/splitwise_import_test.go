@@ -106,15 +106,24 @@ func TestSplitwiseImportReconcilesHistoryAndInactiveParticipants(t *testing.T) {
 			}
 		}
 	}
-	// The persistent pause blocks even a service with provider delivery enabled.
+	// The persistent pause retains the delivery intent as suppressed history.
 	ns := &NotificationService{fcmEnabled: true}
 	if err := ns.SendNotification(context.Background(), users[0].ID, models.NotificationBalanceLow, "test", "test", nil); err != nil {
 		t.Fatal(err)
 	}
-	var notifications int64
-	database.DB.Model(&models.Notification{}).Count(&notifications)
-	if notifications != 0 {
-		t.Fatal("pause queued a notification")
+	var notices []models.Notification
+	if err := database.DB.Find(&notices).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(notices) != 1 || notices[0].UserID != users[0].ID || notices[0].PushSent {
+		t.Fatalf("pause did not retain suppressed history: %+v", notices)
+	}
+	var outbox models.NotificationOutbox
+	if err := database.DB.Where("notification_id = ?", notices[0].ID).First(&outbox).Error; err != nil {
+		t.Fatal(err)
+	}
+	if outbox.State != models.DeliverySuppressed || outbox.LastErrorCode != "club_paused" {
+		t.Fatalf("paused intent was not suppressed: %+v", outbox)
 	}
 	again, err := ImportSplitwise(source, m, nil)
 	if err != nil || !again.Reused || again.UsersCreated != 0 {
@@ -282,8 +291,11 @@ func TestNotificationsDisabledSkipsProvidersAndDatabase(t *testing.T) {
 	if ns.IsEnabled() || ns.fcmClient != nil {
 		t.Fatal("disabled service initialized providers")
 	}
-	if err := ns.SendNotification(context.Background(), uuid.New(), models.NotificationBalanceLow, "ignored", "ignored", nil); err != nil {
-		t.Fatal(err)
+	priorDB := database.DB
+	database.DB = nil
+	defer func() { database.DB = priorDB }()
+	if err := ns.SendNotification(context.Background(), uuid.New(), models.NotificationBalanceLow, "ignored", "ignored", nil); err == nil || !strings.Contains(err.Error(), "notification database unavailable") {
+		t.Fatalf("expected operational database error, got %v", err)
 	}
 }
 
