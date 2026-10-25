@@ -288,6 +288,29 @@ class ApiService {
     return response.data;
   }
 
+  async getPushDevices(): Promise<PushEnrollment[]> {
+    return (await this.client.get<PushEnrollment[]>('/users/me/push-devices')).data;
+  }
+  async enrollPushDevice(input: PushEnrollmentInput): Promise<PushEnrollment> {
+    return (await this.client.post<PushEnrollment>('/users/me/push-devices/enroll', input)).data;
+  }
+  async adoptPushDevice(input: PushEnrollmentInput): Promise<PushEnrollment> {
+    return (await this.client.post<PushEnrollment>('/users/me/push-devices/adopt', input)).data;
+  }
+  async refreshPushDevice(id: string, input: { installation_id: string; token: string; generation: number }): Promise<PushEnrollment> {
+    return (await this.client.put<PushEnrollment>(`/users/me/push-devices/${id}/registration`, input)).data;
+  }
+  async revokePushDevice(id: string, generation: number): Promise<void> {
+    await this.client.delete(`/users/me/push-devices/${id}`, { data: { generation } });
+  }
+  async revokeForeignLegacyToken(token: string): Promise<{ cleanup_required: boolean }> {
+    return (await this.client.post<{ cleanup_required: boolean }>('/push-devices/legacy-revoke', { token })).data;
+  }
+
+  async revokePushDeviceProof(installation_id: string, revocation_secret: string, generation: number): Promise<void> {
+    await this.client.post('/push-devices/revoke-proof', { installation_id, revocation_secret, generation });
+  }
+
   // Notifications - History
   async getNotificationHistory(limit = 20, offset = 0): Promise<Notification[]> {
     const response = await this.client.get<Notification[]>('/users/me/notifications/history', {
@@ -569,3 +592,18 @@ export interface Announcement {
 }
 
 export const api = new ApiService();
+
+export interface PushEnrollment {
+  id: string;
+  installation_id: string | null;
+  generation: number;
+  device_name: string;
+  state: 'active' | 'revoked' | 'invalidated';
+}
+export interface PushEnrollmentInput {
+  installation_id: string;
+  revocation_secret: string;
+  token: string;
+  generation: number;
+  device_name?: string;
+}

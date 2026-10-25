@@ -42,7 +42,7 @@ func newHarness(t *testing.T) *harness {
 	h := &harness{t: t}
 
 	sessionService := services.NewSessionService()
-	rsvpService := services.NewRSVPService(nil)
+	rsvpService := services.NewRSVPService()
 	userService := services.NewUserService("").WithRSVPs(rsvpService)
 	notificationService := services.NewNotificationService(services.NotificationConfig{})
 	ledgerService := services.NewLedgerService()
@@ -93,10 +93,11 @@ func newHarness(t *testing.T) *harness {
 		api.PUT("/users/me", userHandler.UpdateMe)
 
 		api.GET("/users/me/notifications", notificationHandler.GetPreferences)
-		api.PUT("/users/me/notifications", notificationHandler.UpdatePreferences)
-		api.POST("/users/me/push-tokens", notificationHandler.RegisterPushToken)
-		api.DELETE("/users/me/push-tokens", notificationHandler.UnregisterPushToken)
+		api.PUT("/users/me/notifications", notificationHandler.ObsoletePushMutation)
+		api.POST("/users/me/push-tokens", notificationHandler.ObsoletePushMutation)
+		api.DELETE("/users/me/push-tokens", notificationHandler.ObsoletePushMutation)
 		notificationHandler.RegisterHistoryRoutes(api)
+		notificationHandler.RegisterDeviceRoutes(api)
 
 		api.GET("/users", userHandler.ListMembers)
 

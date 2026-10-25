@@ -4,6 +4,7 @@ import { api } from '../services/api';
 import { AuthContext, type AuthContextType } from './auth-context';
 import type { User } from '../types';
 import { safeAuthReturn } from './auth-redirect';
+import { preparePushAccount } from '../services/push-device';
 
 // These silent-renewal errors require a fresh interactive sign-in. They do not
 // mean the user attempted to sign in and failed. Do not apply this list to
@@ -59,11 +60,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         auth0User.picture || ''
       );
 
+      try { await preparePushAccount(response.user.id); }
+      catch { throw new Error('Could not remove the previous account’s push registration from this device. Retry sign-in to finish device cleanup.'); }
       setUser(response.user);
     } catch (error) {
       console.error('Failed to sync user:', error);
       setAuthError((error as { response?: { data?: { error?: string } } })?.response?.data?.error
-        || 'We could not finish signing you in. Try again or contact your club admin.');
+        || (error instanceof Error ? error.message : 'We could not finish signing you in. Try again or contact your club admin.'));
       setUser(null);
     } finally {
       setIsLoading(false);
