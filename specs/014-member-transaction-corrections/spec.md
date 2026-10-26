@@ -4,10 +4,12 @@
 
 **Created**: 2026-10-25
 
-**Status**: Reviewed draft with implementation baseline audited 2026-10-25.
-Existing completed work is marked in [tasks.md](tasks.md). PR 1 reversal safety
-is implemented and validated; later feature work has not started. Proposed
-defaults below remain subject to product review.
+**Status**: Reviewed specification; implementation design completed 2026-10-26
+after PR #103 merged (`9b83151`). [implementation-design.md](implementation-design.md)
+and its linked schema/contracts define the next implementation work. Completed
+work and dependency-ordered remaining tasks are marked in [tasks.md](tasks.md).
+PR 1 reversal safety is merged; later financial feature implementation has not
+started. This design does not authorize production financial operations.
 
 **Input**: “Add an ability to correct or reverse a txn - session charge, or a
  topup” and record non-badminton expenses, adjusting each player's balance

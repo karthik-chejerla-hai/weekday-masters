@@ -9,10 +9,20 @@ claims that every flow in a broad requirement is implemented. All original
 functional requirements remain acceptance targets. The baseline audit itself changed no application code. Subsequent PR 1 work is
 recorded separately below.
 
+## Design update — 2026-10-26
+
+PR #103 is merged as `9b83151`. R002 is now complete as a design deliverable:
+[implementation-design.md](implementation-design.md), research.md, data-model.md,
+contracts/, quickstart.md and tasks.md define schema, reviewed operations/replay,
+lock order, stock valuation, history and dependency-ordered PRs. The next work is
+PR 2's reviewed-operation foundation before the top-up correction UI slice.
+All later implementation tasks remain unchecked. The requirement-by-requirement
+section below deliberately preserves the earlier audit baseline.
+
 ## Subsequent PR 1 implementation
 
 [pr1-reversal-safety.md](pr1-reversal-safety.md) supersedes the baseline gaps for
-atomic reversal and reversal-of-reversal. R001 is complete locally: generic
+atomic reversal and reversal-of-reversal. R001 is merged: generic
 session reversal dispatches to the atomic settlement path, both endpoints use
 approved-admin checks, and inverse transactions are not reversible. This closes
 the reversal safety portions of FR-001/012/013/017/025. Full session replacement,
