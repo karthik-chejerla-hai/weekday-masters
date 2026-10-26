@@ -93,7 +93,14 @@ documented rather than left for an implementer to guess.
 - `.specify/memory/constitution.md`: exact cents, immutable ledger and invariant
   requirements, explicit migrations and specification workflow.
 
-## Remaining work before implementation
+## Design completion — 2026-10-26
+
+The design work below has now been completed in
+[implementation-design.md](implementation-design.md), data-model.md, research.md,
+contracts/, quickstart.md and the detailed T001–T060 tasks. PR #103 is merged.
+Implementation remains a separate next step; no feature mutation is built here.
+
+## Original design follow-up (now completed)
 
 Produce detailed contracts, schema/migration design, preview binding rules,
 lock order, history ordering and a dependency-ordered execution task list from
