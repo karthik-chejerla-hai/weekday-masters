@@ -128,16 +128,16 @@ Goal: one reviewed, durable, transaction-safe operation protocol, including
 reviewed reversal for top-ups/native sessions. Independent check: retry, rollback,
 competing requests and membership/import contention produce the exact contract.
 
-- [ ] T002 Add MoneyOperation UUID/sequence/payload/result model and nullable transaction operation links in backend/internal/models/money_operation.go and backend/internal/models/ledger.go per data-model.md.
-- [ ] T003 Add additive idempotent migration, deferred target FK, operation-step uniqueness/checks and upgrade coverage in backend/internal/database/db.go and backend/internal/database/member_money_migration_test.go; register money_operations in backend/internal/testsupport/db.go.
-- [ ] T004 Write replay/hash/rollback/dual-reservation-original-lock contention tests in backend/internal/services/member_money_service_test.go, including identical retry after subsequent correction and request-ID reuse by another actor.
+- [x] T002 Add MoneyOperation UUID/sequence/payload/result model and nullable transaction operation links in backend/internal/models/money_operation.go and backend/internal/models/ledger.go per data-model.md.
+- [x] T003 Add additive idempotent migration, deferred target FK, operation-step uniqueness/checks and upgrade coverage in backend/internal/database/db.go and backend/internal/database/member_money_migration_test.go; register money_operations in backend/internal/testsupport/db.go.
+- [ ] T004 Write replay/hash/rollback/dual-reservation-original-lock contention tests in backend/internal/services/member_money_service_test.go, including identical retry after subsequent correction, request-ID reuse by another actor and removed/demoted actor refusal before replay disclosure.
 - [ ] T005 Implement strict canonical input/digest/numeric helpers, duplicate JSON-key rejection and common DTO/errors in backend/internal/services/member_money_service.go and backend/internal/handlers/member_money.go; use contracts/operations.md bounds and exact same request replay.
 - [ ] T006 Implement caller-tx reservation/replay/completion and table-intent helper in backend/internal/services/member_money_service.go and backend/internal/services/ledger_service.go; no pending reservation may commit and successful replay precedes stale-state checks.
 - [ ] T007 Apply early table intent before prelocks in backend/internal/services/ledger_service.go, settlement_service.go, asset_correction.go and balance_correction.go; audit splitwise_import_service.go and backend/cmd/seed callers without weakening import locks or audit guards.
 - [ ] T008 Write membership/removal/new-RSVP/profile/last-admin concurrency and rollback tests in backend/internal/services/user_service_test.go and backend/internal/services/rsvp_service_test.go.
 - [ ] T009 Add sorted user SHARE locking and transaction-aware membership/removal with NO KEY UPDATE, last-admin predicate guard, targeted profile/role writes and after-commit promotion delivery in backend/internal/services/user_service.go; pass caller tx through cancellation helpers.
 - [ ] T010 Add tx-aware RSVP removal/promotion helpers and target-user approval locking before session in backend/internal/services/rsvp_service.go; adapt ordinary settlement participant discovery/revalidation before session in backend/internal/services/settlement_service.go.
-- [ ] T011 Extract transaction-scoped inverse/settlement undo helpers and implement reviewed top-up/native-session reversal previews/confirms in backend/internal/services/member_money_service.go, ledger_service.go and settlement_service.go; prelock complete account union, backdate only new reviewed inverses, suppress new notifications.
+- [ ] T011 Extract transaction-scoped inverse/settlement undo helpers and implement reviewed top-up/native-session reversal previews/confirms in backend/internal/services/member_money_service.go, ledger_service.go and settlement_service.go; prelock complete account union, backdate only new reviewed inverses (assert exact original session timestamp too), suppress new notifications.
 - [ ] T012 Register approved-member transaction detail and approved-admin preview/confirm routes in backend/internal/handlers/member_money.go and backend/cmd/server/main.go; coordinate supported legacy reversal envelope dispatch and backend/internal/handlers/openapi.yaml in the same change.
 - [ ] T013 Add HTTP access/strict-input/unsupported-kind/legacy-bypass tests in backend/internal/handlers/member_money_test.go; extend backend/internal/services/reversal_safety_test.go with reviewed path and importer/account-lock race coverage.
 - [ ] T014 Add common reviewed DTO and API methods plus exact retry-payload state helpers in frontend/src/types/index.ts, frontend/src/services/api.ts and frontend/src/components/money/useMoneyOperation.ts; preserve current HTTP client and existing unrelated asset workflows.
@@ -244,7 +244,9 @@ Default PR sequence: #103 merged → PR 2 foundation → PR 3 US1 → PR 4 US2 �
 PR 5 US4 → PR 6 US3 → PR 7 US5/full verification. The first usable new correction
 increment is PR 3; it must not start before the design/foundation gates. Each PR
 runs its own relevant checks and includes its necessary history/refresh, not just
-the final test PR. All implementation tasks remain unchecked in this design PR.
+the final test PR. The original design PR left all implementation tasks unchecked. T002–T003 are
+now implemented in the stacked model/migration increment; [foundation-schema.md](foundation-schema.md)
+records evidence. The rest of the foundation remains pending.
 
 Parallel opportunities: after relevant model/protocol decisions land, tests and UI
 for US1 may develop separately from backend implementation, but gate on agreed

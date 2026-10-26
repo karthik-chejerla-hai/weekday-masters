@@ -151,7 +151,10 @@ Within one DB transaction: early table lock; reserve the request UUID with
 `INSERT ... ON CONFLICT DO NOTHING` (deferred target FK, see data model); read the existing row after any conflicting
 insert completes. If owned by another actor or different payload return 409
 `request_conflict` without disclosing its stored response. If same and complete,
-return replay before live-version/stale-review checks. If newly inserted, lock
+lock/reload the replay actor FOR SHARE and require their current approved-admin
+status, then return replay before original-version/stale-review checks. A removed
+or demoted actor receives 403 without the stored response. Actor reauthorization
+also applies to an already completed row, not just newly reserved operations. If newly inserted, lock
 and validate all relevant state, rebuild preview and compare; then post exact
 inverse/replacement, allocations/settlement metadata and completed response before
 commit. A failed confirmation rolls back reservation too. Never catch a PostgreSQL

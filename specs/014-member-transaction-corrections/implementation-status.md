@@ -9,6 +9,16 @@ claims that every flow in a broad requirement is implemented. All original
 functional requirements remain acceptance targets. The baseline audit itself changed no application code. Subsequent PR 1 work is
 recorded separately below.
 
+## Foundation model/migration increment — 2026-10-26
+
+T002–T003 are implemented on `codex/member-money-model`, stacked on design PR #104.
+[foundation-schema.md](foundation-schema.md) records the additive operation model,
+transaction links, deferred target FK, completion/immutability constraints and
+populated-upgrade/concurrency checks. Full backend `go test -race ./...` passed
+against a dedicated disposable PostgreSQL 16 database. There are no new HTTP
+operations yet. T004–T014 remain pending, so R003/reviewed-operation foundation
+is not complete; top-up correction UI has not started.
+
 ## Design update — 2026-10-26
 
 PR #103 is merged as `9b83151`. R002 is now complete as a design deliverable:
@@ -16,7 +26,8 @@ PR #103 is merged as `9b83151`. R002 is now complete as a design deliverable:
 contracts/, quickstart.md and tasks.md define schema, reviewed operations/replay,
 lock order, stock valuation, history and dependency-ordered PRs. The next work is
 PR 2's reviewed-operation foundation before the top-up correction UI slice.
-All later implementation tasks remain unchecked. The requirement-by-requirement
+At design completion all later implementation tasks were unchecked; see the
+subsequent model/migration update above. The requirement-by-requirement
 section below deliberately preserves the earlier audit baseline.
 
 ## Subsequent PR 1 implementation

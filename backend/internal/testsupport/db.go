@@ -30,7 +30,7 @@ import (
 // table cannot be added to the schema and forgotten in one suite's reset.
 const truncateAll = `TRUNCATE TABLE game_revisions, game_results, invitation_deliveries, splitwise_changes, splitwise_records, splitwise_participants, splitwise_imports,
 	charge_lines, settlements,
-	balance_corrections, ledger_entries, transactions, accounts,
+	balance_corrections, ledger_entries, transactions, money_operations, accounts,
 	rsvps, notifications, user_push_tokens,
 	user_notification_preferences, announcements, sessions, users, clubs
 	RESTART IDENTITY CASCADE`
