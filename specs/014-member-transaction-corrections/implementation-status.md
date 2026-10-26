@@ -9,6 +9,17 @@ claims that every flow in a broad requirement is implemented. All original
 functional requirements remain acceptance targets. The baseline audit itself changed no application code. Subsequent PR 1 work is
 recorded separately below.
 
+## Foundation protocol increment — 2026-10-26
+
+T004–T006 add service tests, strict bounded/canonical JSON and common review DTOs,
+plus the internal reservation/replay/completion runner. [foundation-protocol.md](foundation-protocol.md)
+records its scope and evidence. It checks current approved-admin authorization on
+replay, uses sorted user SHARE locks for new operations, returns the original
+accepted response before stale-state callbacks, and rolls back callback/commit
+failures. Kind-specific review/state/account validation is still the callback's
+responsibility. T007–T014 remain pending; no reviewed HTTP endpoint or new UI is
+exposed, and R003 as a complete feature is still open.
+
 ## Foundation model/migration increment — 2026-10-26
 
 T002–T003 are implemented on `codex/member-money-model`, stacked on design PR #104.
