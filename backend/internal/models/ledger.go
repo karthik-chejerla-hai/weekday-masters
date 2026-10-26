@@ -36,6 +36,8 @@ type Transaction struct {
 	ReversesTransactionID *uuid.UUID      `gorm:"type:uuid;uniqueIndex" json:"reverses_transaction_id,omitempty"`
 	CorrectsTransactionID *uuid.UUID      `gorm:"type:uuid;uniqueIndex" json:"corrects_transaction_id,omitempty"`
 	CorrectionReason      string          `gorm:"type:text" json:"correction_reason,omitempty"`
+	MoneyOperationID      *uuid.UUID      `gorm:"type:uuid" json:"money_operation_id,omitempty"`
+	OperationStep         *int16          `gorm:"type:smallint" json:"operation_step,omitempty"`
 	Description           string          `gorm:"type:text" json:"description"`
 	OccurredAt            time.Time       `gorm:"not null;index" json:"occurred_at"`
 	CreatedBy             uuid.UUID       `gorm:"type:uuid" json:"created_by"`

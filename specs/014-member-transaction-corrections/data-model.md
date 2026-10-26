@@ -21,7 +21,9 @@ premature KEY SHARE lock that competing requests later upgrade to FOR UPDATE on 
 The full canonical request includes action, target, reason,
 proposed IDs, normalized inputs and accepted fingerprint. A failed transaction
 rolls back its reservation. No committed pending row is allowed: status/body must
-be populated before commit. The row becomes immutable on successful commit and
+be populated before commit. A deferred completion trigger enforces this while a
+before-update/delete trigger prevents changes once the response is complete.
+The row becomes immutable on successful commit and
 has no TTL; historical retry safety must survive restarts and deployments.
 
 Store a bounded response DTO with original/reversal/replacement IDs, accepted
@@ -123,7 +125,8 @@ alone is not a change. Keep original host/guest aggregation and comped surplus.
 
 ## Effective dates and order
 
-New top-up/shared inverses use the original transaction's exact `occurred_at`.
+All new reviewed inverses, including native-session inverses, use the original
+transaction's exact `occurred_at`.
 Replacement defaults to that instant. A changed `occurred_date` resolves to Sydney
 start of day; submitting the same date preserves the old instant. New shared
 expenses resolve their chosen date to Sydney start of day. Reject future dates
