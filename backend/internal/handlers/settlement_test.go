@@ -334,3 +334,88 @@ func TestSettlementRejectsMalformedIDs(t *testing.T) {
 	h.as(admin).post("/api/admin/sessions/not-a-uuid/settlement/preview", nil).expect(http.StatusBadRequest)
 	h.as(admin).post("/api/admin/settlements/not-a-uuid/reverse", nil).expect(http.StatusBadRequest)
 }
+
+// The transaction endpoint must not undo money without freeing the session.
+func TestGenericSessionReversalAllowsResettling(t *testing.T) {
+	h := newHarness(t)
+	admin, player := makeAdmin(t), makePlayer(t)
+	session := pastSession(t, h, admin)
+	input := map[string]any{"lines": []map[string]any{{"user_id": player.ID.String(), "in_base": true}}}
+	var created struct {
+		Settlement models.Settlement `json:"settlement"`
+	}
+	h.as(admin).post(fmt.Sprintf("/api/admin/sessions/%s/settle", session.ID), input).
+		expect(http.StatusCreated).decode(&created)
+	var inverse models.Transaction
+	h.as(admin).post(fmt.Sprintf("/api/admin/transactions/%s/reverse", created.Settlement.TransactionID),
+		map[string]any{"description": "wrong attendance"}).expect(http.StatusCreated).decode(&inverse)
+	if inverse.ReversesTransactionID == nil || *inverse.ReversesTransactionID != created.Settlement.TransactionID {
+		t.Fatalf("missing original link: %+v", inverse)
+	}
+	var reversed models.Settlement
+	if err := database.DB.First(&reversed, "id = ?", created.Settlement.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if reversed.ReversedAt == nil || reversed.ReversedBy == nil || *reversed.ReversedBy != admin.ID {
+		t.Fatalf("generic reversal did not mark settlement reversed: %+v", reversed)
+	}
+	body := h.as(admin).post(fmt.Sprintf("/api/admin/settlements/%s/reverse", created.Settlement.ID), nil).
+		expect(http.StatusConflict).ledgerError()
+	if body.Code != "transaction_already_reversed" {
+		t.Fatalf("unexpected duplicate code: %s", body.Code)
+	}
+	body = h.as(admin).post(fmt.Sprintf("/api/admin/transactions/%s/reverse", inverse.ID), nil).
+		expect(http.StatusUnprocessableEntity).ledgerError()
+	if body.Code != "reversal_not_allowed" {
+		t.Fatalf("unexpected inverse reversal code: %s", body.Code)
+	}
+	h.as(admin).post(fmt.Sprintf("/api/admin/sessions/%s/settle", session.ID), input).
+		expect(http.StatusCreated)
+	// An old transaction must not undo the newly settled version.
+	h.as(admin).post(fmt.Sprintf("/api/admin/transactions/%s/reverse", created.Settlement.TransactionID), nil).
+		expect(http.StatusConflict)
+	var live int64
+	if err := database.DB.Model(&models.Settlement{}).Where("session_id = ? AND reversed_at IS NULL", session.ID).Count(&live).Error; err != nil || live != 1 {
+		t.Fatalf("live settlements = %d: %v", live, err)
+	}
+}
+
+func TestReversalRoutesRequireApprovedAdmin(t *testing.T) {
+	h := newHarness(t)
+	admin, player := makeAdmin(t), makePlayer(t)
+	session := pastSession(t, h, admin)
+	var created struct {
+		Settlement models.Settlement `json:"settlement"`
+	}
+	h.as(admin).post(fmt.Sprintf("/api/admin/sessions/%s/settle", session.ID),
+		map[string]any{"lines": []map[string]any{{"user_id": player.ID.String(), "in_base": true}}}).
+		expect(http.StatusCreated).decode(&created)
+	paths := []string{
+		fmt.Sprintf("/api/admin/transactions/%s/reverse", created.Settlement.TransactionID),
+		fmt.Sprintf("/api/admin/settlements/%s/reverse", created.Settlement.ID),
+	}
+	for _, actor := range []struct {
+		user *models.User
+		want int
+	}{
+		{nil, http.StatusUnauthorized},
+		{player, http.StatusForbidden},
+		{makeUser(t, models.RoleAdmin, models.MembershipPending), http.StatusForbidden},
+		{makeUser(t, models.RoleAdmin, models.MembershipRemoved), http.StatusForbidden},
+	} {
+		for _, path := range paths {
+			h.as(actor.user).post(path, map[string]any{"description": "not authorized"}).expect(actor.want)
+		}
+	}
+	var inverses int64
+	if err := database.DB.Model(&models.Transaction{}).Where("reverses_transaction_id = ?", created.Settlement.TransactionID).Count(&inverses).Error; err != nil || inverses != 0 {
+		t.Fatalf("unauthorized reversal wrote money: %d inverses, %v", inverses, err)
+	}
+	var unchanged models.Settlement
+	if err := database.DB.First(&unchanged, "id = ?", created.Settlement.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if unchanged.ReversedAt != nil || unchanged.ReversedBy != nil {
+		t.Fatal("unauthorized reversal changed settlement status")
+	}
+}

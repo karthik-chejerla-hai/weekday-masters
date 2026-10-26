@@ -168,6 +168,12 @@ caller.
 Posts the exact negation of the referenced transaction (research.md R9). Returns `409`
 `transaction_already_reversed` if it has been reversed before. Reversing a
 `session_settlement` also stamps `settlements.reversed_at`, freeing the session to be
-settled again.
+settled again. Both the ledger undo and settlement reversal metadata commit
+atomically under the session lock, including when called through this generic
+endpoint. A failed status update rolls back the undo. Approved admins only.
+
+A reversal transaction itself cannot be reversed: returns `422`
+`reversal_not_allowed`. Record a new transaction instead. Existing imported-history
+and audited-snapshot restrictions still apply.
 
 There is no endpoint to edit or delete a transaction or entry, by design (Principle VI).

@@ -134,7 +134,7 @@ func newHarness(t *testing.T) *harness {
 
 		admin.POST("/sessions/:id/settlement/preview", settlementHandler.PreviewSettlement)
 		admin.POST("/sessions/:id/settle", settlementHandler.SettleSession)
-		admin.POST("/settlements/:id/reverse", settlementHandler.ReverseSettlement)
+		admin.POST("/settlements/:id/reverse", middleware.RequireApproved(), middleware.RequireAdmin(), settlementHandler.ReverseSettlement)
 	}
 
 	h.router = r
