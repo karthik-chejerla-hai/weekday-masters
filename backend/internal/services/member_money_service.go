@@ -28,8 +28,18 @@ const MoneyMaxBodyBytes = 128 * 1024
 // services must normalize their own dates, defaults and member/line arrays
 // before submission: sorting arbitrary JSON arrays would change their meaning.
 func CanonicalMoneyPayload(raw json.RawMessage) (json.RawMessage, error) {
-	if len(raw) > MoneyMaxBodyBytes || !utf8.Valid(raw) {
+	if len(raw) > MoneyMaxBodyBytes {
 		return nil, moneyInputError("Enter a valid money request within the size limit.")
+	}
+	return canonicalMoneyObject(raw)
+}
+
+// Stored JSONB text can be larger than its accepted compact representation
+// because PostgreSQL adds whitespace. Bound the canonical result, not database
+// formatting, while wire input still has the strict raw-byte cap above.
+func canonicalMoneyObject(raw json.RawMessage) (json.RawMessage, error) {
+	if !utf8.Valid(raw) {
+		return nil, moneyInputError("Enter valid UTF-8 JSON.")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
@@ -44,7 +54,13 @@ func CanonicalMoneyPayload(raw json.RawMessage) (json.RawMessage, error) {
 		return nil, moneyInputError("Send exactly one JSON object.")
 	}
 	result, err := json.Marshal(value)
-	return result, err
+	if err != nil {
+		return nil, err
+	}
+	if len(result) > MoneyMaxBodyBytes {
+		return nil, moneyInputError("The canonical money request is too large.")
+	}
+	return result, nil
 }
 
 func decodeMoneyValue(decoder *json.Decoder, depth int) (any, error) {
@@ -286,7 +302,7 @@ func runMoneyOperation(in moneyOperationRequest, apply func(*gorm.DB, uuid.UUID,
 			if operation.ResponseBody == nil {
 				return errors.New("completed money operation has no response")
 			}
-			body, err := CanonicalMoneyPayload(json.RawMessage(*operation.ResponseBody))
+			body, err := canonicalMoneyObject(json.RawMessage(*operation.ResponseBody))
 			if err != nil {
 				return err
 			}

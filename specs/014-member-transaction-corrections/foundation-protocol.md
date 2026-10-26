@@ -65,3 +65,13 @@ routes and client helpers. The foundation is not yet an exposed application flow
 
 Existing notification behavior and legacy endpoint behavior remain unchanged by
 this increment. No notification or new HTTP write is sent from the runner itself.
+
+## Pre-merge review follow-up
+
+The independent #106 review found one accepted-response replay boundary: JSONB
+formatting adds whitespace, so a compact 100,010-byte response could reload above
+the 128 KiB wire cap and fail an identical retry. The new real-database regression
+reproduced that failure before the fix. Replay now canonicalizes trusted stored
+JSON independently of raw wire size; both first acceptance and replay enforce the
+same canonical-output budget. Wire requests retain their raw size limit. A second
+regression rejects HTML-escaping expansion before accepting an oversized result.
