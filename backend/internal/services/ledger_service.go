@@ -41,6 +41,8 @@ type PostInput struct {
 	ReversesTransactionID *uuid.UUID
 	CorrectsTransactionID *uuid.UUID
 	CorrectionReason      string
+	MoneyOperationID      *uuid.UUID
+	OperationStep         *int16
 	Description           string
 	OccurredAt            time.Time
 	CreatedBy             uuid.UUID
@@ -94,6 +96,8 @@ func (s *LedgerService) PostWithin(tx *gorm.DB, input PostInput) (*models.Transa
 		ReversesTransactionID: input.ReversesTransactionID,
 		CorrectsTransactionID: input.CorrectsTransactionID,
 		CorrectionReason:      input.CorrectionReason,
+		MoneyOperationID:      input.MoneyOperationID,
+		OperationStep:         input.OperationStep,
 		Description:           input.Description,
 		OccurredAt:            input.OccurredAt,
 		CreatedBy:             input.CreatedBy,
@@ -126,6 +130,13 @@ func (s *LedgerService) PostWithin(tx *gorm.DB, input PostInput) (*models.Transa
 	}
 
 	return &txn, nil
+}
+
+// lockFinancialTransactions excludes the importer's stronger table lock before
+// the caller holds user/session/original/account locks. Existing entry-point
+// adoption is tracked separately; acquiring this only after accounts is too late.
+func lockFinancialTransactions(tx *gorm.DB) error {
+	return tx.Exec("LOCK TABLE transactions IN ROW EXCLUSIVE MODE").Error
 }
 
 // lockAccounts takes row locks on every account a transaction touches, in a
