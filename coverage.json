@@ -1,6 +1,6 @@
 {
-  "commit": "a7b0683cc0317e7f97f21703d66243b79dce6b42",
-  "run": "https://github.com/karthik-chejerla-hai/weekday-masters/actions/runs/40310658409",
-  "backend_statements_percent": 73,
-  "frontend_lines_percent": 80.95
+  "commit": "008ca5df1390d4d89b98ac13ccdde62f02c4495c",
+  "run": "https://github.com/karthik-chejerla-hai/weekday-masters/actions/runs/41145505099",
+  "backend_statements_percent": 73.3,
+  "frontend_lines_percent": 81.24
 }
