@@ -36,16 +36,8 @@ func (s *RSVPService) SaveGuestRSVP(in GuestRSVPInput) (*models.GuestRSVP, error
 	}
 	var guest models.GuestRSVP
 	err := s.withRSVPLocks(in.SessionID, in.ChargedToUserID, func(tx *gorm.DB, session models.Session) ([]uuid.UUID, error) {
-		now := utils.NowInSydney()
-		if session.Status != models.SessionStatusOpen || session.StartsAt == nil || !session.StartsAt.After(now) {
-			return nil, errors.New("guests can only be changed for an upcoming open session")
-		}
-		var settled int64
-		if err := tx.Model(&models.Settlement{}).Where("session_id = ?", session.ID).Count(&settled).Error; err != nil {
+		if err := validateGuestRSVPChange(tx, session); err != nil {
 			return nil, err
-		}
-		if settled > 0 {
-			return nil, errors.New("guests cannot be changed for a settled session")
 		}
 		if in.ID != uuid.Nil {
 			if err := tx.Where("id = ? AND session_id = ?", in.ID, in.SessionID).First(&guest).Error; err != nil {
@@ -92,4 +84,40 @@ func (s *RSVPService) SaveGuestRSVP(in GuestRSVPInput) (*models.GuestRSVP, error
 		return nil, err
 	}
 	return &guest, nil
+}
+
+// DeleteGuestRSVP removes an unplayed guest booking, including its payer
+// obligation. The session lock also protects the place released to the waitlist.
+func (s *RSVPService) DeleteGuestRSVP(sessionID, guestID uuid.UUID) error {
+	return s.withSessionLock(sessionID, func(tx *gorm.DB, session models.Session) ([]uuid.UUID, error) {
+		if err := validateGuestRSVPChange(tx, session); err != nil {
+			return nil, err
+		}
+		var guest models.GuestRSVP
+		if err := tx.Where("id = ? AND session_id = ?", guestID, sessionID).First(&guest).Error; err != nil {
+			return nil, errors.New("guest RSVP not found")
+		}
+		if err := tx.Delete(&guest).Error; err != nil {
+			return nil, err
+		}
+		if guest.Status == models.RSVPStatusIn {
+			return promoteWithinTx(tx, session)
+		}
+		return nil, nil
+	})
+}
+
+// Call only with the session locked, so deletion cannot erase settled history.
+func validateGuestRSVPChange(tx *gorm.DB, session models.Session) error {
+	if session.Status != models.SessionStatusOpen || session.StartsAt == nil || !session.StartsAt.After(utils.NowInSydney()) {
+		return errors.New("guests can only be changed for an upcoming open session")
+	}
+	var settled int64
+	if err := tx.Model(&models.Settlement{}).Where("session_id = ?", session.ID).Count(&settled).Error; err != nil {
+		return err
+	}
+	if settled > 0 {
+		return errors.New("guests cannot be changed for a settled session")
+	}
+	return nil
 }

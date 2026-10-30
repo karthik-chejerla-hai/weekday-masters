@@ -258,6 +258,10 @@ class ApiService {
     return response.data;
   }
 
+  async deleteGuestRSVP(sessionId: string, guestId: string): Promise<void> {
+    await this.client.delete(`/admin/sessions/${sessionId}/guests/${guestId}`);
+  }
+
   async adminAddRSVP(sessionId: string, userId: string, status: SelectableRSVPStatus): Promise<RSVP> {
     const response = await this.client.post<RSVP>(`/admin/sessions/${sessionId}/rsvp/${userId}`, { status });
     return response.data;

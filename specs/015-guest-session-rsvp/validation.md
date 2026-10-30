@@ -27,3 +27,11 @@ Validated on 2026-10-31 against a separate local PostgreSQL 16 database.
 - Desktop and mobile Chromium tests open Edit from a guest row, confirm all saved details, change only the payer, reload, and confirm one guest and one occupied place. They change OUT and back IN through the same editor, cancel an unsaved change, and follow the duplicate-name warning to the saved RSVP.
 - Browser tests use mocked HTTP data. The database tests separately prove persisted uniqueness and payer reassignment.
 - Updated editor screenshots are saved outside the repository under `/tmp/rally-guest-edit-screens/` and attached to the PR.
+
+## Complete guest RSVP removal
+
+- The full backend suite passed with PostgreSQL and the race detector. Removal tests cover admin-only access, IN and OUT removal, one waitlist promotion and notification, concurrent removal, session scoping, and refusal for closed, cancelled, started, settled, or reversed sessions.
+- Removal clears the guest from settlement defaults and permits removal of a payer with no remaining obligations. It writes no ledger entries. A separate regression test confirms that deleting an old duplicate preserves the other booking and its payer.
+- All 416 frontend tests passed with coverage thresholds. Build, lint, and browser-test type checks passed. Existing effect-dependency and bundle-size warnings remain.
+- Desktop and mobile browser tests confirm removal, cancel the confirmation, remove the guest, reload, and add the same name again. The main form clears its selection when the separate editor removes the selected guest. Removal failures retain the guest and display an error.
+- Browser tests use mocked HTTP data; service and handler tests verify real database deletion. Removal screenshots remain outside the repository in `/tmp/rally-guest-remove-screens/` and are attached to the PR.

@@ -594,3 +594,22 @@ func (h *AdminHandler) SaveGuestRSVP(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, guest)
 }
+
+// DeleteGuestRSVP is registered only on the approved-admin route group.
+func (h *AdminHandler) DeleteGuestRSVP(c *gin.Context) {
+	sessionID, err := uuid.Parse(c.Param("id"))
+	if err != nil || sessionID == uuid.Nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid session ID"})
+		return
+	}
+	guestID, err := uuid.Parse(c.Param("guestId"))
+	if err != nil || guestID == uuid.Nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid guest ID"})
+		return
+	}
+	if err := h.rsvpService.DeleteGuestRSVP(sessionID, guestID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}

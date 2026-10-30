@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import axios from 'axios';
 import { api } from '../../services/api';
 import type { GuestRSVP, RSVP, SelectableRSVPStatus, User } from '../../types';
@@ -29,6 +29,8 @@ export default function AdminRSVPForm({ sessionId, rsvps, guests = [], initialGu
   const [userId, setUserId] = useState(initialGuest?.charged_to_user_id || '');
   const [status, setStatus] = useState<SelectableRSVPStatus>(initialGuest?.status || 'in');
   const [saving, setSaving] = useState(false);
+  const [confirmingRemoval, setConfirmingRemoval] = useState(false);
+  const previousGuests = useRef(guests);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -45,10 +47,17 @@ export default function AdminRSVPForm({ sessionId, rsvps, guests = [], initialGu
     return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    if (previousGuests.current.some(guest => guest.id === guestId) && !guests.some(guest => guest.id === guestId)) {
+      setGuestId(''); setGuestName(''); setUserId(''); setStatus('in'); setConfirmingRemoval(false);
+    }
+    previousGuests.current = guests;
+  }, [guests, guestId]);
+
   const selectGuest = (guest?: GuestRSVP) => {
     setGuestId(guest?.id || ''); setGuestName(guest?.guest_name || '');
     setUserId(guest?.charged_to_user_id || ''); setStatus(guest?.status || 'in');
-    setError(''); setSuccess('');
+    setError(''); setSuccess(''); setConfirmingRemoval(false);
   };
   const normalizedName = (name: string) => name.trim().replace(/\s+/gu, ' ').toLowerCase();
   const duplicateGuest = guests.find(guest => guest.id !== guestId && normalizedName(guest.guest_name) === normalizedName(guestName));
@@ -82,6 +91,37 @@ export default function AdminRSVPForm({ sessionId, rsvps, guests = [], initialGu
       setSaving(false);
     }
   };
+
+  const remove = async () => {
+    if (!selectedGuest || !allowGuests || saving) return;
+    setSaving(true);
+    setError('');
+    setSuccess('');
+    try {
+      await api.deleteGuestRSVP(sessionId, selectedGuest.id);
+      await onSaved();
+      selectGuest();
+      setSuccess(`${selectedGuest.guest_name}'s RSVP removed.`);
+    } catch (err) {
+      setError(axios.isAxiosError(err) && typeof err.response?.data?.error === 'string'
+        ? err.response.data.error : 'Could not remove this guest RSVP. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (confirmingRemoval && selectedGuest) return (
+    <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+      <h2 className="font-semibold text-slate-900">Remove {selectedGuest.guest_name}'s RSVP?</h2>
+      <p className="text-sm text-slate-600">This removes the guest from this session completely. You can add them again later.</p>
+      {selectedGuest.status === 'in' && <p className="text-sm text-slate-600">Their place will go to the next waiting member, if there is one.</p>}
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className="min-h-11 rounded-lg bg-red-700 px-4 py-2 font-semibold text-white hover:bg-red-800 disabled:opacity-50" disabled={saving} onClick={remove}>{saving ? 'Removing…' : 'Remove guest RSVP'}</button>
+        <button type="button" className="btn-secondary" disabled={saving} onClick={() => { setConfirmingRemoval(false); setError(''); }}>Keep guest</button>
+      </div>
+      {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+    </div>
+  );
 
   return (
     <form onSubmit={save} className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
@@ -154,6 +194,9 @@ export default function AdminRSVPForm({ sessionId, rsvps, guests = [], initialGu
         </>
       )}
       {onCancelEdit && <button type="button" className="btn-secondary ml-2" disabled={saving} onClick={onCancelEdit}>Cancel</button>}
+      {isGuest && guestId && selectedGuest && allowGuests && <div className="border-t border-slate-200 pt-4">
+        <button type="button" className="min-h-11 text-sm font-semibold text-red-700 underline disabled:opacity-50" disabled={saving} onClick={() => { setConfirmingRemoval(true); setError(''); setSuccess(''); }}>Remove guest</button>
+      </div>}
       {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
       {success && <p role="status" className="text-sm text-green-700">{success}</p>}
     </form>

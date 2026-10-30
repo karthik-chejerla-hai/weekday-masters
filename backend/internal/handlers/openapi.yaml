@@ -951,6 +951,29 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+    delete:
+      tags: ["Admin: Sessions"]
+      summary: Remove a guest RSVP completely
+      description: Admin-only. Requires an upcoming open session with no settlement history. Removing an IN guest frees their place and promotes the first waiting member. No money moves.
+      operationId: deleteGuestRSVP
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - name: guestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Guest RSVP removed
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /admin/club:
     put:
       tags: ["Admin: Club"]

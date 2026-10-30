@@ -241,6 +241,7 @@ func run() (runErr error) {
 				admin.POST("/sessions/:id/rsvp/:userId", adminHandler.AddPlayerRSVP)
 				admin.POST("/sessions/:id/guests", adminHandler.SaveGuestRSVP)
 				admin.PUT("/sessions/:id/guests/:guestId", adminHandler.SaveGuestRSVP)
+				admin.DELETE("/sessions/:id/guests/:guestId", adminHandler.DeleteGuestRSVP)
 
 				// Club management
 				admin.PUT("/club", adminHandler.UpdateClub)

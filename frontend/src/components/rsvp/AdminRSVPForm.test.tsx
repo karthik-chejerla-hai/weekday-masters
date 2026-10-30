@@ -4,12 +4,13 @@ import userEvent from '@testing-library/user-event';
 import AdminRSVPForm from './AdminRSVPForm';
 import { api } from '../../services/api';
 import type { GuestRSVP, User } from '../../types';
-vi.mock('../../services/api', () => ({ api: { listMembers: vi.fn(), saveGuestRSVP: vi.fn(), adminAddRSVP: vi.fn() } }));
+vi.mock('../../services/api', () => ({ api: { listMembers: vi.fn(), saveGuestRSVP: vi.fn(), deleteGuestRSVP: vi.fn(), adminAddRSVP: vi.fn() } }));
 const payer = { id: 'payer', name: 'Pat Smith', membership_status: 'approved' } as User;
 const guest = { id: 'g1', guest_name: 'Alex', charged_to_user_id: 'payer', charged_to_user: payer, status: 'in' } as GuestRSVP;
 const onSaved = vi.fn().mockResolvedValue(undefined);
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(api.deleteGuestRSVP).mockResolvedValue(undefined);
   vi.mocked(api.listMembers).mockResolvedValue([payer]);
   vi.mocked(api.saveGuestRSVP).mockResolvedValue(guest);
 });
@@ -97,4 +98,42 @@ it('blocks a duplicate name and offers to edit the saved guest', async () => {
   await user.selectOptions(screen.getByLabelText('Response'), 'out');
   await user.click(screen.getByRole('button', { name: 'Save guest RSVP' }));
   expect(api.saveGuestRSVP).toHaveBeenCalledWith('s1', { guest_name: 'Alex', charged_to_user_id: 'payer', status: 'out' }, 'g1');
+});
+
+it('removes the saved guest without requiring valid form details', async () => {
+  const user = await form({ guests: [guest], initialGuest: guest });
+  await user.clear(screen.getByLabelText('Guest name'));
+  await user.click(screen.getByRole('button', { name: 'Remove guest' }));
+  expect(screen.getByRole('heading')).toHaveTextContent("Remove Alex's RSVP?");
+  expect(api.deleteGuestRSVP).not.toHaveBeenCalled();
+  await user.click(screen.getByRole('button', { name: 'Keep guest' }));
+  expect(api.deleteGuestRSVP).not.toHaveBeenCalled();
+  await user.click(screen.getByRole('button', { name: 'Remove guest' }));
+  await user.click(screen.getByRole('button', { name: 'Remove guest RSVP' }));
+  expect(api.deleteGuestRSVP).toHaveBeenCalledWith('s1', 'g1');
+  expect(onSaved).toHaveBeenCalledOnce();
+  expect(api.saveGuestRSVP).not.toHaveBeenCalled();
+});
+it('retains a guest and shows the error when removal fails', async () => {
+  vi.mocked(api.deleteGuestRSVP).mockRejectedValue(new Error('offline'));
+  const user = await form({ guests: [{ ...guest, status: 'out' }], initialGuest: { ...guest, status: 'out' } });
+  await user.click(screen.getByRole('button', { name: 'Remove guest' }));
+  await user.click(screen.getByRole('button', { name: 'Remove guest RSVP' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not remove this guest RSVP');
+  expect(onSaved).not.toHaveBeenCalled();
+  await user.click(screen.getByRole('button', { name: 'Keep guest' }));
+  expect(screen.getByLabelText('Guest name')).toHaveValue('Alex');
+  expect(screen.getByLabelText('Response')).toHaveValue('out');
+});
+it('clears a selected guest when another editor removes that RSVP', async () => {
+  const props = { sessionId: 's1', rsvps: [], deadlinePassed: false, isFull: false, onSaved };
+  const { rerender } = render(<AdminRSVPForm {...props} guests={[guest]} />);
+  await screen.findByRole('option', { name: 'Pat' });
+  const user = userEvent.setup();
+  await user.selectOptions(screen.getByLabelText('Player type'), 'guest');
+  await user.selectOptions(screen.getByLabelText('Guest RSVP'), 'g1');
+  rerender(<AdminRSVPForm {...props} guests={[]} />);
+  expect(screen.getByLabelText('Guest name')).toHaveValue('');
+  expect(screen.getByLabelText('Charged to member')).toHaveValue('');
+  expect(screen.queryByRole('button', { name: 'Remove guest' })).not.toBeInTheDocument();
 });

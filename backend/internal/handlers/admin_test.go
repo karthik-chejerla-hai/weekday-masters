@@ -646,3 +646,29 @@ func TestGuestRSVP_AdminAccessAndSessionRead(t *testing.T) {
 	h.as(admin).put(url+"/bad-id", body).expect(http.StatusBadRequest)
 	h.as(admin).post("/api/admin/sessions/bad-id/guests", body).expect(http.StatusBadRequest)
 }
+
+func TestDeleteGuestRSVPAdminOnly(t *testing.T) {
+	h := newHarness(t)
+	admin := makeAdmin(t)
+	player := makePlayer(t)
+	pending := makePending(t)
+	session := makeSession(t, admin.ID, 1)
+	url := "/api/admin/sessions/" + session.ID.String() + "/guests"
+	var guest models.GuestRSVP
+	h.as(admin).post(url, map[string]any{"guest_name": "Rondo", "charged_to_user_id": player.ID, "status": "in"}).expect(http.StatusOK).decode(&guest)
+	target := url + "/" + guest.ID.String()
+	h.as(player).del(target).expect(http.StatusForbidden)
+	h.as(pending).del(target).expect(http.StatusForbidden)
+	h.as(nil).del(target).expect(http.StatusUnauthorized)
+	h.as(admin).del(url + "/bad-id").expect(http.StatusBadRequest)
+	h.as(admin).del("/api/admin/sessions/bad-id/guests/" + guest.ID.String()).expect(http.StatusBadRequest)
+	h.as(admin).del(target).expect(http.StatusNoContent)
+	var detail struct {
+		Session models.Session `json:"session"`
+	}
+	h.as(player).get("/api/sessions/" + session.ID.String()).expect(http.StatusOK).decode(&detail)
+	if len(detail.Session.GuestRSVPs) != 0 {
+		t.Fatal("removed guest remains visible")
+	}
+	h.as(admin).del(target).expect(http.StatusBadRequest)
+}

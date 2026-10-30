@@ -131,6 +131,7 @@ func newHarness(t *testing.T) *harness {
 		admin.POST("/sessions/:id/rsvp/:userId", adminHandler.AddPlayerRSVP)
 		admin.POST("/sessions/:id/guests", middleware.RequireApproved(), middleware.RequireAdmin(), adminHandler.SaveGuestRSVP)
 		admin.PUT("/sessions/:id/guests/:guestId", middleware.RequireApproved(), middleware.RequireAdmin(), adminHandler.SaveGuestRSVP)
+		admin.DELETE("/sessions/:id/guests/:guestId", middleware.RequireApproved(), middleware.RequireAdmin(), adminHandler.DeleteGuestRSVP)
 		admin.PUT("/club", middleware.RequireApproved(), middleware.RequireAdmin(), adminHandler.UpdateClub)
 		admin.POST("/announcements", notificationHandler.SendAnnouncement)
 
