@@ -37,3 +37,10 @@ Validated on 2026-10-31 against a separate local PostgreSQL 16 database.
 - Browser tests use mocked HTTP data; service and handler tests verify real database deletion. Removal screenshots remain outside the repository in `/tmp/rally-guest-remove-screens/` and are attached to the PR.
 
 Immediate removal follow-up: 33 affected component/page tests and both desktop/mobile guest browser tests passed after removing the confirmation step. Build, lint, and browser-test type checks passed with the existing warnings. Updated screenshots are under `/tmp/rally-guest-direct-remove-screens/`.
+
+## Keep guest editors in sync
+
+- Two new component tests failed before the fix. They now confirm that a saved name, payer, or response change updates the selected guest in the other form. Refreshing unchanged data retains unsaved edits.
+- All 418 frontend tests passed with coverage thresholds. Build, lint, and browser-test type checks passed with the existing warnings.
+- All four guest browser tests passed across desktop and mobile Chromium. The regression selects a guest in the main form, changes the payer through the row editor, then saves only a status change in the main form. Both requests and the form after reload retain the replacement payer.
+- Browser tests use mocked HTTP data. This change affects only frontend form state; backend code is unchanged.

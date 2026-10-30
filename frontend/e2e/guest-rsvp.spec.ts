@@ -2,6 +2,50 @@ import { test, expect, detail, json, members, NOW } from './support/fixtures';
 import type { GuestRSVP } from '../src/types';
 
 test.use({ identity: 'admin' });
+
+test('a status edit in the main form keeps the payer saved through the row editor', async ({ page }) => {
+  const guest: GuestRSVP = {
+    id: 'guest-1', session_id: 'session-1', guest_name: 'Rondo',
+    charged_to_user_id: members[1].id, charged_to_user: members[1], status: 'in',
+    rsvp_timestamp: NOW, created_at: NOW, updated_at: NOW,
+  };
+  const data = detail({ guest_rsvps: [guest] });
+  data.rsvp_summary.total_in = 1;
+  data.rsvp_summary.spots_left = 5;
+  const writes: Array<Pick<GuestRSVP, 'guest_name' | 'charged_to_user_id' | 'status'>> = [];
+  await page.route('**/api/sessions/session-1', route => json(route, data));
+  await page.route('**/api/admin/sessions/session-1/guests/guest-1', async route => {
+    expect(route.request().method()).toBe('PUT');
+    const update = route.request().postDataJSON();
+    writes.push(update);
+    Object.assign(guest, update, { charged_to_user: members.find(member => member.id === update.charged_to_user_id) });
+    data.rsvp_summary.total_in = guest.status === 'in' ? 1 : 0;
+    data.rsvp_summary.total_out = guest.status === 'out' ? 1 : 0;
+    data.rsvp_summary.spots_left = 6 - data.rsvp_summary.total_in;
+    await json(route, guest);
+  });
+  await page.goto('/sessions/session-1');
+  await page.getByLabel('Player type').selectOption('guest');
+  await page.getByLabel('Guest RSVP', { exact: true }).selectOption(guest.id);
+  await page.getByRole('button', { name: "Edit Rondo's RSVP" }).click();
+  const editor = page.getByRole('dialog', { name: 'Edit guest RSVP' });
+  await editor.getByLabel('Charged to member').selectOption(members[2].id);
+  await editor.getByRole('button', { name: 'Save guest RSVP' }).click();
+  await expect(editor).not.toBeVisible();
+  await expect(page.getByText('Charged to Casey', { exact: true })).toBeVisible();
+  await page.getByLabel('Response', { exact: true }).selectOption('out');
+  await page.getByRole('button', { name: 'Save guest RSVP' }).click();
+  await expect(page.getByText("Rondo's RSVP saved as Out.")).toBeVisible();
+  expect(writes).toEqual([
+    { guest_name: 'Rondo', charged_to_user_id: members[2].id, status: 'in' },
+    { guest_name: 'Rondo', charged_to_user_id: members[2].id, status: 'out' },
+  ]);
+  await page.reload();
+  await page.getByRole('button', { name: "Edit Rondo's RSVP" }).click();
+  await expect(editor.getByLabel('Charged to member')).toHaveValue(members[2].id);
+  await expect(editor.getByLabel('Response', { exact: true })).toHaveValue('out');
+});
+
 test('admin edits a guest payer and status from the player list without duplicates', async ({ page }, testInfo) => {
   const data = detail();
   let creates = 0;

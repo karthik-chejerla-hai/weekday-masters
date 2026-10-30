@@ -47,8 +47,15 @@ export default function AdminRSVPForm({ sessionId, rsvps, guests = [], initialGu
   }, []);
 
   useEffect(() => {
-    if (previousGuests.current.some(guest => guest.id === guestId) && !guests.some(guest => guest.id === guestId)) {
+    const previous = previousGuests.current.find(guest => guest.id === guestId);
+    const saved = guests.find(guest => guest.id === guestId);
+    if (previous && !saved) {
       setGuestId(''); setGuestName(''); setUserId(''); setStatus('in');
+    } else if (previous && saved) {
+      // Sync changes from another editor without clearing unrelated draft edits.
+      if (previous.guest_name !== saved.guest_name) setGuestName(saved.guest_name);
+      if (previous.charged_to_user_id !== saved.charged_to_user_id) setUserId(saved.charged_to_user_id);
+      if (previous.status !== saved.status) setStatus(saved.status);
     }
     previousGuests.current = guests;
   }, [guests, guestId]);

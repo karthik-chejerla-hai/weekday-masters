@@ -130,3 +130,40 @@ it('clears a selected guest when another editor removes that RSVP', async () => 
   expect(screen.getByLabelText('Charged to member')).toHaveValue('');
   expect(screen.queryByRole('button', { name: 'Remove guest' })).not.toBeInTheDocument();
 });
+
+it('uses updated guest details after another editor saves, while retaining edits to unchanged fields', async () => {
+  const replacement = { ...payer, id: 'replacement', name: 'Krishna Smith' };
+  vi.mocked(api.listMembers).mockResolvedValue([payer, replacement]);
+  const props = { sessionId: 's1', rsvps: [], deadlinePassed: false, isFull: false, onSaved };
+  const { rerender } = render(<AdminRSVPForm {...props} guests={[guest]} />);
+  await screen.findByRole('option', { name: 'Pat' });
+  const user = userEvent.setup();
+  await user.selectOptions(screen.getByLabelText('Player type'), 'guest');
+  await user.selectOptions(screen.getByLabelText('Guest RSVP'), 'g1');
+  await user.selectOptions(screen.getByLabelText('Response'), 'out');
+
+  // An unrelated refresh must not discard an unsaved response.
+  rerender(<AdminRSVPForm {...props} guests={[{ ...guest }]} />);
+  expect(screen.getByLabelText('Response')).toHaveValue('out');
+
+  const updated = { ...guest, guest_name: 'Alex Guest', charged_to_user_id: replacement.id, charged_to_user: replacement };
+  rerender(<AdminRSVPForm {...props} guests={[updated]} />);
+  expect(screen.getByLabelText('Guest name')).toHaveValue('Alex Guest');
+  expect(screen.getByLabelText('Charged to member')).toHaveValue(replacement.id);
+  expect(screen.getByLabelText('Response')).toHaveValue('out');
+  await user.click(screen.getByRole('button', { name: 'Save guest RSVP' }));
+  expect(api.saveGuestRSVP).toHaveBeenCalledWith('s1', {
+    guest_name: 'Alex Guest', charged_to_user_id: replacement.id, status: 'out',
+  }, guest.id);
+});
+
+it('uses the saved response when another editor changes the guest status', async () => {
+  const props = { sessionId: 's1', rsvps: [], deadlinePassed: false, isFull: false, onSaved };
+  const { rerender } = render(<AdminRSVPForm {...props} guests={[guest]} />);
+  await screen.findByRole('option', { name: 'Pat' });
+  const user = userEvent.setup();
+  await user.selectOptions(screen.getByLabelText('Player type'), 'guest');
+  await user.selectOptions(screen.getByLabelText('Guest RSVP'), 'g1');
+  rerender(<AdminRSVPForm {...props} guests={[{ ...guest, status: 'out' }]} />);
+  expect(screen.getByLabelText('Response')).toHaveValue('out');
+});
