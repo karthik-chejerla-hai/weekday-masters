@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Calendar, Clock, Users, MapPin, AlertCircle, Loader2 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz';
 import { useAuth } from '../context/useAuth';
 import { api } from '../services/api';
-import type { Club, Session, RSVPSummary, SelectableRSVPStatus, RSVP } from '../types';
+import type { Club, Session, RSVPSummary, SelectableRSVPStatus, RSVP, GuestRSVP } from '../types';
 import { formatSessionTimeRange, formatSessionVenue } from '../utils/session-display';
 import { sessionResponses } from '../utils/player-responses';
 import RSVPButton from '../components/rsvp/RSVPButton';
@@ -23,6 +23,13 @@ export default function SessionDetail() {
   const [summary, setSummary] = useState<RSVPSummary | null>(null);
   const [myRsvp, setMyRsvp] = useState<RSVP | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [editingGuest, setEditingGuest] = useState<GuestRSVP | null>(null);
+  const guestDialog = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    if (editingGuest) guestDialog.current?.showModal();
+    else if (guestDialog.current?.open) guestDialog.current.close();
+  }, [editingGuest]);
 
   useEffect(() => {
     if (id) loadSession();
@@ -241,8 +248,19 @@ export default function SessionDetail() {
         <PlayerList
           rsvps={sessionResponses(session)}
           maxPlayers={session.max_players}
+          onEditGuest={user?.role === 'admin' && session.status === 'open' && startsAt > Date.now() ? setEditingGuest : undefined}
         />
       </div>
+      <dialog ref={guestDialog} aria-label="Edit guest RSVP" onClose={() => setEditingGuest(null)}
+        className="m-auto w-[calc(100%-2rem)] max-w-lg max-h-[90dvh] overflow-y-auto rounded-xl p-0 backdrop:bg-slate-900/40">
+        {editingGuest && <AdminRSVPForm key={editingGuest.id} sessionId={session.id} rsvps={session.rsvps || []}
+          guests={session.guest_rsvps || []} initialGuest={editingGuest}
+          deadlinePassed={isDeadlinePassed} isFull={isFull}
+          onCancelEdit={() => setEditingGuest(null)} onSaved={async () => {
+            await loadSession();
+            setEditingGuest(null);
+          }} />}
+      </dialog>
     </div>
   );
 }

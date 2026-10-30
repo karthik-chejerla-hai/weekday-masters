@@ -1,6 +1,6 @@
 import { format } from 'date-fns';
 import { Clock, Shield, AlertTriangle } from 'lucide-react';
-import type { PlayerResponse } from '../../types';
+import type { GuestRSVP, PlayerResponse } from '../../types';
 import { isGuest, playerName } from '../../utils/player-responses';
 import Avatar from '../ui/Avatar';
 import Badge from '../ui/Badge';
@@ -10,9 +10,10 @@ interface PlayerListProps {
   rsvps: PlayerResponse[];
   maxPlayers: number;
   title?: string;
+  onEditGuest?: (guest: GuestRSVP) => void;
 }
 
-export default function PlayerList({ rsvps, maxPlayers, title = 'Confirmed Players' }: PlayerListProps) {
+export default function PlayerList({ rsvps, maxPlayers, title = 'Confirmed Players', onEditGuest }: PlayerListProps) {
   const confirmedRsvps = rsvps.filter(r => r.status === 'in');
   const waitlistedRsvps = rsvps.filter(r => r.status === 'waitlisted');
   const maybeRsvps = rsvps.filter(r => r.status === 'maybe');
@@ -37,6 +38,7 @@ export default function PlayerList({ rsvps, maxPlayers, title = 'Confirmed Playe
               <PlayerItem
                 key={rsvp.id}
                 rsvp={rsvp}
+                onEditGuest={onEditGuest}
                 position={index + 1}
                 isOverCapacity={index >= maxPlayers}
               />
@@ -57,6 +59,7 @@ export default function PlayerList({ rsvps, maxPlayers, title = 'Confirmed Playe
               <PlayerItem
                 key={rsvp.id}
                 rsvp={rsvp}
+                onEditGuest={onEditGuest}
                 position={index + 1}
                 variant="waitlisted"
               />
@@ -89,7 +92,7 @@ export default function PlayerList({ rsvps, maxPlayers, title = 'Confirmed Playe
           </h4>
           <div className="space-y-2">
             {declinedRsvps.map((rsvp) => (
-              <PlayerItem key={rsvp.id} rsvp={rsvp} variant="out" />
+              <PlayerItem key={rsvp.id} rsvp={rsvp} variant="out" onEditGuest={onEditGuest} />
             ))}
           </div>
         </div>
@@ -100,12 +103,13 @@ export default function PlayerList({ rsvps, maxPlayers, title = 'Confirmed Playe
 
 interface PlayerItemProps {
   rsvp: PlayerResponse;
+  onEditGuest?: (guest: GuestRSVP) => void;
   position?: number;
   isOverCapacity?: boolean;
   variant?: 'confirmed' | 'maybe' | 'out' | 'waitlisted';
 }
 
-function PlayerItem({ rsvp, position, isOverCapacity, variant = 'confirmed' }: PlayerItemProps) {
+function PlayerItem({ rsvp, position, isOverCapacity, variant = 'confirmed', onEditGuest }: PlayerItemProps) {
   const guest = isGuest(rsvp);
   const user = guest ? undefined : rsvp.user;
   const name = playerName(rsvp);
@@ -142,6 +146,7 @@ function PlayerItem({ rsvp, position, isOverCapacity, variant = 'confirmed' }: P
       </div>
 
       <div className="flex items-center gap-1">
+        {guest && onEditGuest && <button type="button" className="min-h-11 px-2 text-sm font-medium text-primary-700 underline" aria-label={`Edit ${name}'s RSVP`} onClick={() => onEditGuest(rsvp)}>Edit</button>}
         {(guest || rsvp.added_by_admin) && (
           <span title="Added by admin">
             <Shield className="w-4 h-4 text-primary-500" />

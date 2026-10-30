@@ -4,7 +4,9 @@ Admins can add or edit a named guest through “RSVP for a player” for an upco
 
 Confirmed guests appear in session cards and player lists and consume one place. A confirmed guest keeps that place when a member returns. A new guest cannot enter a full session. Setting a guest OUT releases the place and promotes the first waiting member. Guest changes use the same session lock as member RSVPs. Cancelled, started, closed, and settled sessions cannot accept guest changes.
 
-Admins can correct the guest name, payer, and status by selecting the saved guest. Existing member RSVP behavior stays unchanged. Guest records remain when sessions are cancelled. Sessions with guest RSVPs cannot be deleted.
+Guest names are unique within a session, across both IN and OUT responses, regardless of payer. Names ignore letter case and extra whitespace. Duplicate creates and renames are refused under the session lock, including concurrent requests. The same name can appear in another session.
+
+Admins can correct the guest name, payer, and status with an Edit action on each guest row. The editor starts with all saved details and updates that RSVP by ID. Cancel keeps the saved response. The add form detects an existing name and offers to edit its saved RSVP instead. Existing member RSVP behavior stays unchanged. Guest records remain when sessions are cancelled. Sessions with guest RSVPs cannot be deleted.
 
 The advanced settlement form starts with confirmed guests and their paying members. The standard expense form directs admins to advanced settlement when confirmed guests exist, rather than omitting their charges. Custom amounts and guest support in the standard expense calculation are outside this change.
 

@@ -1,4 +1,5 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
+import userEvent from '@testing-library/user-event';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import PlayerList from './PlayerList';
@@ -19,4 +20,18 @@ it('includes the guest in capacity without setting the payer RSVP', () => {
   expect(screen.getByText('Full')).toBeInTheDocument();
   expect(screen.getByLabelText('Alex (Guest), Confirmed')).toBeInTheDocument();
   expect(screen.getByText('Your RSVP: Not responded')).toBeInTheDocument();
+});
+
+it('offers editing for both IN and OUT guests only when enabled', async () => {
+  const onEdit = vi.fn();
+  const user = userEvent.setup();
+  const { rerender } = render(<PlayerList rsvps={[guest]} maxPlayers={6} onEditGuest={onEdit} />);
+  await user.click(screen.getByRole('button', { name: "Edit Alex's RSVP" }));
+  expect(onEdit).toHaveBeenLastCalledWith(guest);
+  const out = { ...guest, status: 'out' as const };
+  rerender(<PlayerList rsvps={[out]} maxPlayers={6} onEditGuest={onEdit} />);
+  await user.click(screen.getByRole('button', { name: "Edit Alex's RSVP" }));
+  expect(onEdit).toHaveBeenLastCalledWith(out);
+  rerender(<PlayerList rsvps={[out]} maxPlayers={6} />);
+  expect(screen.queryByRole('button', { name: "Edit Alex's RSVP" })).not.toBeInTheDocument();
 });

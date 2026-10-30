@@ -20,6 +20,73 @@ func addGuest(t *testing.T, rs *RSVPService, sessionID, payerID uuid.UUID, name 
 	return guest
 }
 
+func TestGuestNamesAreUniqueWithinSession(t *testing.T) {
+	rs, ss, _ := newTestServices(t)
+	payer := newUser(t, "payer")
+	otherPayer := newUser(t, "other")
+	session := newSession(t, ss, payer.ID, 1)
+	guest := addGuest(t, rs, session.ID, payer.ID, "  Alex   Smith  ")
+	if guest.GuestName != "Alex Smith" {
+		t.Fatalf("name was not normalized: %q", guest.GuestName)
+	}
+	for _, name := range []string{"Alex Smith", "alex smith", " ALEX\t SMITH "} {
+		for _, status := range []models.RSVPStatus{models.RSVPStatusIn, models.RSVPStatusOut} {
+			_, err := rs.SaveGuestRSVP(GuestRSVPInput{SessionID: session.ID, GuestName: name, ChargedToUserID: otherPayer.ID, Status: status})
+			if err == nil || !strings.Contains(err.Error(), "Edit their RSVP instead") {
+				t.Fatalf("duplicate %q (%s) should require editing, got %v", name, status, err)
+			}
+		}
+	}
+	other := addGuest(t, rs, session.ID, otherPayer.ID, "Rondo")
+	if _, err := rs.SaveGuestRSVP(GuestRSVPInput{ID: other.ID, SessionID: session.ID, GuestName: "alex smith", ChargedToUserID: otherPayer.ID, Status: models.RSVPStatusIn}); err == nil {
+		t.Fatal("renamed another guest to an existing guest's name")
+	}
+	// Editing the original record keeps its identity and does not add a place.
+	edited, err := rs.SaveGuestRSVP(GuestRSVPInput{ID: guest.ID, SessionID: session.ID, GuestName: "Alex Smith", ChargedToUserID: otherPayer.ID, Status: models.RSVPStatusOut})
+	if err != nil || edited.ID != guest.ID || edited.ChargedToUserID != otherPayer.ID {
+		t.Fatalf("could not edit original guest: %+v %v", edited, err)
+	}
+	if got := summaryOf(t, rs, session.ID); got.TotalIn != 1 || got.TotalOut != 1 {
+		t.Fatalf("duplicate attempts changed attendance: %+v", got)
+	}
+	if _, err := rs.SaveGuestRSVP(GuestRSVPInput{SessionID: session.ID, GuestName: "Alex Smith", ChargedToUserID: payer.ID, Status: models.RSVPStatusIn}); err == nil {
+		t.Fatal("created a second RSVP for an OUT guest")
+	}
+	// The same guest can attend a different session.
+	next := newSession(t, ss, payer.ID, 1)
+	addGuest(t, rs, next.ID, payer.ID, "Alex Smith")
+}
+
+func TestConcurrentDuplicateGuestNames(t *testing.T) {
+	rs, ss, _ := newTestServices(t)
+	players := newUsers(t, 2)
+	session := newSession(t, ss, players[0].ID, 1)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	for i, name := range []string{"Rondo", " rondo "} {
+		wg.Add(1)
+		go func(i int, name string) {
+			defer wg.Done()
+			<-start
+			_, errs[i] = rs.SaveGuestRSVP(GuestRSVPInput{SessionID: session.ID, GuestName: name, ChargedToUserID: players[i].ID, Status: models.RSVPStatusIn})
+		}(i, name)
+	}
+	close(start)
+	wg.Wait()
+	var succeeded int
+	for _, err := range errs {
+		if err == nil {
+			succeeded++
+		} else if !strings.Contains(err.Error(), "Edit their RSVP instead") {
+			t.Fatal(err)
+		}
+	}
+	if got := summaryOf(t, rs, session.ID); succeeded != 1 || got.TotalIn != 1 {
+		t.Fatalf("duplicate name occupied more than one place: successes=%d summary=%+v", succeeded, got)
+	}
+}
+
 func TestGuestRSVPCapacityAndPromotion(t *testing.T) {
 	rs, ss, notifier := newTestServices(t)
 	payer := newUser(t, "payer")

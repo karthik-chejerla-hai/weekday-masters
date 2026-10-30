@@ -19,3 +19,11 @@ Validated on 2026-10-31 against a separate local PostgreSQL 16 database.
 - Upcoming, past unsettled, and reversed sessions block removal. OUT guests, cancelled sessions, and settled history with a cleared balance do not block removal.
 - Concurrent guest creation or reassignment and payer removal cannot leave an IN guest assigned to a removed member. Existing removal and waitlist promotion tests also pass.
 - All 15 AdminMembers component tests passed, including the replacement payer error and retention of the member in the active list.
+
+## Unique names and direct guest editing
+
+- Full backend tests passed with PostgreSQL and the race detector. Coverage meets the 60% floor. Duplicate creates, duplicate renames, case and whitespace variants, OUT guests, and simultaneous duplicate requests are covered. A guest can still attend different sessions under the same name.
+- All 413 frontend tests passed across 54 files, including coverage thresholds. The production build, lint, and browser-test type check passed. Existing effect-dependency and bundle-size warnings remain.
+- Desktop and mobile Chromium tests open Edit from a guest row, confirm all saved details, change only the payer, reload, and confirm one guest and one occupied place. They change OUT and back IN through the same editor, cancel an unsaved change, and follow the duplicate-name warning to the saved RSVP.
+- Browser tests use mocked HTTP data. The database tests separately prove persisted uniqueness and payer reassignment.
+- Updated editor screenshots are saved outside the repository under `/tmp/rally-guest-edit-screens/` and attached to the PR.

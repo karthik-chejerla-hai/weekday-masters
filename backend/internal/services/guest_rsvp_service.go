@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"unicode/utf8"
 
@@ -23,7 +24,7 @@ type GuestRSVPInput struct {
 // SaveGuestRSVP shares the member RSVP lock, so a guest and a member cannot
 // claim the same last place. Guests fill vacancies; admins cannot overbook them.
 func (s *RSVPService) SaveGuestRSVP(in GuestRSVPInput) (*models.GuestRSVP, error) {
-	in.GuestName = strings.TrimSpace(in.GuestName)
+	in.GuestName = strings.Join(strings.Fields(in.GuestName), " ")
 	if in.GuestName == "" || utf8.RuneCountInString(in.GuestName) > 255 {
 		return nil, errors.New("enter a guest name of 1 to 255 characters")
 	}
@@ -49,6 +50,17 @@ func (s *RSVPService) SaveGuestRSVP(in GuestRSVPInput) (*models.GuestRSVP, error
 		if in.ID != uuid.Nil {
 			if err := tx.Where("id = ? AND session_id = ?", in.ID, in.SessionID).First(&guest).Error; err != nil {
 				return nil, errors.New("guest RSVP not found")
+			}
+		}
+		// The session lock serializes both creates and edits. A payer or status
+		// change must not give the same named guest a second place or charge.
+		var existing []models.GuestRSVP
+		if err := tx.Where("session_id = ? AND id <> ?", in.SessionID, in.ID).Find(&existing).Error; err != nil {
+			return nil, err
+		}
+		for _, other := range existing {
+			if strings.EqualFold(strings.Join(strings.Fields(other.GuestName), " "), in.GuestName) {
+				return nil, fmt.Errorf("this session already has a guest named %s. Edit their RSVP instead", other.GuestName)
 			}
 		}
 		wasIn := guest.Status == models.RSVPStatusIn

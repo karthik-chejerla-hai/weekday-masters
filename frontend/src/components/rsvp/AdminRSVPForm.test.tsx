@@ -67,3 +67,34 @@ it('does not offer guests after the session starts', async () => {
   await form({ allowGuests: false });
   expect(screen.queryByLabelText('Player type')).not.toBeInTheDocument();
 });
+it('opens a guest edit with saved details and changes only the paying member', async () => {
+  const replacement = { ...payer, id: 'replacement', name: 'Krishna Smith' };
+  vi.mocked(api.listMembers).mockResolvedValue([payer, replacement]);
+  const cancel = vi.fn();
+  const user = await form({ guests: [guest], initialGuest: guest, onCancelEdit: cancel, isFull: true });
+  expect(screen.queryByLabelText('Player type')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Guest RSVP')).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Guest name')).toHaveValue('Alex');
+  expect(screen.getByLabelText('Charged to member')).toHaveValue('payer');
+  expect(screen.getByLabelText('Response')).toHaveValue('in');
+  await user.selectOptions(screen.getByLabelText('Charged to member'), 'replacement');
+  await user.click(screen.getByRole('button', { name: 'Save guest RSVP' }));
+  expect(api.saveGuestRSVP).toHaveBeenCalledWith('s1', { guest_name: 'Alex', charged_to_user_id: 'replacement', status: 'in' }, 'g1');
+  await user.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(cancel).toHaveBeenCalledOnce();
+});
+it('blocks a duplicate name and offers to edit the saved guest', async () => {
+  const user = await form({ guests: [guest] });
+  await user.selectOptions(screen.getByLabelText('Player type'), 'guest');
+  await user.type(screen.getByLabelText('Guest name'), '  ALEX  ');
+  await user.selectOptions(screen.getByLabelText('Charged to member'), 'payer');
+  expect(screen.getByRole('alert')).toHaveTextContent('Alex already has an RSVP');
+  expect(screen.getByRole('button', { name: 'Save guest RSVP' })).toBeDisabled();
+  expect(api.saveGuestRSVP).not.toHaveBeenCalled();
+  await user.click(screen.getByRole('button', { name: 'Edit existing guest' }));
+  expect(screen.getByLabelText('Guest name')).toHaveValue('Alex');
+  expect(screen.getByLabelText('Charged to member')).toHaveValue('payer');
+  await user.selectOptions(screen.getByLabelText('Response'), 'out');
+  await user.click(screen.getByRole('button', { name: 'Save guest RSVP' }));
+  expect(api.saveGuestRSVP).toHaveBeenCalledWith('s1', { guest_name: 'Alex', charged_to_user_id: 'payer', status: 'out' }, 'g1');
+});
