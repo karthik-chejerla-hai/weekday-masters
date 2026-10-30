@@ -287,6 +287,22 @@ describe('removing and reinstating', () => {
     expect(screen.getByRole('tab', { name: /members \(1\)/i })).toBeInTheDocument();
   });
 
+  it('keeps a member when their guest needs a replacement payer', async () => {
+    vi.mocked(api.adminListMembers).mockResolvedValue([makeMember()]);
+    vi.mocked(api.removeMember).mockRejectedValue(
+      apiError('Signed pays for 1 confirmed guest booking(s). Assign a replacement payer in those sessions before removing this member')
+    );
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole('button', { name: /details for signed/i }));
+    await user.click(await screen.findByRole('button', { name: /remove member signed/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/assign a replacement payer/i);
+    expect(screen.getByRole('tab', { name: /members \(1\)/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /removed \(0\)/i })).toBeInTheDocument();
+  });
+
   it('puts a removed member back', async () => {
     vi.mocked(api.adminListMembers).mockResolvedValue([
       makeMember({ membership_status: 'removed' }),

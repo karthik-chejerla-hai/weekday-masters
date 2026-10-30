@@ -107,6 +107,7 @@ func TestGuestRSVPValidationAndClosedSessions(t *testing.T) {
 		func(in *GuestRSVPInput) { in.GuestName = strings.Repeat("x", 256) },
 		func(in *GuestRSVPInput) { in.Status = models.RSVPStatusMaybe },
 		func(in *GuestRSVPInput) { in.ChargedToUserID = uuid.New() },
+		func(in *GuestRSVPInput) { in.ChargedToUserID = uuid.Nil },
 		func(in *GuestRSVPInput) { in.ID = uuid.New() },
 		func(in *GuestRSVPInput) { in.SessionID = uuid.New() },
 	} {

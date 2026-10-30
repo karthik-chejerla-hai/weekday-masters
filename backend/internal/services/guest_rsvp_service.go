@@ -10,7 +10,6 @@ import (
 	"github.com/weekday-masters/backend/internal/models"
 	"github.com/weekday-masters/backend/internal/utils"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 type GuestRSVPInput struct {
@@ -28,11 +27,14 @@ func (s *RSVPService) SaveGuestRSVP(in GuestRSVPInput) (*models.GuestRSVP, error
 	if in.GuestName == "" || utf8.RuneCountInString(in.GuestName) > 255 {
 		return nil, errors.New("enter a guest name of 1 to 255 characters")
 	}
+	if in.ChargedToUserID == uuid.Nil {
+		return nil, errors.New("select an approved member to pay for the guest")
+	}
 	if in.Status != models.RSVPStatusIn && in.Status != models.RSVPStatusOut {
 		return nil, errors.New("guest response must be IN or OUT")
 	}
 	var guest models.GuestRSVP
-	err := s.withSessionLock(in.SessionID, func(tx *gorm.DB, session models.Session) ([]uuid.UUID, error) {
+	err := s.withRSVPLocks(in.SessionID, in.ChargedToUserID, func(tx *gorm.DB, session models.Session) ([]uuid.UUID, error) {
 		now := utils.NowInSydney()
 		if session.Status != models.SessionStatusOpen || session.StartsAt == nil || !session.StartsAt.After(now) {
 			return nil, errors.New("guests can only be changed for an upcoming open session")
@@ -43,10 +45,6 @@ func (s *RSVPService) SaveGuestRSVP(in GuestRSVPInput) (*models.GuestRSVP, error
 		}
 		if settled > 0 {
 			return nil, errors.New("guests cannot be changed for a settled session")
-		}
-		var payer models.User
-		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("id = ? AND membership_status = ?", in.ChargedToUserID, models.MembershipApproved).First(&payer).Error; err != nil {
-			return nil, errors.New("select an approved member to pay for the guest")
 		}
 		if in.ID != uuid.Nil {
 			if err := tx.Where("id = ? AND session_id = ?", in.ID, in.SessionID).First(&guest).Error; err != nil {

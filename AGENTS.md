@@ -176,7 +176,10 @@ handler chain at registration time, so using the wrong group silently skips the 
   row when a verified email matches, so the invite is claimed rather than duplicated. Removal is a
   status change to `removed`, never a delete — the ledger is append-only and RSVPs and settlements
   reference the row — and is refused while the member has a non-zero balance, is the only admin, or
-  is the caller. It cancels their upcoming RSVPs first, promoting from the waitlist
+  is the caller. An IN guest in a non-cancelled session without an active settlement also
+  blocks removal until the admin assigns a replacement payer. Guest saves lock the payer
+  before the session so removal cannot race a new guest assignment. Once all checks pass,
+  removal cancels the member's upcoming RSVPs, promoting from the waitlist.
 - `SchedulerService`: hourly cron sends 24h/12h session reminders and 6h deadline alerts
 - `NotificationService`: FCM push only. Uses the configured Firebase project and Cloud Run Application Default Credentials, or explicit local credentials. Automatic email alerts are removed; SendGrid remains only for explicit invitations. The browser uses a dedicated push-worker scope and embeds public Firebase config during the build.
 - `InvitationService`: admin-only preview and explicit send/resend for approved members who have not signed in. Preview and send share an escaped HTML template. `InvitationDelivery` records provider acceptance, failure, or uncertainty, never claims inbox delivery, and separates test attempts. Request IDs and a one-minute per-address cooldown prevent duplicate submissions. Member sends obey both notification stops. `INVITATION_TEST_EMAILS_ENABLED=true` permits only explicit test copies to the signed-in admin while those stops remain active. It defaults to false. No send occurs when adding a member or opening a preview.

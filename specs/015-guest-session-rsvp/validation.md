@@ -11,3 +11,11 @@ Validated on 2026-10-31 against a separate local PostgreSQL 16 database.
 - Confirmed guests appear in member-visible lists and counts. Payer RSVPs remain independent. Setting a guest OUT promotes the first waiting member.
 - Guest saves do not write ledger entries. Advanced settlement defaults retain guest names and paying members. Standard expenses cannot silently omit confirmed guests.
 - Screenshots remain outside the repository under `/tmp/rally-guest-rsvp-screens/`.
+
+## Replacement payer before member removal
+
+- The full backend suite passed again with PostgreSQL and the race detector after the removal guard and lock order change.
+- Regression tests cover two guests sharing a payer, refusal without changing membership or RSVP, reassignment of every guest, and settlement charging only the replacement payer.
+- Upcoming, past unsettled, and reversed sessions block removal. OUT guests, cancelled sessions, and settled history with a cleared balance do not block removal.
+- Concurrent guest creation or reassignment and payer removal cannot leave an IN guest assigned to a removed member. Existing removal and waitlist promotion tests also pass.
+- All 15 AdminMembers component tests passed, including the replacement payer error and retention of the member in the active list.

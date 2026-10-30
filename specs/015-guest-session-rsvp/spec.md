@@ -9,3 +9,5 @@ Admins can correct the guest name, payer, and status by selecting the saved gues
 The advanced settlement form starts with confirmed guests and their paying members. The standard expense form directs admins to advanced settlement when confirmed guests exist, rather than omitting their charges. Custom amounts and guest support in the standard expense calculation are outside this change.
 
 Validation covers admin-only access, required fields, independent member and guest responses, multiple guests per payer, capacity and concurrent bookings, waitlist promotion, session visibility, and advanced settlement defaults.
+
+Member removal is refused while the member pays for any IN guest in a non-cancelled session without an active settlement. This includes played sessions awaiting settlement and reversed settlements. The admin must assign a replacement payer before removal. OUT guests, cancelled sessions, and settled history do not block removal. A concurrent guest save cannot assign a payer who is being removed.
