@@ -120,6 +120,7 @@ function PlayerItem({ rsvp, position, isOverCapacity, variant = 'confirmed', onE
   const guest = isGuest(rsvp);
   const user = guest ? undefined : rsvp.user;
   const name = playerName(rsvp);
+  const hasGuestActions = guest && (onEditGuest || onRemoveGuest);
 
   const isWaitlisted = variant === 'waitlisted';
 
@@ -146,7 +147,7 @@ function PlayerItem({ rsvp, position, isOverCapacity, variant = 'confirmed', onE
         : 'bg-white';
 
   return (
-    <div className={`flex items-center gap-3 p-2 rounded-lg ${bgColor}`}>
+    <div className={`flex items-center gap-3 p-2 rounded-lg ${bgColor} ${hasGuestActions ? 'flex-wrap sm:flex-nowrap' : ''}`}>
       {position && (
         <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
           isOverCapacity || isWaitlisted ? 'bg-amber-200 text-amber-800' : 'bg-primary-100 text-primary-700'
@@ -167,7 +168,7 @@ function PlayerItem({ rsvp, position, isOverCapacity, variant = 'confirmed', onE
         {removeError && <p role="alert" className="mt-1 text-sm text-red-700">{removeError}</p>}
       </div>
 
-      <div className="flex items-center gap-1">
+      <div className={`flex shrink-0 items-center gap-1 ${hasGuestActions ? 'w-full justify-end sm:w-auto' : ''}`}>
         {guest && onEditGuest && <button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-primary-700 hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-700 disabled:opacity-50"
           aria-label={`Edit ${name}'s RSVP`} title={`Edit ${name}'s RSVP`} disabled={removing} onClick={() => onEditGuest(rsvp)}>
           <Pencil aria-hidden="true" className="h-4 w-4" />
@@ -177,12 +178,12 @@ function PlayerItem({ rsvp, position, isOverCapacity, variant = 'confirmed', onE
           {removing ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Trash2 aria-hidden="true" className="h-4 w-4" />}
         </button>}
         {(guest || rsvp.added_by_admin) && (
-          <span title="Added by admin">
+          <span title="Added by admin" className="flex h-11 w-11 shrink-0 items-center justify-center">
             <Shield className="w-4 h-4 text-primary-500" />
           </span>
         )}
         {!guest && rsvp.is_late_rsvp && (
-          <span title="Late RSVP">
+          <span title="Late RSVP" className="flex h-11 w-11 shrink-0 items-center justify-center">
             <AlertTriangle className="w-4 h-4 text-amber-500" />
           </span>
         )}

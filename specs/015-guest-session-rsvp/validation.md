@@ -53,3 +53,5 @@ Immediate removal follow-up: 33 affected component/page tests and both desktop/m
 - Screenshots use test data and remain outside the repository in `/tmp/rally-guest-bin-screens/` for PR attachments. Backend deletion and waitlist rules are unchanged.
 
 Pencil icon follow-up: the guest Edit action now uses a pencil with the same touch area as the bin. Its accessible label and tooltip identify the guest. All six guest display tests, all four desktop/mobile browser tests, build, and lint passed with the existing warnings. Updated screenshots are under `/tmp/rally-guest-pencil-screens/` for PR attachments.
+
+Icon spacing review: the shield used a 16px box beside the two 44px buttons. Status icons now use the same centred 44px box, giving the three icons equal spacing. Guest actions move below the details on narrow screens to retain space for names and payer details. All six guest display tests and four desktop/mobile browser tests passed. Build and lint passed with the existing warnings. Desktop/mobile screenshots were checked and saved under `/tmp/rally-guest-spacing-screens/` for PR attachments.
