@@ -51,3 +51,5 @@ Immediate removal follow-up: 33 affected component/page tests and both desktop/m
 - All four desktop/mobile guest browser tests passed. The removal test now clicks the row's bin button without opening the editor, checks the refreshed player count and cleared main form, reloads, and adds the same guest again.
 - The mobile check showed that the guest label needed to wrap beside the new action. After that layout adjustment, all 34 affected component/page tests and all four browser tests passed again. Build and lint passed with the existing warnings. Browser-test type checking passed.
 - Screenshots use test data and remain outside the repository in `/tmp/rally-guest-bin-screens/` for PR attachments. Backend deletion and waitlist rules are unchanged.
+
+Pencil icon follow-up: the guest Edit action now uses a pencil with the same touch area as the bin. Its accessible label and tooltip identify the guest. All six guest display tests, all four desktop/mobile browser tests, build, and lint passed with the existing warnings. Updated screenshots are under `/tmp/rally-guest-pencil-screens/` for PR attachments.

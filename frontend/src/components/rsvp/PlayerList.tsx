@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import axios from 'axios';
 import { format } from 'date-fns';
-import { Clock, Shield, AlertTriangle, Trash2, Loader2 } from 'lucide-react';
+import { Clock, Shield, AlertTriangle, Pencil, Trash2, Loader2 } from 'lucide-react';
 import type { GuestRSVP, PlayerResponse } from '../../types';
 import { isGuest, playerName } from '../../utils/player-responses';
 import Avatar from '../ui/Avatar';
@@ -168,7 +168,10 @@ function PlayerItem({ rsvp, position, isOverCapacity, variant = 'confirmed', onE
       </div>
 
       <div className="flex items-center gap-1">
-        {guest && onEditGuest && <button type="button" className="min-h-11 px-2 text-sm font-medium text-primary-700 underline disabled:opacity-50" aria-label={`Edit ${name}'s RSVP`} disabled={removing} onClick={() => onEditGuest(rsvp)}>Edit</button>}
+        {guest && onEditGuest && <button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-primary-700 hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-700 disabled:opacity-50"
+          aria-label={`Edit ${name}'s RSVP`} title={`Edit ${name}'s RSVP`} disabled={removing} onClick={() => onEditGuest(rsvp)}>
+          <Pencil aria-hidden="true" className="h-4 w-4" />
+        </button>}
         {guest && onRemoveGuest && <button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-red-700 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-700 disabled:opacity-50"
           aria-label={`Remove ${name}'s RSVP`} title={`Remove ${name}'s RSVP`} disabled={removing} onClick={removeGuest}>
           {removing ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Trash2 aria-hidden="true" className="h-4 w-4" />}
