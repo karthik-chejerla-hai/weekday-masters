@@ -100,17 +100,12 @@ it('blocks a duplicate name and offers to edit the saved guest', async () => {
   expect(api.saveGuestRSVP).toHaveBeenCalledWith('s1', { guest_name: 'Alex', charged_to_user_id: 'payer', status: 'out' }, 'g1');
 });
 
-it('removes the saved guest without requiring valid form details', async () => {
+it('removes the saved guest with one click without requiring valid form details', async () => {
   const user = await form({ guests: [guest], initialGuest: guest });
   await user.clear(screen.getByLabelText('Guest name'));
   await user.click(screen.getByRole('button', { name: 'Remove guest' }));
-  expect(screen.getByRole('heading')).toHaveTextContent("Remove Alex's RSVP?");
-  expect(api.deleteGuestRSVP).not.toHaveBeenCalled();
-  await user.click(screen.getByRole('button', { name: 'Keep guest' }));
-  expect(api.deleteGuestRSVP).not.toHaveBeenCalled();
-  await user.click(screen.getByRole('button', { name: 'Remove guest' }));
-  await user.click(screen.getByRole('button', { name: 'Remove guest RSVP' }));
   expect(api.deleteGuestRSVP).toHaveBeenCalledWith('s1', 'g1');
+  expect(api.deleteGuestRSVP).toHaveBeenCalledOnce();
   expect(onSaved).toHaveBeenCalledOnce();
   expect(api.saveGuestRSVP).not.toHaveBeenCalled();
 });
@@ -118,10 +113,8 @@ it('retains a guest and shows the error when removal fails', async () => {
   vi.mocked(api.deleteGuestRSVP).mockRejectedValue(new Error('offline'));
   const user = await form({ guests: [{ ...guest, status: 'out' }], initialGuest: { ...guest, status: 'out' } });
   await user.click(screen.getByRole('button', { name: 'Remove guest' }));
-  await user.click(screen.getByRole('button', { name: 'Remove guest RSVP' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('Could not remove this guest RSVP');
   expect(onSaved).not.toHaveBeenCalled();
-  await user.click(screen.getByRole('button', { name: 'Keep guest' }));
   expect(screen.getByLabelText('Guest name')).toHaveValue('Alex');
   expect(screen.getByLabelText('Response')).toHaveValue('out');
 });

@@ -97,16 +97,10 @@ test('admin edits a guest payer and status from the player list without duplicat
   expect(creates).toBe(1);
 
   await page.getByRole('button', { name: "Edit Sam Guest's RSVP" }).click();
-  await editor.getByRole('button', { name: 'Remove guest', exact: true }).click();
-  await expect(editor.getByRole('heading')).toHaveText(/Remove Sam Guest's RSVP/);
-  await editor.getByRole('button', { name: 'Keep guest' }).click();
-  expect(removals).toBe(0);
-  await expect(editor.getByLabel('Guest name', { exact: true })).toHaveValue('Sam Guest');
-  await editor.getByRole('button', { name: 'Remove guest', exact: true }).click();
   if (process.env.GUEST_RSVP_SCREENSHOTS) {
     await page.screenshot({ path: `${process.env.GUEST_RSVP_SCREENSHOTS}/${testInfo.project.name}-remove.png` });
   }
-  await editor.getByRole('button', { name: 'Remove guest RSVP', exact: true }).click();
+  await editor.getByRole('button', { name: 'Remove guest', exact: true }).click();
   await expect(editor).not.toBeVisible();
   await expect(page.getByRole('button', { name: "Edit Sam Guest's RSVP" })).toHaveCount(0);
   await expect(page.getByText('Charged to Casey', { exact: true })).toHaveCount(0);
