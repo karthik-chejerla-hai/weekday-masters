@@ -225,7 +225,8 @@ export default function AdminSessions() {
   };
 
   const getRsvpCount = (session: Session) =>
-    session.rsvps?.filter(r => r.status === 'in').length || 0;
+    (session.rsvps?.filter(r => r.status === 'in').length || 0) +
+    (session.guest_rsvps?.filter(r => r.status === 'in').length || 0);
 
   return (
     <div className="space-y-6">
@@ -503,7 +504,7 @@ export default function AdminSessions() {
                     <span className="sr-only">Cancel Session</span>
                   </button>
                 )}
-                {session.status !== 'cancelled' && !session.rsvps?.length && <button
+                {session.status !== 'cancelled' && !session.rsvps?.length && !session.guest_rsvps?.length && <button
                   onClick={() => handleDelete(session.id)}
                   disabled={deletingId === session.id}
                   className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"

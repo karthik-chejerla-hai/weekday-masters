@@ -1,12 +1,13 @@
 import { format } from 'date-fns';
 import { Clock, Shield, AlertTriangle } from 'lucide-react';
-import type { RSVP } from '../../types';
+import type { PlayerResponse } from '../../types';
+import { isGuest, playerName } from '../../utils/player-responses';
 import Avatar from '../ui/Avatar';
 import Badge from '../ui/Badge';
 import { displayName } from '../../utils/members';
 
 interface PlayerListProps {
-  rsvps: RSVP[];
+  rsvps: PlayerResponse[];
   maxPlayers: number;
   title?: string;
 }
@@ -98,15 +99,16 @@ export default function PlayerList({ rsvps, maxPlayers, title = 'Confirmed Playe
 }
 
 interface PlayerItemProps {
-  rsvp: RSVP;
+  rsvp: PlayerResponse;
   position?: number;
   isOverCapacity?: boolean;
   variant?: 'confirmed' | 'maybe' | 'out' | 'waitlisted';
 }
 
 function PlayerItem({ rsvp, position, isOverCapacity, variant = 'confirmed' }: PlayerItemProps) {
-  const user = rsvp.user;
-  if (!user) return null;
+  const guest = isGuest(rsvp);
+  const user = guest ? undefined : rsvp.user;
+  const name = playerName(rsvp);
 
   const isWaitlisted = variant === 'waitlisted';
 
@@ -128,10 +130,11 @@ function PlayerItem({ rsvp, position, isOverCapacity, variant = 'confirmed' }: P
         </span>
       )}
 
-      <Avatar src={user.profile_picture} name={displayName(user)} size="sm" />
+      <Avatar src={user?.profile_picture} name={name} size="sm" />
 
       <div className="flex-1 min-w-0">
-        <p className="font-medium text-slate-900 truncate">{displayName(user)}</p>
+        <p className="font-medium text-slate-900 truncate">{name}{guest && <span className="ml-2 text-xs font-normal text-slate-500">Guest</span>}</p>
+        {guest && <p className="text-xs text-slate-500">Charged to {displayName(rsvp.charged_to_user) || 'member'}</p>}
         <p className="text-xs text-slate-500 flex items-center gap-1">
           <Clock className="w-3 h-3" />
           {format(new Date(rsvp.rsvp_timestamp), 'MMM d, h:mm a')}
@@ -139,12 +142,12 @@ function PlayerItem({ rsvp, position, isOverCapacity, variant = 'confirmed' }: P
       </div>
 
       <div className="flex items-center gap-1">
-        {rsvp.added_by_admin && (
+        {(guest || rsvp.added_by_admin) && (
           <span title="Added by admin">
             <Shield className="w-4 h-4 text-primary-500" />
           </span>
         )}
-        {rsvp.is_late_rsvp && (
+        {!guest && rsvp.is_late_rsvp && (
           <span title="Late RSVP">
             <AlertTriangle className="w-4 h-4 text-amber-500" />
           </span>

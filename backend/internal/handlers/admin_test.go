@@ -608,3 +608,41 @@ func TestConfiguredRSVPDefaultIsUsedForNewSessions(t *testing.T) {
 		t.Fatal("unrelated setting or invalid edit changed deadline")
 	}
 }
+
+func TestGuestRSVP_AdminAccessAndSessionRead(t *testing.T) {
+	h := newHarness(t)
+	admin := makeAdmin(t)
+	player := makePlayer(t)
+	pending := makePending(t)
+	session := makeSession(t, admin.ID, 1)
+	url := "/api/admin/sessions/" + session.ID.String() + "/guests"
+	body := map[string]any{"guest_name": "Alex", "charged_to_user_id": player.ID, "status": "in"}
+	h.as(player).post(url, body).expect(http.StatusForbidden)
+	h.as(pending).post(url, body).expect(http.StatusForbidden)
+	var guest models.GuestRSVP
+	h.as(admin).post(url, body).expect(http.StatusOK).decode(&guest)
+	var detail struct {
+		Session models.Session `json:"session"`
+	}
+	h.as(player).get("/api/sessions/" + session.ID.String()).expect(http.StatusOK).decode(&detail)
+	if len(detail.Session.GuestRSVPs) != 1 || detail.Session.GuestRSVPs[0].GuestName != "Alex" {
+		t.Fatalf("guest not visible: %+v", detail)
+	}
+	body["status"] = "out"
+	body["guest_name"] = "Alex Smith"
+	h.as(player).put(url+"/"+guest.ID.String(), body).expect(http.StatusForbidden)
+	h.as(admin).put(url+"/"+guest.ID.String(), body).expect(http.StatusOK).decode(&guest)
+	if guest.Status != models.RSVPStatusOut || guest.GuestName != "Alex Smith" {
+		t.Fatalf("guest not updated: %+v", guest)
+	}
+	for _, invalid := range []map[string]any{
+		{"guest_name": "Alex", "status": "in"},
+		{"guest_name": " ", "charged_to_user_id": player.ID, "status": "in"},
+		{"guest_name": "Alex", "charged_to_user_id": player.ID, "status": "maybe"},
+		{"guest_name": "Alex", "charged_to_user_id": pending.ID, "status": "in"},
+	} {
+		h.as(admin).post(url, invalid).expect(http.StatusBadRequest)
+	}
+	h.as(admin).put(url+"/bad-id", body).expect(http.StatusBadRequest)
+	h.as(admin).post("/api/admin/sessions/bad-id/guests", body).expect(http.StatusBadRequest)
+}

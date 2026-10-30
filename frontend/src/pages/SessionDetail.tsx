@@ -7,6 +7,7 @@ import { useAuth } from '../context/useAuth';
 import { api } from '../services/api';
 import type { Club, Session, RSVPSummary, SelectableRSVPStatus, RSVP } from '../types';
 import { formatSessionTimeRange, formatSessionVenue } from '../utils/session-display';
+import { sessionResponses } from '../utils/player-responses';
 import RSVPButton from '../components/rsvp/RSVPButton';
 import PlayerList from '../components/rsvp/PlayerList';
 import AdminRSVPForm from '../components/rsvp/AdminRSVPForm';
@@ -225,6 +226,7 @@ export default function SessionDetail() {
 
       {user?.role === 'admin' && session.status === 'open' && (
         <AdminRSVPForm key={session.id} sessionId={session.id} rsvps={session.rsvps || []}
+          guests={session.guest_rsvps || []} allowGuests={startsAt > Date.now()}
           deadlinePassed={isDeadlinePassed} isFull={isFull} onSaved={loadSession} />
       )}
 
@@ -237,7 +239,7 @@ export default function SessionDetail() {
 
       <div className="bg-white rounded-xl border border-slate-200 p-6">
         <PlayerList
-          rsvps={session.rsvps || []}
+          rsvps={sessionResponses(session)}
           maxPlayers={session.max_players}
         />
       </div>

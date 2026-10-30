@@ -201,7 +201,11 @@ func countConfirmed(db *gorm.DB, sessionID uuid.UUID) (int, error) {
 		Count(&n).Error; err != nil {
 		return 0, err
 	}
-	return int(n), nil
+	var guests int64
+	if err := db.Model(&models.GuestRSVP{}).Where("session_id = ? AND status = ?", sessionID, models.RSVPStatusIn).Count(&guests).Error; err != nil {
+		return 0, err
+	}
+	return int(n + guests), nil
 }
 
 // promoteWithinTx moves the longest-waiting players into any free spots. The caller
@@ -358,6 +362,14 @@ func (s *RSVPService) GetRSVPSummary(sessionID uuid.UUID) (*RSVPSummary, error) 
 	counts := make(map[models.RSVPStatus]int, len(rows))
 	for _, r := range rows {
 		counts[r.Status] = r.N
+	}
+
+	var guests []models.GuestRSVP
+	if err := database.DB.Where("session_id = ?", sessionID).Find(&guests).Error; err != nil {
+		return nil, err
+	}
+	for _, guest := range guests {
+		counts[guest.Status]++
 	}
 
 	spotsLeft := session.MaxPlayers - counts[models.RSVPStatusIn]

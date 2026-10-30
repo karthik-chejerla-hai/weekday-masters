@@ -3,6 +3,7 @@ import { Clock, MapPin, Timer } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import type { Session, TimeFormat, RSVPStatus } from '../../types';
+import { sessionResponses } from '../../utils/player-responses';
 import Badge from '../ui/Badge';
 import PlayerRSVPChips from './PlayerRSVPChips';
 import { formatSessionTimeRange } from '../../utils/session-display';
@@ -29,7 +30,8 @@ export default function SessionCard({ session, venueName, courtNumber, timeForma
   const isDeadlinePassed = new Date() > new Date(session.rsvp_deadline);
   const isCancelled = session.status === 'cancelled';
   const isCurrentSession = recordScore && !isCancelled;
-  const confirmedRsvps = session.rsvps?.filter(r => r.status === 'in') || [];
+  const responses = sessionResponses(session);
+  const confirmedRsvps = responses.filter(r => r.status === 'in');
   const waitingCount = session.rsvps?.filter(r => r.status === 'waitlisted').length || 0;
   const myRsvp = session.rsvps?.find(r => r.user_id === currentUserId);
   const spotsLeft = session.max_players - confirmedRsvps.length;
@@ -74,7 +76,7 @@ export default function SessionCard({ session, venueName, courtNumber, timeForma
         <div className="mt-3">
           {isCurrentSession && confirmedRsvps.length === 0
             ? <p className="text-sm text-slate-500">No confirmed players yet</p>
-            : <PlayerRSVPChips rsvps={isCurrentSession ? confirmedRsvps : session.rsvps ?? []} />}
+            : <PlayerRSVPChips rsvps={isCurrentSession ? confirmedRsvps : responses} />}
         </div>
         {!isCurrentSession && !isDeadlinePassed && !isCancelled && (
           <p className="mt-3 flex items-start gap-1.5 text-xs text-amber-800">

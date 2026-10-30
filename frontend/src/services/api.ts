@@ -14,6 +14,8 @@ import type {
   UpdateProfileInput,
   Session,
   RSVP,
+  GuestRSVP,
+  GuestRSVPInput,
   SessionWithSummary,
   AuthCallbackResponse,
   CreateSessionInput,
@@ -248,6 +250,14 @@ class ApiService {
   }
 
   // Admin - RSVP Management
+  async saveGuestRSVP(sessionId: string, input: GuestRSVPInput, guestId?: string): Promise<GuestRSVP> {
+    const url = `/admin/sessions/${sessionId}/guests`;
+    const response = guestId
+      ? await this.client.put<GuestRSVP>(`${url}/${guestId}`, input)
+      : await this.client.post<GuestRSVP>(url, input);
+    return response.data;
+  }
+
   async adminAddRSVP(sessionId: string, userId: string, status: SelectableRSVPStatus): Promise<RSVP> {
     const response = await this.client.post<RSVP>(`/admin/sessions/${sessionId}/rsvp/${userId}`, { status });
     return response.data;

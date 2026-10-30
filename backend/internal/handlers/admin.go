@@ -559,3 +559,38 @@ func (h *AdminHandler) UpdateClub(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, club)
 }
+
+// SaveGuestRSVP is registered only on the approved-admin route group.
+func (h *AdminHandler) SaveGuestRSVP(c *gin.Context) {
+	sessionID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid session ID"})
+		return
+	}
+	var guestID uuid.UUID
+	if raw := c.Param("guestId"); raw != "" {
+		guestID, err = uuid.Parse(raw)
+		if err != nil || guestID == uuid.Nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid guest ID"})
+			return
+		}
+	}
+	var req struct {
+		GuestName       string    `json:"guest_name" binding:"required,max=255"`
+		ChargedToUserID uuid.UUID `json:"charged_to_user_id" binding:"required"`
+		Status          string    `json:"status" binding:"required,oneof=in out"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	guest, err := h.rsvpService.SaveGuestRSVP(services.GuestRSVPInput{
+		ID: guestID, SessionID: sessionID, GuestName: req.GuestName,
+		ChargedToUserID: req.ChargedToUserID, Status: models.RSVPStatus(req.Status),
+	})
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, guest)
+}

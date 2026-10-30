@@ -57,6 +57,7 @@ func Migrate() error {
 		&models.InvitationDelivery{},
 		&models.Session{},
 		&models.RSVP{},
+		&models.GuestRSVP{},
 		&models.GameResult{},
 		&models.GameRevision{},
 		// Notification models

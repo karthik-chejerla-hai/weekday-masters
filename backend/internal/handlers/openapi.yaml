@@ -889,6 +889,68 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /admin/sessions/{id}/guests:
+    post:
+      tags: ["Admin: Sessions"]
+      summary: Create a named guest RSVP
+      description: Admin-only. Requires an upcoming open session and an approved paying member. IN guests use a vacant place. OUT releases it to the waiting list.
+      operationId: createGuestRSVP
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuestRSVPInput"
+      responses:
+        "200":
+          description: Saved guest RSVP
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestRSVP"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/sessions/{id}/guests/{guestId}:
+    put:
+      tags: ["Admin: Sessions"]
+      summary: Update a named guest RSVP
+      description: Admin-only. Requires an upcoming open session and an approved paying member. IN guests use a vacant place. OUT releases it to the waiting list.
+      operationId: updateGuestRSVP
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - name: guestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuestRSVPInput"
+      responses:
+        "200":
+          description: Saved guest RSVP
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestRSVP"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /admin/club:
     put:
       tags: ["Admin: Club"]
@@ -2650,12 +2712,53 @@ components:
         updated_at:
           type: string
           format: date-time
+        guest_rsvps:
+          type: array
+          items:
+            $ref: "#/components/schemas/GuestRSVP"
         rsvps:
           type: array
           items:
             $ref: "#/components/schemas/RSVP"
         creator:
           $ref: "#/components/schemas/User"
+
+    GuestRSVPInput:
+      type: object
+      required: [guest_name, charged_to_user_id, status]
+      properties:
+        guest_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        charged_to_user_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [in, out]
+    GuestRSVP:
+      allOf:
+        - $ref: "#/components/schemas/GuestRSVPInput"
+        - type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            session_id:
+              type: string
+              format: uuid
+            rsvp_timestamp:
+              type: string
+              format: date-time
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+            charged_to_user:
+              $ref: "#/components/schemas/User"
 
     RSVP:
       type: object
