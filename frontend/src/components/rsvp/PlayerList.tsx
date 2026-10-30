@@ -1,5 +1,7 @@
+import { useState } from 'react';
+import axios from 'axios';
 import { format } from 'date-fns';
-import { Clock, Shield, AlertTriangle } from 'lucide-react';
+import { Clock, Shield, AlertTriangle, Trash2, Loader2 } from 'lucide-react';
 import type { GuestRSVP, PlayerResponse } from '../../types';
 import { isGuest, playerName } from '../../utils/player-responses';
 import Avatar from '../ui/Avatar';
@@ -11,9 +13,10 @@ interface PlayerListProps {
   maxPlayers: number;
   title?: string;
   onEditGuest?: (guest: GuestRSVP) => void;
+  onRemoveGuest?: (guest: GuestRSVP) => Promise<void>;
 }
 
-export default function PlayerList({ rsvps, maxPlayers, title = 'Confirmed Players', onEditGuest }: PlayerListProps) {
+export default function PlayerList({ rsvps, maxPlayers, title = 'Confirmed Players', onEditGuest, onRemoveGuest }: PlayerListProps) {
   const confirmedRsvps = rsvps.filter(r => r.status === 'in');
   const waitlistedRsvps = rsvps.filter(r => r.status === 'waitlisted');
   const maybeRsvps = rsvps.filter(r => r.status === 'maybe');
@@ -39,6 +42,7 @@ export default function PlayerList({ rsvps, maxPlayers, title = 'Confirmed Playe
                 key={rsvp.id}
                 rsvp={rsvp}
                 onEditGuest={onEditGuest}
+                onRemoveGuest={onRemoveGuest}
                 position={index + 1}
                 isOverCapacity={index >= maxPlayers}
               />
@@ -92,7 +96,7 @@ export default function PlayerList({ rsvps, maxPlayers, title = 'Confirmed Playe
           </h4>
           <div className="space-y-2">
             {declinedRsvps.map((rsvp) => (
-              <PlayerItem key={rsvp.id} rsvp={rsvp} variant="out" onEditGuest={onEditGuest} />
+              <PlayerItem key={rsvp.id} rsvp={rsvp} variant="out" onEditGuest={onEditGuest} onRemoveGuest={onRemoveGuest} />
             ))}
           </div>
         </div>
@@ -104,17 +108,34 @@ export default function PlayerList({ rsvps, maxPlayers, title = 'Confirmed Playe
 interface PlayerItemProps {
   rsvp: PlayerResponse;
   onEditGuest?: (guest: GuestRSVP) => void;
+  onRemoveGuest?: (guest: GuestRSVP) => Promise<void>;
   position?: number;
   isOverCapacity?: boolean;
   variant?: 'confirmed' | 'maybe' | 'out' | 'waitlisted';
 }
 
-function PlayerItem({ rsvp, position, isOverCapacity, variant = 'confirmed', onEditGuest }: PlayerItemProps) {
+function PlayerItem({ rsvp, position, isOverCapacity, variant = 'confirmed', onEditGuest, onRemoveGuest }: PlayerItemProps) {
+  const [removing, setRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState('');
   const guest = isGuest(rsvp);
   const user = guest ? undefined : rsvp.user;
   const name = playerName(rsvp);
 
   const isWaitlisted = variant === 'waitlisted';
+
+  const removeGuest = async () => {
+    if (!guest || !onRemoveGuest || removing) return;
+    setRemoving(true);
+    setRemoveError('');
+    try {
+      await onRemoveGuest(rsvp);
+    } catch (error) {
+      setRemoveError(axios.isAxiosError(error) && typeof error.response?.data?.error === 'string'
+        ? error.response.data.error : `Could not remove ${name}. Please try again.`);
+    } finally {
+      setRemoving(false);
+    }
+  };
 
   const bgColor = isOverCapacity || isWaitlisted
     ? 'bg-amber-50'
@@ -137,16 +158,21 @@ function PlayerItem({ rsvp, position, isOverCapacity, variant = 'confirmed', onE
       <Avatar src={user?.profile_picture} name={name} size="sm" />
 
       <div className="flex-1 min-w-0">
-        <p className="font-medium text-slate-900 truncate">{name}{guest && <span className="ml-2 text-xs font-normal text-slate-500">Guest</span>}</p>
+        <p className="flex flex-wrap items-baseline gap-x-2 font-medium text-slate-900"><span className="max-w-full truncate">{name}</span>{guest && <span className="text-xs font-normal text-slate-500">Guest</span>}</p>
         {guest && <p className="text-xs text-slate-500">Charged to {displayName(rsvp.charged_to_user) || 'member'}</p>}
         <p className="text-xs text-slate-500 flex items-center gap-1">
           <Clock className="w-3 h-3" />
           {format(new Date(rsvp.rsvp_timestamp), 'MMM d, h:mm a')}
         </p>
+        {removeError && <p role="alert" className="mt-1 text-sm text-red-700">{removeError}</p>}
       </div>
 
       <div className="flex items-center gap-1">
-        {guest && onEditGuest && <button type="button" className="min-h-11 px-2 text-sm font-medium text-primary-700 underline" aria-label={`Edit ${name}'s RSVP`} onClick={() => onEditGuest(rsvp)}>Edit</button>}
+        {guest && onEditGuest && <button type="button" className="min-h-11 px-2 text-sm font-medium text-primary-700 underline disabled:opacity-50" aria-label={`Edit ${name}'s RSVP`} disabled={removing} onClick={() => onEditGuest(rsvp)}>Edit</button>}
+        {guest && onRemoveGuest && <button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-red-700 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-700 disabled:opacity-50"
+          aria-label={`Remove ${name}'s RSVP`} title={`Remove ${name}'s RSVP`} disabled={removing} onClick={removeGuest}>
+          {removing ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Trash2 aria-hidden="true" className="h-4 w-4" />}
+        </button>}
         {(guest || rsvp.added_by_admin) && (
           <span title="Added by admin">
             <Shield className="w-4 h-4 text-primary-500" />

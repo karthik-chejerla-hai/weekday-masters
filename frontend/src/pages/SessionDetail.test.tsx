@@ -5,16 +5,17 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import SessionDetail from './SessionDetail';
 import { useAuth } from '../context/useAuth';
 import { api } from '../services/api';
-import type { RSVP, RSVPSummary, Session } from '../types';
+import type { GuestRSVP, RSVP, RSVPSummary, Session } from '../types';
 
 vi.mock('../context/useAuth', () => ({ useAuth: vi.fn() }));
-vi.mock('../services/api', () => ({ api: { getSession: vi.fn(), createRSVP: vi.fn(), getClub: vi.fn(), listMembers: vi.fn(), adminAddRSVP: vi.fn() } }));
+vi.mock('../services/api', () => ({ api: { getSession: vi.fn(), createRSVP: vi.fn(), getClub: vi.fn(), listMembers: vi.fn(), adminAddRSVP: vi.fn(), deleteGuestRSVP: vi.fn() } }));
 
 const ME = 'user-me';
 
 // Dates either side of "now" so deadline behaviour is not tied to the calendar.
 const future = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString();
 const past = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
+const guest = { id: 'guest-1', guest_name: 'Alex Guest', status: 'in', rsvp_timestamp: past(1) } as GuestRSVP;
 
 function makeSession(overrides: Partial<Session> = {}): Session {
   return {
@@ -265,5 +266,28 @@ describe('admin player RSVPs', () => {
     await screen.findByText('Sunday Social');
     expect(screen.queryByLabelText('Player')).not.toBeInTheDocument();
     expect(api.listMembers).not.toHaveBeenCalled();
+  });
+
+  it('removes a guest from the player row and reloads the roster without opening the editor', async () => {
+    loads(makeSession({ guest_rsvps: [guest] }));
+    vi.mocked(api.deleteGuestRSVP).mockImplementationOnce(async () => { loads(makeSession()); });
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: "Remove Alex Guest's RSVP" }));
+    expect(api.deleteGuestRSVP).toHaveBeenCalledExactlyOnceWith('session-1', guest.id);
+    expect(await screen.findByText('No confirmed players yet')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['member', 'open', future(1)],
+    ['admin', 'closed', future(1)],
+    ['admin', 'cancelled', future(1)],
+    ['admin', 'open', past(1)],
+  ] as const)('hides guest removal for %s on a %s session starting %s', async (role, status, starts_at) => {
+    vi.mocked(useAuth).mockReturnValue({ user: { id: ME, role } } as unknown as ReturnType<typeof useAuth>);
+    loads(makeSession({ guest_rsvps: [guest], status, starts_at }));
+    renderPage();
+    await screen.findByText('Alex Guest');
+    expect(screen.queryByRole('button', { name: "Remove Alex Guest's RSVP" })).not.toBeInTheDocument();
   });
 });

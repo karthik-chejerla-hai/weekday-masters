@@ -35,3 +35,31 @@ it('offers editing for both IN and OUT guests only when enabled', async () => {
   rerender(<PlayerList rsvps={[out]} maxPlayers={6} />);
   expect(screen.queryByRole('button', { name: "Edit Alex's RSVP" })).not.toBeInTheDocument();
 });
+
+it.each(['in', 'out'] as const)('removes an %s guest directly from the row', async status => {
+  const onRemove = vi.fn().mockResolvedValue(undefined);
+  const onEdit = vi.fn();
+  const response = { ...guest, status };
+  const { rerender } = render(<PlayerList rsvps={[response]} maxPlayers={6} onEditGuest={onEdit} onRemoveGuest={onRemove} />);
+  await userEvent.click(screen.getByRole('button', { name: "Remove Alex's RSVP" }));
+  expect(onRemove).toHaveBeenCalledExactlyOnceWith(response);
+  expect(onEdit).not.toHaveBeenCalled();
+  rerender(<PlayerList rsvps={[response]} maxPlayers={6} />);
+  expect(screen.queryByRole('button', { name: "Remove Alex's RSVP" })).not.toBeInTheDocument();
+});
+
+it('disables guest actions during removal and allows retry after a failure', async () => {
+  let rejectRemoval!: (error: Error) => void;
+  const onRemove = vi.fn().mockImplementationOnce(() => new Promise<void>((_, reject) => { rejectRemoval = reject; }))
+    .mockResolvedValue(undefined);
+  render(<PlayerList rsvps={[guest]} maxPlayers={6} onEditGuest={vi.fn()} onRemoveGuest={onRemove} />);
+  await userEvent.click(screen.getByRole('button', { name: "Remove Alex's RSVP" }));
+  expect(screen.getByRole('button', { name: "Remove Alex's RSVP" })).toBeDisabled();
+  expect(screen.getByRole('button', { name: "Edit Alex's RSVP" })).toBeDisabled();
+  rejectRemoval(new Error('offline'));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not remove Alex');
+  expect(screen.getByText('Alex')).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: "Remove Alex's RSVP" }));
+  expect(onRemove).toHaveBeenCalledTimes(2);
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});

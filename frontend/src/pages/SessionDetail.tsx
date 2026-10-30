@@ -249,6 +249,10 @@ export default function SessionDetail() {
           rsvps={sessionResponses(session)}
           maxPlayers={session.max_players}
           onEditGuest={user?.role === 'admin' && session.status === 'open' && startsAt > Date.now() ? setEditingGuest : undefined}
+          onRemoveGuest={user?.role === 'admin' && session.status === 'open' && startsAt > Date.now() ? async guest => {
+            await api.deleteGuestRSVP(session.id, guest.id);
+            await loadSession();
+          } : undefined}
         />
       </div>
       <dialog ref={guestDialog} aria-label="Edit guest RSVP" onClose={() => setEditingGuest(null)}

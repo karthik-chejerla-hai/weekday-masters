@@ -44,3 +44,10 @@ Immediate removal follow-up: 33 affected component/page tests and both desktop/m
 - All 418 frontend tests passed with coverage thresholds. Build, lint, and browser-test type checks passed with the existing warnings.
 - All four guest browser tests passed across desktop and mobile Chromium. The regression selects a guest in the main form, changes the payer through the row editor, then saves only a status change in the main form. Both requests and the form after reload retain the replacement payer.
 - Browser tests use mocked HTTP data. This change affects only frontend form state; backend code is unchanged.
+
+## Bin button beside each guest
+
+- All 426 frontend tests passed with coverage thresholds. New tests cover direct IN and OUT removal, disabled actions while removal runs, retry after failure, and hiding removal for members or protected sessions.
+- All four desktop/mobile guest browser tests passed. The removal test now clicks the row's bin button without opening the editor, checks the refreshed player count and cleared main form, reloads, and adds the same guest again.
+- The mobile check showed that the guest label needed to wrap beside the new action. After that layout adjustment, all 34 affected component/page tests and all four browser tests passed again. Build and lint passed with the existing warnings. Browser-test type checking passed.
+- Screenshots use test data and remain outside the repository in `/tmp/rally-guest-bin-screens/` for PR attachments. Backend deletion and waitlist rules are unchanged.
