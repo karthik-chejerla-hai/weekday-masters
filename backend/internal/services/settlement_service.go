@@ -193,6 +193,13 @@ func (s *SettlementService) defaultLines(sessionID uuid.UUID, hasExtra bool) ([]
 		}
 		lines = append(lines, LineInput{UserID: rsvp.UserID, InBase: true, InExtra: hasExtra})
 	}
+	var guests []models.GuestRSVP
+	if err := database.DB.Where("session_id = ? AND status = ?", sessionID, models.RSVPStatusIn).Order("rsvp_timestamp ASC, id ASC").Find(&guests).Error; err != nil {
+		return nil, err
+	}
+	for _, guest := range guests {
+		lines = append(lines, LineInput{UserID: guest.ChargedToUserID, GuestName: guest.GuestName, InBase: true, InExtra: hasExtra})
+	}
 	return lines, nil
 }
 

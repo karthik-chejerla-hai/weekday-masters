@@ -108,3 +108,11 @@ describe('Expense form', () => {
     expect(screen.queryByRole('region', { name: 'Expense preview' })).not.toBeInTheDocument();
   });
 });
+
+it('directs confirmed guest sessions to advanced settlement instead of omitting guests', async () => {
+  vi.mocked(api.getSession).mockResolvedValue({ session: { ...expenseFixture().session, guest_rsvps: [{ guest_name: 'Sam', status: 'in', charged_to_user_id: 'u1' }] } } as never);
+  show();
+  expect(await screen.findByRole('link', { name: 'Open the advanced settlement form' })).toHaveAttribute('href', '/admin/sessions/s1/settle');
+  expect(screen.queryByRole('button', { name: 'Preview expense' })).not.toBeInTheDocument();
+  expect(api.previewExpense).not.toHaveBeenCalled();
+});

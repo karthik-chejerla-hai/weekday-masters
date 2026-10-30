@@ -45,8 +45,9 @@ type Session struct {
 	UpdatedAt          time.Time `json:"updated_at"`
 
 	// Associations
-	RSVPs   []RSVP `gorm:"foreignKey:SessionID" json:"rsvps,omitempty"`
-	Creator *User  `gorm:"foreignKey:CreatedBy" json:"creator,omitempty"`
+	GuestRSVPs []GuestRSVP `gorm:"foreignKey:SessionID" json:"guest_rsvps,omitempty"`
+	RSVPs      []RSVP      `gorm:"foreignKey:SessionID" json:"rsvps,omitempty"`
+	Creator    *User       `gorm:"foreignKey:CreatedBy" json:"creator,omitempty"`
 }
 
 func (s *Session) BeforeCreate(tx *gorm.DB) error {
