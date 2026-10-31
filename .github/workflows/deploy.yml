@@ -1,9 +1,12 @@
 name: Deploy
 
 on:
-  push:
-    branches: [main]
-  workflow_dispatch: # Allow manual trigger
+  workflow_call:
+    inputs:
+      image-digest:
+        description: Published backend image digest from the successful build job
+        required: true
+        type: string
 
 env:
   GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
@@ -18,11 +21,11 @@ jobs:
   # ============================================
   deploy-backend:
     name: Deploy Backend
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
 
-    # Recording this as a GitHub Deployment gives the repo an Environments panel and
-    # per-commit deploy status. No protection rules are set here — add required
-    # reviewers under Settings -> Environments if you want an approval gate.
+    # Keep deployment history without manual approval. In repository settings,
+    # production-api permits main and has no required reviewers or wait timer.
     environment:
       name: production-api
       url: ${{ steps.backend-url.outputs.url }}
@@ -53,27 +56,22 @@ jobs:
           username: oauth2accesstoken
           password: ${{ steps.auth.outputs.access_token }}
 
-      - name: Build and push Docker image
-        working-directory: backend
+      - name: Select published backend image
+        env:
+          IMAGE_DIGEST: ${{ inputs.image-digest }}
         run: |
-          IMAGE="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO }}/${{ env.BACKEND_SERVICE_NAME }}:${{ github.sha }}"
-          docker build -t $IMAGE .
-          docker push $IMAGE
-          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+          if [[ ! "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::A valid published backend image digest is required"
+            exit 1
+          fi
+          IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REGISTRY_REPO}/${BACKEND_SERVICE_NAME}@${IMAGE_DIGEST}"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
 
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.22'
-          cache-dependency-path: backend/go.sum
-
-      # Schema is applied here, as an explicit step, rather than on server startup —
-      # that avoids concurrent Cloud Run revisions racing to migrate.
+      # Run the migration binary from the exact image deployed below.
       - name: Run database migrations
-        working-directory: backend
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: go run ./cmd/migrate
+        run: docker run --rm -e DATABASE_URL "$IMAGE" ./migrate
 
       - name: Deploy to Cloud Run
         env:
@@ -84,7 +82,7 @@ jobs:
           .github/scripts/gcloud-retry-on-conflict.sh \
             gcloud run deploy ${{ env.BACKEND_SERVICE_NAME }} \
             --project ${{ env.GCP_PROJECT_ID }} \
-            --image ${{ env.IMAGE }} \
+            --image "$IMAGE" \
             --region ${{ env.GCP_REGION }} \
             --platform managed \
             --cpu-throttling \
@@ -127,7 +125,7 @@ jobs:
             --project ${{ env.GCP_PROJECT_ID }} \
             --region ${{ env.GCP_REGION }} \
             --format='value(status.url)')
-          echo "url=$URL" >> $GITHUB_OUTPUT
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
           echo "Backend deployed to: $URL"
 
     outputs:
@@ -205,7 +203,7 @@ jobs:
 
       - name: Read WIF credentials
         id: creds
-        run: echo "json=$(cat '${{ steps.auth.outputs.credentials_file_path }}')" >> $GITHUB_OUTPUT
+        run: echo "json=$(cat '${{ steps.auth.outputs.credentials_file_path }}')" >> "$GITHUB_OUTPUT"
 
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0

@@ -11,6 +11,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch: # Manual production runs still pass every check first.
 
 permissions:
   contents: read
@@ -221,3 +222,57 @@ jobs:
           script: |
             const { readCoverage, publish } = require('./.github/scripts/coverage-badges.js')
             await publish({ github, context, core }, readCoverage())
+
+  build-backend:
+    name: Build Backend Image
+    needs: [backend-tests, frontend-tests, browser-tests, coverage-report]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      GCP_REGION: australia-southeast1
+      ARTIFACT_REGISTRY_REPO: rally-club-api-registry
+      BACKEND_SERVICE_NAME: rally-club-api
+    outputs:
+      # Pass only the digest: a full URL contains the secret project ID and can
+      # be suppressed by GitHub's secret masking when passed between jobs.
+      image-digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.BACKEND_SA_EMAIL }}
+          token_format: access_token
+      - name: Login to Artifact Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.GCP_REGION }}-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+      - name: Build and push backend image
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: ./backend
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO }}/${{ env.BACKEND_SERVICE_NAME }}:${{ github.sha }}
+
+  deploy:
+    name: Deploy Production
+    needs: build-backend
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/deploy.yml
+    with:
+      image-digest: ${{ needs.build-backend.outputs.image-digest }}
+    secrets: inherit

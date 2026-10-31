@@ -288,8 +288,13 @@ session history cards link to score entry; imported Splitwise cards do not.
 
 ## Deployment
 
-CI/CD via GitHub Actions (`.github/workflows/deploy.yml`) on push to `main`:
-1. Backend: Docker build → GCP Artifact Registry → **run `./cmd/migrate` against `DATABASE_URL`** → Cloud Run (australia-southeast1)
-2. Frontend: npm build (with Cloud Run URL injected as `VITE_API_URL`) → Firebase Hosting
+CI/CD via GitHub Actions (`.github/workflows/ci.yml`) on push to `main`:
+1. All tests/checks and the coverage report pass before the backend image build.
+2. Backend: CI builds and pushes to Artifact Registry, then calls `deploy.yml` with
+   the image digest. Deployment runs `./migrate` from that image against
+   `DATABASE_URL`, then deploys the same digest to Cloud Run (australia-southeast1).
+3. Frontend: npm build (with Cloud Run URL injected as `VITE_API_URL`) → Firebase Hosting
+
+Production deploys from main without manual approval after CI passes.
 
 All secrets are in GitHub repository secrets. See `DEPLOY.md` for manual deployment steps.
