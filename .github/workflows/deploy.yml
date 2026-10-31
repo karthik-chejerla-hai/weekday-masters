@@ -24,9 +24,8 @@ jobs:
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
 
-    # Recording this as a GitHub Deployment gives the repo an Environments panel and
-    # per-commit deploy status. No protection rules are set here — add required
-    # reviewers under Settings -> Environments if you want an approval gate.
+    # Keep deployment history without manual approval. In repository settings,
+    # production-api permits main and has no required reviewers or wait timer.
     environment:
       name: production-api
       url: ${{ steps.backend-url.outputs.url }}

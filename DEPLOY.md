@@ -34,6 +34,38 @@ This keeps the successful build job and reuses its digest. **Re-run all jobs**
 also reruns the build. If registry retention has removed an old image, deployment
 fails instead of silently rebuilding; start a full CI run to publish it again.
 
+### Automatic production deployment and failure emails
+
+Production environments have no required reviewers or wait timer. The existing
+`main` branch restrictions remain in place. A merge to `main` runs CI, builds the
+backend image, and deploys without a manual approval step. Failed checks still
+prevent deployment.
+
+`ci-failure-email.yml` runs after a failed main CI pipeline, including backend
+build, migrations, Cloud Run deployment, and frontend build/deployment failures.
+It also covers failed manual runs on `main`. Successful runs, cancelled runs,
+PR runs, and other branches do not send mail. It runs separately so a failed or
+skipped deployment job cannot suppress the notification.
+
+The notifier lists current repository collaborators at send time. It uses
+`CI_COLLABORATOR_EMAILS`, a repository secret containing a JSON object from
+GitHub login to email address, before falling back to public GitHub profile
+addresses. Example: `{"example-login":"person@example.com"}`. Add an entry when
+a collaborator has a private email address. Removed collaborators are excluded;
+GitHub App bots are excluded. Shared addresses receive one message. Each address
+has a separate email envelope, so recipients do not see each other's addresses.
+
+Mail uses the existing `SENDGRID_API_KEY` and `SENDGRID_FROM_EMAIL` secrets.
+Alerts contain the commit, run attempt, run link, and failed job links, without
+build logs or secret values. Provider acceptance does not prove inbox delivery.
+Missing addresses make the notification job fail visibly after it emails the
+reachable collaborators. A rejected email request also fails the job. There is
+no automatic resend after an ambiguous timeout. Inspect SendGrid before manually
+rerunning the notification workflow to avoid duplicate mail.
+
+The notification workflow becomes active when it reaches the default branch.
+Local tests use a fake email provider and do not send messages.
+
 ## Preview environments
 
 Every pull request gets its own Neon branch, created by `preview-deploy.yml` and
