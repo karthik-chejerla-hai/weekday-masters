@@ -102,9 +102,6 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Test failure email notifications
-        run: node --test .github/scripts/ci-failure-email.test.js
-
       - name: Test coverage badge publication
         run: node --test .github/scripts/coverage-badges.test.js
 

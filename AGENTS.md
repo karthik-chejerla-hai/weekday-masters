@@ -295,8 +295,6 @@ CI/CD via GitHub Actions (`.github/workflows/ci.yml`) on push to `main`:
    `DATABASE_URL`, then deploys the same digest to Cloud Run (australia-southeast1).
 3. Frontend: npm build (with Cloud Run URL injected as `VITE_API_URL`) → Firebase Hosting
 
-Production deploys from main without manual approval after CI passes. A failed
-main pipeline triggers `ci-failure-email.yml`, which emails current collaborators
-using SendGrid and the `CI_COLLABORATOR_EMAILS` address map for private profiles.
+Production deploys from main without manual approval after CI passes.
 
 All secrets are in GitHub repository secrets. See `DEPLOY.md` for manual deployment steps.
