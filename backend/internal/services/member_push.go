@@ -38,7 +38,7 @@ func (s *UserService) MemberPushStatus(id uuid.UUID) (*MemberPushStatus, error) 
 	}
 	err = database.DB.Model(&models.UserPushToken{}).
 		Select("id, device_name, created_at, last_used_at AS last_registered_at").
-		Where("user_id = ?", id).Order("last_used_at DESC, id").Scan(&result.Devices).Error
+		Where("user_id = ? AND revoked_at IS NULL AND invalidated_at IS NULL", id).Order("last_used_at DESC, id").Scan(&result.Devices).Error
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func (s *UserService) ListMembersWithPushSummary() ([]AdminMember, error) {
 		DeviceCount int64
 	}
 	if err := database.DB.Model(&models.UserPushToken{}).
-		Select("user_id, COUNT(*) AS device_count").Where("user_id IN ?", ids).
+		Select("user_id, COUNT(*) AS device_count").Where("user_id IN ? AND revoked_at IS NULL AND invalidated_at IS NULL", ids).
 		Group("user_id").Scan(&counts).Error; err != nil {
 		return nil, err
 	}

@@ -30,7 +30,7 @@ func requireDB(t *testing.T) {
 	testsupport.RequireDB(t)
 }
 
-// recordingNotifier captures waitlist promotion notifications.
+// recordingNotifier captures notification side effects from services under test.
 type recordingNotifier struct {
 	mu   sync.Mutex
 	sent []sentNotification
@@ -72,13 +72,13 @@ func (n *recordingNotifier) reset() {
 	n.sent = nil
 }
 
-// newTestServices returns the services under test plus the notifier they report to.
+// newTestServices returns RSVP/session services and a recorder for unrelated alerts.
 func newTestServices(t *testing.T) (*RSVPService, *SessionService, *recordingNotifier) {
 	t.Helper()
 	requireDB(t)
 
 	notifier := &recordingNotifier{}
-	return NewRSVPService(notifier), NewSessionService(), notifier
+	return NewRSVPService(), NewSessionService(), notifier
 }
 
 // newUser creates an approved player.

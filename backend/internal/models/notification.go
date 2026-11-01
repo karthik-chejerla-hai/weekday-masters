@@ -55,12 +55,17 @@ func (p *UserNotificationPreferences) BeforeCreate(tx *gorm.DB) error {
 
 // UserPushToken stores FCM tokens for push notifications (one user can have multiple devices)
 type UserPushToken struct {
-	ID         uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	UserID     uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
-	Token      string    `gorm:"type:text;uniqueIndex;not null" json:"token"`
-	DeviceName string    `gorm:"type:text" json:"device_name"`
-	LastUsedAt time.Time `gorm:"default:now()" json:"last_used_at"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID             uuid.UUID  `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	UserID         uuid.UUID  `gorm:"type:uuid;not null;index" json:"user_id"`
+	Token          string     `gorm:"type:text;uniqueIndex;not null" json:"-"`
+	InstallationID *uuid.UUID `gorm:"type:uuid;uniqueIndex" json:"-"`
+	Generation     int64      `gorm:"not null;default:1" json:"-"`
+	RevocationHash string     `gorm:"type:text" json:"-"`
+	RevokedAt      *time.Time `json:"-"`
+	InvalidatedAt  *time.Time `json:"-"`
+	DeviceName     string     `gorm:"type:text" json:"device_name"`
+	LastUsedAt     time.Time  `gorm:"default:now()" json:"last_used_at"`
+	CreatedAt      time.Time  `json:"created_at"`
 
 	// Association
 	User *User `gorm:"foreignKey:UserID" json:"-"`

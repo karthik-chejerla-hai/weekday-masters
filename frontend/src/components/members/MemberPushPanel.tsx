@@ -3,14 +3,6 @@ import { api, type MemberPushStatus } from '../../services/api';
 import type { User } from '../../types';
 import { displayName } from '../../utils/members';
 
-const alerts = [
-  ['push_session_reminders', 'Session reminders'],
-  ['push_rsvp_deadlines', 'RSVP deadlines'],
-  ['push_waitlist_updates', 'Waitlist updates'],
-  ['push_admin_announcements', 'Admin announcements'],
-  ['push_balance_alerts', 'Balance alerts'],
-] as const;
-
 function registrationDate(value: string) {
   return new Intl.DateTimeFormat('en-AU', {
     dateStyle: 'medium', timeStyle: 'short', timeZone: 'Australia/Sydney',
@@ -39,7 +31,6 @@ export default function MemberPushPanel({ member, onStatus }: { member: User; on
     }
   }
 
-  const prefs = status?.preferences;
   return (
     <section className="mt-3 border-t border-slate-100 pt-3" aria-label={`Push alerts for ${displayName(member)}`}>
       <button
@@ -64,14 +55,8 @@ export default function MemberPushPanel({ member, onStatus }: { member: User; on
               <span className="rounded-full bg-white border border-slate-200 px-2 py-1">{status.devices.length} registered {status.devices.length === 1 ? 'device' : 'devices'}</span>
               <button type="button" className="text-primary-700 underline ml-auto" onClick={() => void load()}>Refresh</button>
             </div>
-            {member.membership_status !== 'approved' && <p>This member is not approved. These are their saved settings.</p>}
-            {prefs ? <div>
-              <h3 className="font-medium mb-2">Saved delivery choices</h3>
-              {!prefs.push_enabled && <p className="text-slate-600 mb-2">Account push is off. These choices apply when the member turns it on.</p>}
-              <dl className="grid sm:grid-cols-2 gap-x-6 gap-y-2">
-                {alerts.map(([key, label]) => <div key={key} className="flex justify-between gap-3"><dt>{label}</dt><dd className="font-medium">{prefs[key] ? 'On' : 'Off'}</dd></div>)}
-              </dl>
-            </div> : <p className="text-slate-600">The app uses default alert settings until a preference record exists. Defaults do not confirm permission.</p>}
+            {member.membership_status !== 'approved' && <p>This member is not approved. Their saved devices cannot receive normal alerts.</p>}
+            <p>All supported push alerts are included on registered devices.</p>
             <div>
               <h3 className="font-medium mb-2">Registered devices</h3>
               {status.devices.length === 0 ? <p>No registered devices. Push alerts cannot reach this member.</p> :

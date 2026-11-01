@@ -275,7 +275,7 @@ func TestUpdateMemberDetails_RejectsCollisionsAndEmptyNames(t *testing.T) {
 
 func TestRemoveMember_KeepsTheRowAndFreesUpcomingSpots(t *testing.T) {
 	requireDB(t)
-	rsvps := NewRSVPService(nil)
+	rsvps := NewRSVPService()
 	us := NewUserService("").WithRSVPs(rsvps)
 
 	admin := invite(t, us, "admin@example.com", "The Admin")

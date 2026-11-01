@@ -1,3 +1,4 @@
+import { isDeviceSetupStorageChange } from '../../services/push-device';
 import { useEffect, useState } from 'react';
 import { BellRing, Loader2, X } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
@@ -63,9 +64,12 @@ export default function PushNotifications() {
     const changed = () => setSettingsVersion((version) => version + 1);
     window.addEventListener('notification-settings-changed', changed);
     window.addEventListener('focus', changed);
+    const storageChanged = (event: StorageEvent) => { if (isDeviceSetupStorageChange(event)) changed(); };
+    window.addEventListener('storage', storageChanged);
     return () => {
       window.removeEventListener('notification-settings-changed', changed);
       window.removeEventListener('focus', changed);
+      window.removeEventListener('storage', storageChanged);
     };
   }, []);
 
@@ -78,21 +82,15 @@ export default function PushNotifications() {
     let unsubscribe: (() => void) | undefined;
     void (async () => {
       try {
-        const preferences = await notificationService.getPreferences();
-        if (cancelled) return;
-
         const supported = notificationService.isPushSupported();
         const permission = notificationService.getPermissionStatus();
+        if (notificationService.isDeviceDisabled(userID)) { setSetup(null); return; }
         if (supported && permission === 'default') {
           setSetup({
             userID,
             kind: 'enable',
-            message: 'Get RSVP deadlines, cancellations and waitlist openings even when Rally is closed.',
+            message: 'Set up push for RSVP reminders, session charges, balance alerts and announcements.',
           });
-          return;
-        }
-        if (!preferences.push_enabled) {
-          setSetup(null);
           return;
         }
         if (!supported || permission === 'denied') {
@@ -106,7 +104,7 @@ export default function PushNotifications() {
           return;
         }
 
-        const registered = await notificationService.enablePushNotifications();
+        const registered = await notificationService.restorePushNotifications(userID);
         if (cancelled) return;
         if (!registered) {
           setSetup({
@@ -142,7 +140,7 @@ export default function PushNotifications() {
     setIsEnabling(true);
     setEnabledMessage(false);
     try {
-      const registered = await notificationService.enablePushNotifications();
+      const registered = await notificationService.enablePushNotifications(userID);
       if (!registered) {
         const permission = notificationService.getPermissionStatus();
         setSetup({
@@ -154,7 +152,6 @@ export default function PushNotifications() {
         });
         return;
       }
-      await notificationService.updatePreferences({ push_enabled: true });
       clearDismissal(userID);
       setDismissed(false);
       setSetup(null);
@@ -164,7 +161,7 @@ export default function PushNotifications() {
       setSetup({
         userID,
         kind: 'repair',
-        message: 'This device connected, but Rally could not save your setting. Open notification settings to retry.',
+        message: 'Rally could not register this device. Open notification settings to retry.',
       });
     } finally {
       setIsEnabling(false);

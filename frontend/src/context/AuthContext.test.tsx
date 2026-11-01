@@ -5,6 +5,9 @@ import { AuthProvider } from './AuthContext';
 import { useAuth } from './useAuth';
 import { useAuth0 } from '@auth0/auth0-react';
 import { api } from '../services/api';
+import { preparePushAccount } from '../services/push-device';
+
+vi.mock('../services/push-device', () => ({ preparePushAccount: vi.fn(async () => {}) }));
 
 vi.mock('@auth0/auth0-react', () => ({
   useAuth0: vi.fn(),
@@ -237,4 +240,16 @@ it('keeps Auth0 redirect failures visible even when their code requires sign-in'
   } as unknown as ReturnType<typeof useAuth0>);
   render(<AuthProvider><TestConsumer /></AuthProvider>);
   expect(await screen.findByRole('alert')).toHaveTextContent('Google sign-in did not finish');
+});
+
+it('blocks account sign-in until former device cleanup succeeds, then permits explicit retry', async () => {
+ const auth0User = { name: 'New member' };
+ vi.mocked(useAuth0).mockReturnValue({ isAuthenticated: true, isLoading: false, user: auth0User, loginWithRedirect: vi.fn(), logout: vi.fn(), getAccessTokenSilently: vi.fn(async () => 'new-token') } as unknown as ReturnType<typeof useAuth0>);
+ vi.mocked(api.authCallback).mockResolvedValue({ user: { id: 'new-member', name: 'New member', membership_status: 'approved', role: 'player' } as never, is_new: false });
+ vi.mocked(preparePushAccount).mockRejectedValueOnce(new Error('cleanup failed')).mockResolvedValueOnce();
+ render(<AuthProvider><TestConsumer /></AuthProvider>);
+ expect(await screen.findByRole('alert')).toHaveTextContent('Could not remove the previous account');
+ expect(screen.getByText('Authenticated: No')).toBeInTheDocument();
+ await userEvent.click(screen.getByRole('button', { name: 'Retry profile' }));
+ expect(await screen.findByText('Authenticated: Yes')).toBeInTheDocument();expect(preparePushAccount).toHaveBeenCalledWith('new-member');
 });

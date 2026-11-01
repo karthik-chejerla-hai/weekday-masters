@@ -514,7 +514,7 @@ func TestSettleDoesNotTouchTheBank(t *testing.T) {
 // included: the court was booked for them.
 func TestSettleDefaultsToEveryoneWhoSaidTheyWereComing(t *testing.T) {
 	f := newSettlementFixture(t, 24, 10000)
-	rsvpService := NewRSVPService(&recordingNotifier{})
+	rsvpService := NewRSVPService()
 
 	coming := f.member(t, "coming")
 	alsoComing := f.member(t, "alsocoming")

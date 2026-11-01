@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/weekday-masters/backend/internal/database"
 	"github.com/weekday-masters/backend/internal/models"
 )
 
@@ -58,14 +59,13 @@ func TestRSVPBeyondCapacityIsWaitlisted(t *testing.T) {
 }
 
 func TestDroppingOutPromotesHeadOfWaitlist(t *testing.T) {
-	rs, ss, notifier := newTestServices(t)
+	rs, ss, _ := newTestServices(t)
 	session := newSession(t, ss, newUser(t, "organiser").ID, 1)
 	users := newUsers(t, 8)
 
 	for _, user := range users {
 		rsvpIn(t, rs, session.ID, user.ID)
 	}
-	notifier.reset()
 
 	// A confirmed player pulls out.
 	if _, err := rs.CreateOrUpdateRSVP(RSVPInput{
@@ -93,25 +93,18 @@ func TestDroppingOutPromotesHeadOfWaitlist(t *testing.T) {
 		t.Fatalf("unexpected summary: %+v", got)
 	}
 
-	// The promoted player is told about it.
-	notified := notifier.notifiedUsers()
-	if len(notified) != 1 || notified[0] != users[6].ID {
-		t.Fatalf("expected exactly the promoted player to be notified, got %v", notified)
-	}
-	if got := notifier.sent[0].Type; got != models.NotificationWaitlistUpdate {
-		t.Fatalf("expected a waitlist_update notification, got %q", got)
-	}
+	// Waitlist promotion no longer creates notification history or push work.
+	assertNoWaitlistNotifications(t)
 }
 
 func TestDeletingConfirmedRSVPPromotesFromWaitlist(t *testing.T) {
-	rs, ss, notifier := newTestServices(t)
+	rs, ss, _ := newTestServices(t)
 	session := newSession(t, ss, newUser(t, "organiser").ID, 1)
 	users := newUsers(t, 7)
 
 	for _, user := range users {
 		rsvpIn(t, rs, session.ID, user.ID)
 	}
-	notifier.reset()
 
 	if err := rs.DeleteRSVP(session.ID, users[0].ID, false); err != nil {
 		t.Fatalf("failed to delete rsvp: %v", err)
@@ -123,20 +116,17 @@ func TestDeletingConfirmedRSVPPromotesFromWaitlist(t *testing.T) {
 	if got := summaryOf(t, rs, session.ID); got.TotalIn != 6 || got.TotalWaitlisted != 0 {
 		t.Fatalf("unexpected summary: %+v", got)
 	}
-	if notified := notifier.notifiedUsers(); len(notified) != 1 || notified[0] != users[6].ID {
-		t.Fatalf("expected the promoted player to be notified, got %v", notified)
-	}
+	assertNoWaitlistNotifications(t)
 }
 
 func TestWaitlistedPlayerWithdrawingPromotesNobody(t *testing.T) {
-	rs, ss, notifier := newTestServices(t)
+	rs, ss, _ := newTestServices(t)
 	session := newSession(t, ss, newUser(t, "organiser").ID, 1)
 	users := newUsers(t, 8)
 
 	for _, user := range users {
 		rsvpIn(t, rs, session.ID, user.ID)
 	}
-	notifier.reset()
 
 	// users[6] is waitlisted; withdrawing frees no confirmed spot.
 	if _, err := rs.CreateOrUpdateRSVP(RSVPInput{
@@ -153,9 +143,7 @@ func TestWaitlistedPlayerWithdrawingPromotesNobody(t *testing.T) {
 	if got := summaryOf(t, rs, session.ID); got.TotalIn != 6 || got.TotalWaitlisted != 1 {
 		t.Fatalf("unexpected summary: %+v", got)
 	}
-	if notified := notifier.notifiedUsers(); len(notified) != 0 {
-		t.Fatalf("no promotion should have been notified, got %v", notified)
-	}
+	assertNoWaitlistNotifications(t)
 }
 
 func TestAdminAddBypassesCapacity(t *testing.T) {
@@ -188,7 +176,7 @@ func TestAdminAddBypassesCapacity(t *testing.T) {
 }
 
 func TestAddingCourtPromotesEveryoneItCanFit(t *testing.T) {
-	rs, ss, notifier := newTestServices(t)
+	rs, ss, _ := newTestServices(t)
 	session := newSession(t, ss, newUser(t, "organiser").ID, 1)
 	users := newUsers(t, 9)
 
@@ -198,7 +186,6 @@ func TestAddingCourtPromotesEveryoneItCanFit(t *testing.T) {
 	if got := summaryOf(t, rs, session.ID); got.TotalIn != 6 || got.TotalWaitlisted != 3 {
 		t.Fatalf("unexpected setup: %+v", got)
 	}
-	notifier.reset()
 
 	// A second court raises the cap from 6 to 10, which absorbs the whole waitlist.
 	courts := 2
@@ -212,9 +199,7 @@ func TestAddingCourtPromotesEveryoneItCanFit(t *testing.T) {
 	if got := summaryOf(t, rs, session.ID); got.TotalIn != 9 || got.TotalWaitlisted != 0 {
 		t.Fatalf("unexpected summary after growth: %+v", got)
 	}
-	if notified := notifier.notifiedUsers(); len(notified) != 3 {
-		t.Fatalf("expected 3 promotion notifications, got %d", len(notified))
-	}
+	assertNoWaitlistNotifications(t)
 }
 
 func TestGrowthPromotesOnlyUpToTheNewCap(t *testing.T) {
@@ -366,5 +351,52 @@ func TestRejoiningAFullSessionGoesBackToTheWaitlist(t *testing.T) {
 	}
 	if got := summaryOf(t, rs, session.ID); got.TotalIn != 6 || got.TotalWaitlisted != 1 {
 		t.Fatalf("unexpected summary: %+v", got)
+	}
+}
+
+func assertNoWaitlistNotifications(t *testing.T) {
+	t.Helper()
+	var count int64
+	if err := database.DB.Model(&models.Notification{}).Where("notification_type = ?", models.NotificationWaitlistUpdate).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("waitlist action created %d notification records", count)
+	}
+}
+
+func TestWaitlistPromotionPreservesExistingNotificationHistory(t *testing.T) {
+	rs, ss, _ := newTestServices(t)
+	session := newSession(t, ss, newUser(t, "organiser").ID, 1)
+	users := newUsers(t, 7)
+	for _, user := range users {
+		rsvpIn(t, rs, session.ID, user.ID)
+	}
+	historical := models.Notification{UserID: users[6].ID, NotificationType: models.NotificationWaitlistUpdate, Title: "You're in!", Body: "Historical promotion", Data: `{"session_id":"` + session.ID.String() + `"}`}
+	if err := database.DB.Create(&historical).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := database.DB.First(&historical, "id = ?", historical.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := rs.DeleteRSVP(session.ID, users[0].ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := statusOf(t, rs, session.ID, users[6].ID); got.Status != models.RSVPStatusIn {
+		t.Fatalf("promotion failed: %s", got.Status)
+	}
+	var stored models.Notification
+	if err := database.DB.First(&stored, "id = ?", historical.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.Body != historical.Body || stored.Data != historical.Data || stored.Title != historical.Title || stored.NotificationType != historical.NotificationType {
+		t.Fatalf("history changed: %+v", stored)
+	}
+	var count int64
+	if err := database.DB.Model(&models.Notification{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("expected original history only, got %d notifications", count)
 	}
 }

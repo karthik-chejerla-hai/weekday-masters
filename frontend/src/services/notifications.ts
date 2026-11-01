@@ -1,11 +1,11 @@
 import { api, NotificationPreferences, Notification, PushTestResult } from './api';
 import {
-  requestNotificationPermission,
   onForegroundMessage,
   getNotificationPermission,
   isFirebaseConfigured
 } from './firebase';
 
+import { restorePushDevice, enablePushDevice, disablePushDevice, isPushDeviceDisabled } from './push-device';
 export type { NotificationPreferences, Notification };
 
 export const notificationService = {
@@ -23,31 +23,10 @@ export const notificationService = {
     return getNotificationPermission();
   },
 
-  // Enable push notifications
-  async enablePushNotifications(): Promise<boolean> {
-    try {
-      const token = await requestNotificationPermission();
-      if (!token) {
-        return false;
-      }
-
-      // Register token with backend
-      await api.registerPushToken(token);
-      return true;
-    } catch (error) {
-      console.error('Failed to enable push notifications:', error);
-      return false;
-    }
-  },
-
-  // Disable push notifications
-  async disablePushNotifications(): Promise<void> {
-    try {
-      await api.unregisterPushToken();
-    } catch (error) {
-      console.error('Failed to disable push notifications:', error);
-    }
-  },
+  restorePushNotifications(userID: string): Promise<boolean> { return restorePushDevice(userID); },
+  isDeviceDisabled(userID: string): boolean { return isPushDeviceDisabled(userID); },
+  enablePushNotifications(userID: string): Promise<boolean> { return enablePushDevice(userID); },
+  disablePushNotifications(userID: string): Promise<void> { return disablePushDevice(userID); },
 
   async sendTestPush(): Promise<PushTestResult> {
     return api.sendTestPush();
