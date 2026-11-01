@@ -39,6 +39,9 @@ func (s *LedgerService) CorrectAssetBalance(in BalanceCorrectionInput) (*models.
 	}
 	var result models.BalanceCorrection
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockFinancialTransactions(tx); err != nil {
+			return err
+		}
 		var actor models.User
 		if err := tx.First(&actor, "id = ?", in.CreatedBy).Error; err != nil {
 			return err

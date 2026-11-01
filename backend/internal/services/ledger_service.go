@@ -62,6 +62,9 @@ type PlayerBalance struct {
 func (s *LedgerService) Post(input PostInput) (*models.Transaction, error) {
 	var txn *models.Transaction
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockFinancialTransactions(tx); err != nil {
+			return err
+		}
 		var err error
 		txn, err = s.PostWithin(tx, input)
 		return err
@@ -86,6 +89,11 @@ func (s *LedgerService) PostWithin(tx *gorm.DB, input PostInput) (*models.Transa
 		input.OccurredAt = utils.NowInSydney()
 	}
 
+	// Defensive for callers that do not prelock application rows. Orchestration
+	// entry points must still acquire this before their session/original locks.
+	if err := lockFinancialTransactions(tx); err != nil {
+		return nil, err
+	}
 	if err := lockAccounts(tx, input.Movements); err != nil {
 		return nil, err
 	}
@@ -133,8 +141,9 @@ func (s *LedgerService) PostWithin(tx *gorm.DB, input PostInput) (*models.Transa
 }
 
 // lockFinancialTransactions excludes the importer's stronger table lock before
-// the caller holds user/session/original/account locks. Existing entry-point
-// adoption is tracked separately; acquiring this only after accounts is too late.
+// the caller holds user/session/original/account locks. Every financial
+// orchestration takes this first; PostWithin repeats it defensively for callers
+// without prelocks. Acquiring it only after application row locks is too late.
 func lockFinancialTransactions(tx *gorm.DB) error {
 	return tx.Exec("LOCK TABLE transactions IN ROW EXCLUSIVE MODE").Error
 }
@@ -587,6 +596,9 @@ func (s *LedgerService) ReverseTransaction(transactionID uuid.UUID, description 
 
 	var result *models.Transaction
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockFinancialTransactions(tx); err != nil {
+			return err
+		}
 		var err error
 		result, err = s.reverseTransactionWithin(tx, transactionID, description, createdBy)
 		return err
