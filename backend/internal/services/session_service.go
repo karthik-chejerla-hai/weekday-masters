@@ -261,7 +261,9 @@ func (s *SessionService) GetSessionByID(id uuid.UUID) (*models.Session, error) {
 	var session models.Session
 	if err := database.DB.Preload("RSVPs", func(db *gorm.DB) *gorm.DB {
 		return db.Order("rsvp_timestamp ASC")
-	}).Preload("RSVPs.User").Preload("Creator").
+	}).
+		Preload("GuestRSVPs", func(db *gorm.DB) *gorm.DB { return db.Order("rsvp_timestamp ASC, id ASC") }).
+		Preload("GuestRSVPs.ChargedToUser").Preload("RSVPs.User").Preload("Creator").
 		First(&session, "id = ?", id).Error; err != nil {
 		return nil, err
 	}
@@ -281,7 +283,8 @@ func (s *SessionService) ListUpcomingSessions() ([]models.Session, error) {
 		Preload("RSVPs", func(db *gorm.DB) *gorm.DB {
 			return db.Order("rsvp_timestamp ASC")
 		}).
-		Preload("RSVPs.User").
+		Preload("GuestRSVPs", func(db *gorm.DB) *gorm.DB { return db.Order("rsvp_timestamp ASC, id ASC") }).
+		Preload("GuestRSVPs.ChargedToUser").Preload("RSVPs.User").
 		Order("session_date ASC, start_time ASC").
 		Find(&sessions).Error; err != nil {
 		return nil, err
@@ -297,7 +300,7 @@ func (s *SessionService) ListCancelledUpcomingSessions() ([]models.Session, erro
 	today := utils.StartOfDay(now)
 
 	if err := database.DB.Where("(ends_at IS NULL OR ends_at >= ?) AND session_date >= ? AND status = ?", time.Now(), today, models.SessionStatusCancelled).
-		Preload("RSVPs").
+		Preload("RSVPs").Preload("GuestRSVPs.ChargedToUser").
 		Order("session_date ASC, start_time ASC").
 		Find(&sessions).Error; err != nil {
 		return nil, err
@@ -428,7 +431,11 @@ func (s *SessionService) DeleteSession(id uuid.UUID) error {
 		if err := tx.Model(&models.RSVP{}).Where("session_id = ?", id).Count(&rsvpCount).Error; err != nil {
 			return err
 		}
-		if rsvpCount > 0 {
+		var guestCount int64
+		if err := tx.Model(&models.GuestRSVP{}).Where("session_id = ?", id).Count(&guestCount).Error; err != nil {
+			return err
+		}
+		if rsvpCount+guestCount > 0 {
 			return errors.New("this session has RSVPs; use the cancel action to notify members")
 		}
 		return tx.Delete(&session).Error

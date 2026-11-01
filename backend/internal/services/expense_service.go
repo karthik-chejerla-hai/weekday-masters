@@ -54,6 +54,13 @@ func (s *ExpenseService) input(id uuid.UUID, in ExpenseInput, actor *models.User
 	if in.ShuttlesUsed == nil || *in.ShuttlesUsed < 0 || *in.ShuttlesUsed > 200 {
 		return SettleInput{}, ErrNotSettleable("Enter the actual shuttle count from 0 to 200.")
 	}
+	var guests int64
+	if err := database.DB.Model(&models.GuestRSVP{}).Where("session_id = ? AND status = ?", id, models.RSVPStatusIn).Count(&guests).Error; err != nil {
+		return SettleInput{}, err
+	}
+	if guests > 0 {
+		return SettleInput{}, ErrNotSettleable("This session has guests. Use the advanced settlement form to include their charges.")
+	}
 	base, extra := 2.0, float64(in.TotalHours-2)
 	result := SettleInput{SessionID: id, SettledBy: actor.ID, BaseHours: &base, ExtraHours: &extra, ActualShuttles: in.ShuttlesUsed, ExpectedPreview: in.ExpectedPreview}
 	ids := append([]uuid.UUID(nil), in.ParticipantIDs...)
@@ -176,7 +183,8 @@ func (s *ExpenseService) ListUnsettledSessions() ([]PastSessionView, error) {
 	items := []PastSessionView{}
 	err := scheduledSessionsWithSettlementStatus(database.DB).
 		Select(`s.id AS session_id,s.title,s.starts_at,s.ends_at,s.settled,
- 0 AS total_cents,(SELECT COUNT(*) FROM rsvps r WHERE r.session_id=s.id AND r.status='in') AS player_count`).
+ 0 AS total_cents,((SELECT COUNT(*) FROM rsvps r WHERE r.session_id=s.id AND r.status='in') +
+ (SELECT COUNT(*) FROM guest_rsvps g WHERE g.session_id=s.id AND g.status='in')) AS player_count`).
 		Where("s.ends_at < ? AND s.status != ? AND NOT s.settled", utils.NowInSydney(), models.SessionStatusCancelled).
 		Order("s.ends_at ASC,s.id ASC").Scan(&items).Error
 	return items, err

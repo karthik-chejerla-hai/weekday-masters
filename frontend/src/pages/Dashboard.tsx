@@ -99,12 +99,7 @@ export default function Dashboard() {
         </div>
       ) : (
         <section aria-labelledby="next-session-heading">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 id="next-session-heading" className="text-base font-semibold text-slate-950">{activeSession ? 'Current session' : 'Your next game'}</h2>
-            {!activeSession && <Link to={`/sessions/${nextSession.id}`} className="flex min-h-11 items-center gap-1 px-1 text-sm font-semibold text-primary-700 hover:text-primary-800">
-              Details <ArrowRight className="h-4 w-4" />
-            </Link>}
-          </div>
+          <h2 id="next-session-heading" className="mb-3 text-base font-semibold text-slate-950">{activeSession ? 'Current session' : 'Your next game'}</h2>
           <SessionCard currentUserId={user?.id} session={nextSession} venueName={club?.venue_name} courtNumber={club?.court_number} timeFormat={club?.time_format} featured recordScore={!!activeSession} />
         </section>
       )}

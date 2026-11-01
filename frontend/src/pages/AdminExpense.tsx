@@ -55,6 +55,12 @@ export default function AdminExpense() {
   };
   if (loading) return <div role="status" className="card p-8 flex justify-center"><Loader2 className="h-6 w-6 animate-spin" /><span className="sr-only">Loading expense form</span></div>;
 
+  if (session?.guest_rsvps?.some(guest => guest.status === 'in')) return <div className="mx-auto max-w-2xl space-y-5">
+    <h1 className="page-title">Record session expense</h1>
+    <p>This session includes guests. Use the advanced settlement form to include each guest and their paying member.</p>
+    <Link className="btn-primary" to={`/admin/sessions/${id}/settle`}>Open the advanced settlement form</Link>
+  </div>;
+
   return <div className="mx-auto max-w-2xl space-y-5">
     <div className="page-heading"><p className="page-kicker">After the game</p><h1 className="page-title">Record session expense</h1>
       {session && <p className="mt-2 text-sm text-slate-600">{session.title} · {formatInTimeZone(session.starts_at || session.session_date, 'Australia/Sydney', 'd MMM yyyy')}</p>}

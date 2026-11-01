@@ -1,6 +1,6 @@
 import { Hourglass } from 'lucide-react';
-import type { RSVP, RSVPStatus } from '../../types';
-import { displayName } from '../../utils/members';
+import type { PlayerResponse, RSVPStatus } from '../../types';
+import { isGuest, playerName } from '../../utils/player-responses';
 import Avatar from '../ui/Avatar';
 
 const statusOrder: RSVPStatus[] = ['in', 'maybe', 'out', 'waitlisted'];
@@ -11,7 +11,7 @@ const statusStyles: Record<RSVPStatus, { label: string; className: string }> = {
   waitlisted: { label: 'Waitlisted', className: 'border-amber-300 bg-amber-50' },
 };
 
-export default function PlayerRSVPChips({ rsvps }: { rsvps: RSVP[] }) {
+export default function PlayerRSVPChips({ rsvps }: { rsvps: PlayerResponse[] }) {
   if (rsvps.length === 0) {
     return <p className="text-sm text-slate-500">No RSVPs yet</p>;
   }
@@ -19,7 +19,8 @@ export default function PlayerRSVPChips({ rsvps }: { rsvps: RSVP[] }) {
   return (
     <ul aria-label="Player responses" className="flex flex-wrap gap-2">
       {statusOrder.flatMap(status => rsvps.filter(rsvp => rsvp.status === status)).map(rsvp => {
-        const name = displayName(rsvp.user) || 'Player';
+        const guest = isGuest(rsvp);
+        const name = playerName(rsvp) + (guest ? ' (Guest)' : '');
         const { label, className } = statusStyles[rsvp.status];
 
         return (
@@ -30,7 +31,7 @@ export default function PlayerRSVPChips({ rsvps }: { rsvps: RSVP[] }) {
             className={`flex max-w-full items-center gap-1.5 rounded-full border px-2 py-1 ${className}`}
           >
             <span aria-hidden="true" className="shrink-0">
-              <Avatar src={rsvp.user?.profile_picture} name={name} size="sm" />
+              <Avatar src={guest ? undefined : rsvp.user?.profile_picture} name={name} size="sm" />
             </span>
             <span className="max-w-[100px] truncate text-xs font-medium text-slate-700">{name}</span>
             {rsvp.status === 'waitlisted' && <Hourglass className="h-3.5 w-3.5 shrink-0 text-amber-600" aria-hidden="true" />}

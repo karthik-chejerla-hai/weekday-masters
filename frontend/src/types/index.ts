@@ -123,6 +123,7 @@ export interface Session {
   created_at: string;
   updated_at: string;
   rsvps?: RSVP[];
+  guest_rsvps?: GuestRSVP[];
   creator?: User;
 }
 
@@ -492,3 +493,18 @@ export interface GameComparison extends GameList {
   points_a: number;
   points_b: number;
 }
+
+export interface GuestRSVP {
+  id: string;
+  session_id: string;
+  guest_name: string;
+  charged_to_user_id: string;
+  charged_to_user?: User;
+  status: 'in' | 'out';
+  rsvp_timestamp: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type GuestRSVPInput = Pick<GuestRSVP, 'guest_name' | 'charged_to_user_id' | 'status'>;
+export type PlayerResponse = RSVP | GuestRSVP;

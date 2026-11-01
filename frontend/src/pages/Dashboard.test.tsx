@@ -74,6 +74,10 @@ describe('Dashboard page', () => {
     expect(screen.queryByText('Session Three')).not.toBeInTheDocument();
     expect(screen.queryByText('Session Four')).not.toBeInTheDocument();
     expect(screen.queryByText('Later sessions')).not.toBeInTheDocument();
+    const next = screen.getByRole('region', { name: 'Your next game' });
+    expect(within(next).getAllByRole('link')).toHaveLength(1);
+    expect(within(next).getByRole('link', { name: 'Session One, Sunday, 13 September 2026' })).toHaveAttribute('href', '/sessions/s1');
+    expect(screen.queryByText('Open session for details')).not.toBeInTheDocument();
     const future = screen.getByRole('region', { name: 'Future sessions' });
     expect(within(future).getAllByRole('article')).toHaveLength(1);
     expect(within(future).getByText('Session Two')).toBeInTheDocument();
