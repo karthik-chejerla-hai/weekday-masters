@@ -103,6 +103,13 @@ remain compatible. See research decisions 3–4; both must be tested, not assume
 
 PR numbers below are sequence labels, not assigned GitHub numbers.
 
+**Foundation refinement, 2026-11-02:** #104–#106 have merged and T007 is in PR #110.
+[foundation-work-packets.md](foundation-work-packets.md) now defines the executable
+T008–T014 scope as F001–F014. The “PR 2 foundation” entry below is the historical
+phase outline; it is superseded for delivery by one tested packet per PR, merged
+before starting the next dependent branch. It does not authorize a new stacked
+foundation PR. No runtime work is included in this planning refinement.
+
 1. **PR 1 — reversal safety:** merged #103. Complete; preserve its regression suite.
 2. **PR 2 — reviewed operation foundation:** MoneyOperation/migration, canonical
    preview/replay, common review DTO and locking integration; reviewed reversal
