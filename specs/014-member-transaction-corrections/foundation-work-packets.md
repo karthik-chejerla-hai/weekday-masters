@@ -109,10 +109,30 @@ survive. Exercise stale admin/self-profile editing too. Omitted fields remain
 unchanged. An admin email edit racing invite claiming must re-read the locked
 row and refuse changing provider-owned email after the claim wins. A failed
 account-name update rolls back a nickname/name edit so screen
-and account names remain consistent. Use targeted updates, validate field ownership from the current locked row, and
-re-read the returned user. The name/account synchronization
-transaction takes the existing financial table intent before any user/account
-write, so making these edits atomic cannot introduce an import/user/account cycle.
+and account names remain consistent. Use targeted updates, validate field ownership
+from the current locked row, and re-read the returned user.
+
+**Intermediate-release lock protocol (required before F005):** acquire financial
+table intent, then the target user FOR NO KEY UPDATE, then its existing player
+account FOR UPDATE before executing any user UPDATE in the atomic identity/name
+path. Only then update the intended user fields and account name. Updating unique
+email can implicitly upgrade the user tuple lock to FOR UPDATE; selecting NO KEY
+UPDATE initially does not prevent that upgrade. While waiting for the account,
+retain only NO KEY UPDATE so existing settlement can finish its ChargeLine user
+foreign-key check (FOR KEY SHARE) and release the account. Table intent excludes
+import but is compatible between ordinary writers and cannot break this cycle.
+Pending profiles without accounts retain cosmetic editing; a chargeable member
+missing its required account receives an actionable membership-repair error before
+any user UPDATE, rather than creating an account through the global DB handle.
+
+**Release regression:** on PostgreSQL 16, use an unclaimed invited member and the
+existing initial-settlement path, before F005's user locks exist. With barriers or
+observed lock waits, hold the member account in settlement, start an admin
+email-plus-nickname edit, then let settlement insert its ChargeLine. Assert both
+transactions finish within bounded timeouts without a deadlock, the new email,
+nickname and account name agree, and settlement postings/costs and the ledger
+invariant remain correct. The editor must wait for the account without already
+holding the upgraded user lock. A test that passes only after F005 is insufficient.
 
 **Exclude:** changing role/status policy or Auth0 invite adoption; those are F002.
 No role/status transitions, RSVP changes or API shape changes here. **Check:** service command with
@@ -136,13 +156,21 @@ then that guard, then user NO KEY UPDATE; count other approved admins through tx
 UpdateUserRole, role edits and RemoveMember must cooperate in this same release.
 Approval/rejection/reinstatement/adoption re-read rows and update intended fields
 only; preserve existing verified-email/admin-email promotion behavior and account
-creation. Do not let invite adoption Save a stale whole user.
+creation. Do not let invite adoption Save a stale whole user. Apply F001's
+intermediate-release protocol to invite adoption too: unique auth0_id updates can
+also upgrade the user lock. After table intent, any required advisory guard and
+user NO KEY UPDATE, lock the retained player account (or ensure it using caller
+tx under the user lock) before the key-changing user UPDATE. No global account
+creation or early auth0_id/email UPDATE while waiting for that account.
 
 **Acceptance:** two different approved admins concurrently demoted/removed through
 different entry points leave at least one; exactly one losing mutation is refused.
 Single-admin demotion is refused by UpdateUserRole too. A stale join decision
 cannot replace a newer approved/removed state. Preserve concurrent invite claiming
-and original ledger/account identity. No RSVP atomicity refactor yet.
+and original ledger/account identity. Add the corresponding bounded
+invite-claim-versus-existing-settlement regression on PostgreSQL 16, before F005,
+covering the auth0_id lock upgrade and retained account identity. No RSVP atomicity
+refactor yet.
 **Check:** F002 service tests plus existing registration/invitation/membership tests.
 
 <a id="f003"></a>

@@ -68,6 +68,23 @@ Profile/admin/registration writes update only intended fields so a stale Save ca
 restore old approval/role. User-key-share foreign-key access remains compatible
 with NO KEY UPDATE; do not upgrade removal to FOR UPDATE.
 
+Profile/identity writes need an additional intermediate-release rule before
+initial settlement adopts the user-first order in F005. Updating unique email or
+auth0_id implicitly upgrades the user tuple lock to FOR UPDATE, even after an
+initial NO KEY UPDATE selection. For atomic user/account-name edits and invite
+adoption, take table intent, any required last-admin guard, user NO KEY UPDATE,
+then the player account FOR UPDATE **before any user UPDATE in that path**.
+Only then change user keys/display fields and synchronize the account. Account
+ensure for membership/claim uses caller tx under the user lock; a chargeable
+profile missing its account requires explicit membership repair. Pending profiles
+without accounts can still edit cosmetic fields. Do not acquire an explicit user
+FOR UPDATE before the account. The compatible initial NO KEY UPDATE lets legacy
+settlement's ChargeLine foreign-key FOR KEY SHARE complete while the editor waits
+for its account; settlement can then commit and release it. Ordinary writers'
+table intent locks are compatible and provide no protection against this cycle.
+F001 and F002 must test email-plus-nickname editing and invite claiming against
+the pre-F005 settlement path on PostgreSQL 16; do not defer safety to F005.
+
 ## Stale review and races
 
 Preview: read-only REPEATABLE READ. Confirm: READ COMMITTED with the lock set above,

@@ -27,9 +27,25 @@ only after the independent T007 PR #110 and this planning refinement merge.
 
 The source audit preserves existing guest-payer safety rather than claiming it
 must be rebuilt. Initial settlement and normal RSVP locking land before the final
-atomic-removal slice. Profile/account-name writes acquire table intent before
-being combined into one transaction. New reviewed top-up/session routes ship with
+atomic-removal slice. Profile/account-name and invite-claim writes acquire table
+intent, compatible user NO KEY UPDATE and the player account before any
+key-changing user UPDATE; table intent alone does not prevent ordinary-writer
+deadlocks. New reviewed top-up/session routes ship with
 their matching legacy cutovers and typed client requests; no interim bypass.
+
+## PR #111 P2 correction
+
+The review identified an unsafe F001 intermediate release: changing unique email
+can upgrade the user lock while the transaction waits for an account held by
+settlement, whose ChargeLine foreign-key check then waits for that user. The
+reviewer's minimal SQL reproduction used PostgreSQL 14.24, not the full app or
+PostgreSQL 16. F001 now requires account locking before user updates and a bounded
+email-plus-nickname-versus-settlement regression on PostgreSQL 16 before F005.
+F002 applies the same rule and regression to invite claiming's unique auth0_id
+update. The shared locking contract records this ordering. Packet dependencies
+and completion markers remain unchanged. These runtime regressions are delivery
+requirements for the future implementation; they were not executed by this
+documentation-only correction.
 
 ## Documentation checks
 
