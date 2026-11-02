@@ -9,6 +9,17 @@ claims that every flow in a broad requirement is implemented. All original
 functional requirements remain acceptance targets. The baseline audit itself changed no application code. Subsequent PR 1 work is
 recorded separately below.
 
+## Financial lock-order increment — 2026-11-02
+
+PRs #104, #105 and #106 have merged. T007 is implemented on an independent
+`codex/financial-lock-order` branch from merged main, refreshed through #109.
+[financial-lock-order.md](financial-lock-order.md) records the caller audit and
+actual-lock regression: eight old financial paths failed before the change;
+all nine tested paths now wait at the import gate before taking application row
+locks. Full backend `go test -race ./...` passed again after integrating the
+new guest-RSVP and deployment changes. T008–T014 and the new financial UI remain
+pending; the next membership tests must retain the new guest-payer protections.
+
 ## Foundation protocol increment — 2026-10-26
 
 T004–T006 add service tests, strict bounded/canonical JSON and common review DTOs,

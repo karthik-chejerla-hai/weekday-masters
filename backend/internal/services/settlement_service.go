@@ -498,6 +498,9 @@ func (s *SettlementService) Settle(in SettleInput) (*models.Settlement, *Settlem
 	var preview *SettlementPreview
 
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockFinancialTransactions(tx); err != nil {
+			return err
+		}
 		var session models.Session
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			First(&session, "id = ?", in.SessionID).Error; err != nil {
@@ -735,6 +738,9 @@ func (s *SettlementService) ReverseSettlement(settlementID uuid.UUID, reason str
 
 	var result *models.Transaction
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockFinancialTransactions(tx); err != nil {
+			return err
+		}
 		var session models.Session
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&session, "id = ?", initial.SessionID).Error; err != nil {
 			return err

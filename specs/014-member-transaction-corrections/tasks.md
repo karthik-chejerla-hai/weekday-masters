@@ -14,14 +14,15 @@ Sequential T identifiers below are the executable work list; unchecked means unb
 
 ## Delivery checklist
 
-The T-series tasks below are the authoritative detailed checklist. **6 of 60
-complete; 54 pending.** Completed implementation is tracked separately from whether
+The T-series tasks below are the authoritative detailed checklist. **7 of 60
+complete; 53 pending.** Completed implementation is tracked separately from whether
 its PR has merged.
 
 - [x] Finish the design/contracts and task sequence (T001; PR #104).
 - [x] Add durable operation model/migration (T002–T003; PR #105).
-- [x] Add protocol regression tests, strict input/review DTOs and transaction runner (T004–T006; current increment).
-- [ ] Finish foundation integration: early locks on existing paths, membership/RSVP consistency, reviewed reversal services/routes and frontend API helpers (T007–T014).
+- [x] Add protocol regression tests, strict input/review DTOs and transaction runner (T004–T006; merged PR #106).
+- [x] Apply early financial table locks across existing write paths and audit callers (T007; standalone increment).
+- [ ] Finish foundation integration: membership/RSVP consistency, reviewed reversal services/routes and frontend API helpers (T008–T014).
 - [ ] Deliver top-up correction/reversal editor, review, history and refresh (T015–T024).
 - [ ] Deliver shared-expense entry, allocation, grouping and spend exclusion (T025–T036).
 - [ ] Deliver shared-expense correction/reversal and audit chains (T046–T051; after entry).
@@ -29,8 +30,10 @@ its PR has merged.
 - [ ] Complete cross-type history/filter/date/paging behavior (T052–T056; basic history ships with each feature).
 - [ ] Complete full regression, migration/rollout and desktop/mobile verification (T057–T060; test each increment throughout).
 
-**Next task:** T007 — apply the early financial table-lock protocol to existing
-posting/settlement/reversal/asset paths and audit all PostWithin callers.
+**Next packet:** F001 — profile field ownership with its required intermediate-release
+lock protocol and regression tests; see [foundation-work-packets.md](foundation-work-packets.md).
+T008–T014 remain the milestone rollups for F001–F014.
+T007 evidence: [financial-lock-order.md](financial-lock-order.md).
 T004–T006 are internal foundation only: no reviewed endpoint or new user-facing
 correction flow is exposed yet. Evidence: [foundation-protocol.md](foundation-protocol.md).
 
@@ -155,7 +158,7 @@ competing requests and membership/import contention produce the exact contract.
 - [x] T004 Write replay/hash/rollback/dual-reservation-original-lock contention tests in backend/internal/services/member_money_service_test.go, including identical retry after subsequent correction, request-ID reuse by another actor and removed/demoted actor refusal before replay disclosure.
 - [x] T005 Implement strict canonical input/digest/numeric helpers, duplicate JSON-key rejection and common DTO/errors in backend/internal/services/member_money_service.go and backend/internal/handlers/member_money.go; use contracts/operations.md bounds and exact same request replay.
 - [x] T006 Implement caller-tx reservation/replay/completion and table-intent helper in backend/internal/services/member_money_service.go and backend/internal/services/ledger_service.go; no pending reservation may commit and successful replay precedes stale-state checks.
-- [ ] T007 Apply early table intent before prelocks in backend/internal/services/ledger_service.go, settlement_service.go, asset_correction.go and balance_correction.go; audit splitwise_import_service.go and backend/cmd/seed callers without weakening import locks or audit guards.
+- [x] T007 Apply early table intent before prelocks in backend/internal/services/ledger_service.go, settlement_service.go, asset_correction.go and balance_correction.go; audit splitwise_import_service.go and backend/cmd/seed callers without weakening import locks or audit guards.
 
 T008–T014 are tracking rollups, not direct implementation handoffs. The execution
 checklist is [foundation-work-packets.md](foundation-work-packets.md): 14 bounded
