@@ -603,3 +603,61 @@ func foundationTrackWriter(t *testing.T, release func()) func() {
 	})
 	return func() { close(finished) }
 }
+
+func TestFoundationF001AdminBootstrapHasAccountBeforeNextLogin(t *testing.T) {
+	for _, failAccount := range []bool{false, true} {
+		label := "success"
+		if failAccount {
+			label = "account_failure"
+		}
+		t.Run(label, func(t *testing.T) {
+			requireDB(t)
+			us := NewUserService("bootstrap@example.com")
+			profile := &Auth0Profile{Sub: "google-oauth2|bootstrap", Email: "bootstrap@example.com", Name: "Bootstrap Admin", EmailVerified: true}
+			injected := errors.New("bootstrap account creation failed")
+			if failAccount {
+				callback := "foundation_f001_bootstrap_account_failure"
+				if err := database.DB.Callback().Create().Before("gorm:create").Register(callback, func(tx *gorm.DB) {
+					if tx.Statement.Table == "accounts" {
+						tx.AddError(injected)
+					}
+				}); err != nil {
+					t.Fatal(err)
+				}
+				defer database.DB.Callback().Create().Remove(callback)
+			}
+			user, isNew, err := us.RegisterUser(profile)
+			if failAccount {
+				if !errors.Is(err, injected) {
+					t.Fatalf("expected account failure, got %v", err)
+				}
+				var users, accounts int64
+				if err := database.DB.Model(&models.User{}).Where("auth0_id = ?", profile.Sub).Count(&users).Error; err != nil {
+					t.Fatal(err)
+				}
+				if err := database.DB.Model(&models.Account{}).Where("kind = ?", models.AccountKindPlayer).Count(&accounts).Error; err != nil {
+					t.Fatal(err)
+				}
+				if users != 0 || accounts != 0 {
+					t.Fatalf("bootstrap left partial membership: %d users, %d accounts", users, accounts)
+				}
+				return
+			}
+			if err != nil || !isNew || user == nil {
+				t.Fatalf("bootstrap failed: isNew=%v, err=%v", isNew, err)
+			}
+			if !user.IsAdmin() || !user.IsApproved() {
+				t.Fatalf("bootstrap promotion changed: %+v", user)
+			}
+			foundationAccountName(t, user.ID, "Bootstrap")
+			refreshed, err := us.SyncDisplayFields(user, "Returning Admin", "picture")
+			if err != nil {
+				t.Fatalf("next bootstrap login failed: %v", err)
+			}
+			if !refreshed.IsAdmin() || !refreshed.IsApproved() {
+				t.Fatal("next login lost admin membership")
+			}
+			foundationAccountName(t, user.ID, "Returning")
+		})
+	}
+}

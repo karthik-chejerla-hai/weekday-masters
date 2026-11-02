@@ -101,7 +101,29 @@ func (s *UserService) RegisterUser(profile *Auth0Profile) (*models.User, bool, e
 		user.MembershipStatus = models.MembershipApproved
 	}
 
-	if err := database.DB.Create(&user).Error; err != nil {
+	// The verified ADMIN_EMAIL bootstrap bypasses the ordinary approval path,
+	// so it must create the same chargeable membership before returning. Keep
+	// both rows atomic: a failed account create must not strand an approved
+	// admin whose next login is refused by the profile missing-account guard.
+	err = database.DB.Transaction(func(tx *gorm.DB) error {
+		if user.IsApproved() {
+			if err := lockFinancialTransactions(tx); err != nil {
+				return err
+			}
+		}
+		if err := tx.Create(&user).Error; err != nil {
+			return err
+		}
+		if user.IsApproved() {
+			// This user is new in this transaction; no existing account can need
+			// adopting or repairing. Other membership paths remain unchanged.
+			return tx.Create(&models.Account{
+				Kind: models.AccountKindPlayer, UserID: &user.ID, Name: user.DisplayName(),
+			}).Error
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, false, err
 	}
 

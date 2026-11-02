@@ -21,6 +21,12 @@ accounts can edit cosmetic fields; approved members missing their required accou
 receive an actionable repair error before their user fields change. Profile edits
 never create accounts through a second transaction.
 
+The new-user verified ADMIN_EMAIL bootstrap now creates its player account in
+the same transaction as its user. It bypasses ordinary approval, so without this
+narrow integration fix the new guard would block its next login. Account-creation
+failure rolls back the user too; pending registration still creates no account.
+Invite adoption and other role/status transitions remain F002.
+
 The shared HTTP fixture now creates accounts for approved members, matching the
 normal approval/invitation lifecycle. No endpoint, frontend, schema, settlement
 implementation or financial posting behavior changes.
@@ -48,6 +54,8 @@ The normal scratch harness supplied isolated package schemas and migrations.
 - `go test -race ./... -count=1 -v` passed for all backend packages. Database tests
   ran; only the existing optional private-export reconciliation test skipped for
   lack of its private input. No tests require production data or notifications.
+- Bootstrap registration, its next display refresh and rollback on injected
+  account creation failure have dedicated failing-then-passing regressions.
 - Financial import gating is tested for all three profile entry points with an
   observed lock wait and NOWAIT row probes. Worker/barrier cleanup is bounded.
 
