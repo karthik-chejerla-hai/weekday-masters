@@ -30,8 +30,10 @@ its PR has merged.
 - [ ] Complete cross-type history/filter/date/paging behavior (T052–T056; basic history ships with each feature).
 - [ ] Complete full regression, migration/rollout and desktop/mobile verification (T057–T060; test each increment throughout).
 
-**Next packet:** F001 — profile field ownership with its required intermediate-release
-lock protocol and regression tests; see [foundation-work-packets.md](foundation-work-packets.md).
+**Next packet:** F002 — serialized role/status changes and last-admin safety, after
+F001 merges. F001 implementation and local validation are complete; see
+[f001-profile-field-ownership.md](f001-profile-field-ownership.md) and the
+[packet checklist](foundation-work-packets.md).
 T008–T014 remain the milestone rollups for F001–F014.
 T007 evidence: [financial-lock-order.md](financial-lock-order.md).
 T004–T006 are internal foundation only: no reviewed endpoint or new user-facing
