@@ -30,8 +30,9 @@ its PR has merged.
 - [ ] Complete cross-type history/filter/date/paging behavior (T052–T056; basic history ships with each feature).
 - [ ] Complete full regression, migration/rollout and desktop/mobile verification (T057–T060; test each increment throughout).
 
-**Next task:** T008 — add membership/removal/new-RSVP/profile/last-admin
-concurrency and rollback tests, preserving the guest-payer safeguards now on main.
+**Next packet:** F001 — profile field ownership with its required intermediate-release
+lock protocol and regression tests; see [foundation-work-packets.md](foundation-work-packets.md).
+T008–T014 remain the milestone rollups for F001–F014.
 T007 evidence: [financial-lock-order.md](financial-lock-order.md).
 T004–T006 are internal foundation only: no reviewed endpoint or new user-facing
 correction flow is exposed yet. Evidence: [foundation-protocol.md](foundation-protocol.md).
@@ -158,13 +159,20 @@ competing requests and membership/import contention produce the exact contract.
 - [x] T005 Implement strict canonical input/digest/numeric helpers, duplicate JSON-key rejection and common DTO/errors in backend/internal/services/member_money_service.go and backend/internal/handlers/member_money.go; use contracts/operations.md bounds and exact same request replay.
 - [x] T006 Implement caller-tx reservation/replay/completion and table-intent helper in backend/internal/services/member_money_service.go and backend/internal/services/ledger_service.go; no pending reservation may commit and successful replay precedes stale-state checks.
 - [x] T007 Apply early table intent before prelocks in backend/internal/services/ledger_service.go, settlement_service.go, asset_correction.go and balance_correction.go; audit splitwise_import_service.go and backend/cmd/seed callers without weakening import locks or audit guards.
-- [ ] T008 Write membership/removal/new-RSVP/profile/last-admin concurrency and rollback tests in backend/internal/services/user_service_test.go and backend/internal/services/rsvp_service_test.go.
-- [ ] T009 Add sorted user SHARE locking and transaction-aware membership/removal with NO KEY UPDATE, last-admin predicate guard, targeted profile/role writes and after-commit promotion delivery in backend/internal/services/user_service.go; pass caller tx through cancellation helpers.
-- [ ] T010 Add tx-aware RSVP removal/promotion helpers and target-user approval locking before session in backend/internal/services/rsvp_service.go; adapt ordinary settlement participant discovery/revalidation before session in backend/internal/services/settlement_service.go.
-- [ ] T011 Extract transaction-scoped inverse/settlement undo helpers and implement reviewed top-up/native-session reversal previews/confirms in backend/internal/services/member_money_service.go, ledger_service.go and settlement_service.go; prelock complete account union, backdate only new reviewed inverses (assert exact original session timestamp too), suppress new notifications.
-- [ ] T012 Register approved-member transaction detail and approved-admin preview/confirm routes in backend/internal/handlers/member_money.go and backend/cmd/server/main.go; coordinate supported legacy reversal envelope dispatch and backend/internal/handlers/openapi.yaml in the same change.
-- [ ] T013 Add HTTP access/strict-input/unsupported-kind/legacy-bypass tests in backend/internal/handlers/member_money_test.go; extend backend/internal/services/reversal_safety_test.go with reviewed path and importer/account-lock race coverage.
-- [ ] T014 Add common reviewed DTO and API methods plus exact retry-payload state helpers in frontend/src/types/index.ts, frontend/src/services/api.ts and frontend/src/components/money/useMoneyOperation.ts; preserve current HTTP client and existing unrelated asset workflows.
+
+T008–T014 are tracking rollups, not direct implementation handoffs. The execution
+checklist is [foundation-work-packets.md](foundation-work-packets.md): 14 bounded
+packets with baseline, files, dependencies, acceptance cases, checks and exclusions.
+Each packet ships tests and implementation in one green PR. Existing IDs and all
+later T015–T060 descriptions remain stable; packet completion is counted separately.
+
+- [ ] T008 Complete the membership/concurrency acceptance tests in packets F001–F006 in backend/internal/services/user_service_test.go, rsvp_service_test.go, settlement_service_test.go and guest_payer_removal_test.go; see foundation-work-packets.md.
+- [ ] T009 Complete profile ownership, serialized role/status transitions and atomic removal in packets F001/F002/F006 in backend/internal/services/user_service.go and related RSVP helpers; see foundation-work-packets.md.
+- [ ] T010 Complete target-member RSVP locking, caller-tx release effects and initial-settlement membership discovery in packets F003/F004/F005 in backend/internal/services/rsvp_service.go and settlement_service.go; see foundation-work-packets.md.
+- [ ] T011 Complete caller-tx inverse extraction and reviewed top-up/session reversal services in packets F007/F008/F009 in backend/internal/services/ledger_service.go, settlement_service.go and member_money_service.go; see foundation-work-packets.md.
+- [ ] T012 Complete approved-member detail and the per-type reviewed/legacy HTTP releases in packets F010/F011/F012 in backend/internal/handlers/member_money.go, ledger.go, settlement.go, openapi.yaml and backend/cmd/server/main.go; see foundation-work-packets.md.
+- [ ] T013 Complete HTTP access/input/cutover tests with F011/F012 and the cross-route compatibility gate F013 in backend/internal/handlers/member_money_test.go and backend/internal/services/reversal_safety_test.go, financial_lock_order_test.go; see foundation-work-packets.md.
+- [ ] T014 Complete typed request/response API methods in F011/F012 and the exact-payload review/retry hook F014 in frontend/src/types/index.ts, services/api.ts and components/money/useMoneyOperation.ts with their tests; see foundation-work-packets.md.
 
 Gate: T002–T014 complete with scratch-DB race suite; existing asset/import tests
 pass. Shared kind is not enabled until its type dispatch and read path exist.
@@ -258,6 +266,14 @@ ship their essential history; this phase closes the full cross-type matrix.
 - [ ] T060 Update actual completion/evidence and operational behavior in specs/014-member-transaction-corrections/tasks.md, implementation-status.md and quickstart.md; only mark scope checks complete after corresponding tests pass.
 
 ## Dependencies, PR boundaries and independent increments
+
+**Foundation delivery update (2026-11-02):** the old “PR 2 foundation” heading is
+an architectural phase, not an instruction to accumulate one large PR. #104–#106
+are merged; T007 is implemented in PR #110. Merge #110 and the planning refinement,
+then branch each F001–F014 packet from main after its dependency PRs merge. Start
+with [F001](foundation-work-packets.md#f001), not the old all-at-once T008 test set.
+The packet checklist/dependency map supersedes the coarse T008→T009→T010 sequence.
+No implementation milestone or packet is marked done by this refinement.
 
 Execution graph: T001 → foundation T002–T014 → US1 T015–T024 → US2 T025–T036
 → US4 T046–T051. US3 T037–T045 depends on foundation and US1 review/history but
