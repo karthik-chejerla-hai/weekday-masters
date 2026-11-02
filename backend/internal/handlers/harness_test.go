@@ -235,6 +235,14 @@ func makeUser(t *testing.T, role models.UserRole, status models.MembershipStatus
 	if err := database.DB.Create(&user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
+	// Approval/invitation creates a player account in the application. Keep
+	// approved HTTP fixtures chargeable too; profile edits must not repair a
+	// deliberately inconsistent membership as a side effect.
+	if user.IsApproved() {
+		if _, err := services.NewLedgerService().EnsurePlayerAccount(user.ID, user.DisplayName()); err != nil {
+			t.Fatalf("failed to create member account: %v", err)
+		}
+	}
 	return &user
 }
 
