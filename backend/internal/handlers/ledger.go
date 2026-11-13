@@ -38,6 +38,8 @@ func (h *LedgerHandler) RegisterRoutes(protected *gin.RouterGroup) {
 
 	admin := protected.Group("/admin")
 	admin.Use(middleware.RequireAdmin())
+	admin.GET("/asset-purchases", middleware.RequireApproved(), h.ListAssetPurchases)
+	admin.POST("/asset-purchases/:id/correct", middleware.RequireApproved(), h.CorrectAssetPurchase)
 	admin.POST("/transactions/topup", h.RecordTopup)
 	admin.POST("/transactions/withdrawal", h.RecordWithdrawal)
 	admin.POST("/transactions/court-credit", h.RecordCourtCredit)
@@ -45,7 +47,7 @@ func (h *LedgerHandler) RegisterRoutes(protected *gin.RouterGroup) {
 	admin.GET("/balance-corrections", middleware.RequireApproved(), h.ListBalanceCorrections)
 	admin.POST("/transactions/shuttle-purchase", h.RecordShuttlePurchase)
 	admin.POST("/transactions/opening-balances", h.RecordOpeningBalances)
-	admin.POST("/transactions/:id/reverse", h.ReverseTransaction)
+	admin.POST("/transactions/:id/reverse", middleware.RequireApproved(), h.ReverseTransaction)
 	admin.GET("/position", h.GetPosition) // Compatibility with older clients.
 	admin.GET("/position/integrity", h.GetIntegrity)
 }

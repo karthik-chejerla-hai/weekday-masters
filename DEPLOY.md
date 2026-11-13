@@ -12,6 +12,35 @@ Deploy Rally to Google Cloud (free tier).
 └─────────────────┘     └─────────────────┘     └─────────────────┘
 ```
 
+## Production pipeline
+
+`ci.yml` runs backend tests, frontend checks and browser tests for every pull
+request and push to `main`. After all checks and the coverage report pass on
+`main`, its `build-backend` job builds and publishes the backend image to Artifact
+Registry with the commit SHA tag. PR runs do not publish production images or
+call the production deployment workflow.
+
+CI then calls `deploy.yml` with the build's immutable image digest. Deployment
+runs the migration binary from that image before deploying the same digest to
+Cloud Run. The backend deployment job does not compile source or push images.
+The frontend build and Firebase deployment still run after backend deployment.
+
+For a manual production run, dispatch **CI & Test Coverage** on `main`. It runs
+the checks before building and deploying. Dispatches on other branches run only
+the checks. `deploy.yml` has no independent push or manual trigger.
+
+To retry a failed deployment, use **Re-run failed jobs** on the original CI run.
+This keeps the successful build job and reuses its digest. **Re-run all jobs**
+also reruns the build. If registry retention has removed an old image, deployment
+fails instead of silently rebuilding; start a full CI run to publish it again.
+
+### Automatic production deployment
+
+Production environments have no required reviewers or wait timer. The existing
+`main` branch restrictions remain in place. A merge to `main` runs CI, builds the
+backend image, and deploys without a manual approval step. Failed checks still
+prevent deployment.
+
 ## Preview environments
 
 Every pull request gets its own Neon branch, created by `preview-deploy.yml` and
@@ -37,7 +66,7 @@ Hosting step went unnoticed — merged PRs kept serving a public preview until t
 Two things outlive it, and are handled by `infra-retention.yml` rather than at
 PR-close time:
 
-- **Artifact Registry images.** Every production and preview deploy pushes a
+- **Artifact Registry images.** Every production build and preview deploy pushes a
   commit-tagged image. An Artifact Registry cleanup policy, defined in
   `.github/artifact-registry-cleanup-policy.json` and applied by that workflow,
   retains the existing preview behavior: `pr-`-tagged images become eligible

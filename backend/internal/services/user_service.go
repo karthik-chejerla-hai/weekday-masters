@@ -11,6 +11,7 @@ import (
 	"github.com/weekday-masters/backend/internal/database"
 	"github.com/weekday-masters/backend/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // RSVPCanceller withdraws a member from a session. UserService needs it when
@@ -498,52 +499,64 @@ func (s *UserService) UpdateMemberDetails(userID uuid.UUID, input UpdateMemberIn
 // RemoveMember takes a member out of the club.
 //
 // The row survives — see models.MembershipRemoved for why — so this revokes
-// access rather than deleting a person. Two things have to be true first: the
-// club and the member must be square, because a removed member drops off the
-// balances list and an unsettled figure there would simply vanish from view; and
+// access rather than deleting a person. Guest payment obligations must be
+// reassigned before removal. The club and the member must be square, because
+// a removed member drops off the balances list and an unsettled figure there
+// would simply vanish from view; and
 // their spots in upcoming sessions have to be given back, because a player who
 // is no longer in the club will not be turning up to use them.
 func (s *UserService) RemoveMember(userID, actorID uuid.UUID) (*models.User, error) {
-	user, err := s.getMember(userID)
+	var user models.User
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		// NO KEY UPDATE blocks guest payer SHARE locks without blocking the
+		// foreign-key checks in the RSVP cancellation transactions below.
+		if err := tx.Clauses(clause.Locking{Strength: "NO KEY UPDATE"}).First(&user, "id = ?", userID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrMemberNotFound
+			}
+			return err
+		}
+		if user.ID == actorID {
+			return errors.New("you cannot remove yourself")
+		}
+		if user.MembershipStatus == models.MembershipRemoved {
+			return errors.New("member has already been removed")
+		}
+		if err := s.guardLastAdmin(&user, models.RolePending); err != nil {
+			return err
+		}
+
+		var guestCount int64
+		if err := tx.Model(&models.GuestRSVP{}).
+			Joins("JOIN sessions ON sessions.id = guest_rsvps.session_id").
+			Where("guest_rsvps.charged_to_user_id = ? AND guest_rsvps.status = ? AND sessions.status <> ?", user.ID, models.RSVPStatusIn, models.SessionStatusCancelled).
+			Where("NOT EXISTS (SELECT 1 FROM settlements WHERE settlements.session_id = sessions.id AND settlements.reversed_at IS NULL)").
+			Count(&guestCount).Error; err != nil {
+			return err
+		}
+		if guestCount > 0 {
+			return fmt.Errorf("%s pays for %d confirmed guest booking(s). Assign a replacement payer in those sessions before removing this member", user.DisplayName(), guestCount)
+		}
+		balance, err := NewLedgerService().BalanceOfUser(user.ID)
+		if err != nil {
+			return err
+		}
+		if balance != 0 {
+			return fmt.Errorf("%s still has a balance of %s — settle up (record a withdrawal or top-up) before removing them", user.DisplayName(), formatCentsForHumans(balance))
+		}
+		// Check guest obligations before releasing any of the member's places.
+		if err := s.cancelUpcomingRSVPs(user.ID); err != nil {
+			return err
+		}
+		user.MembershipStatus = models.MembershipRemoved
+		user.Role = models.RolePending
+		user.UpdatedAt = time.Now()
+		return tx.Save(&user).Error
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	if user.ID == actorID {
-		return nil, errors.New("you cannot remove yourself")
-	}
-	if user.MembershipStatus == models.MembershipRemoved {
-		return nil, errors.New("member has already been removed")
-	}
-	if err := s.guardLastAdmin(user, models.RolePending); err != nil {
-		return nil, err
-	}
-
-	balance, err := NewLedgerService().BalanceOfUser(user.ID)
-	if err != nil {
-		return nil, err
-	}
-	if balance != 0 {
-		return nil, fmt.Errorf(
-			"%s still has a balance of %s — settle up (record a withdrawal or top-up) before removing them",
-			user.DisplayName(), formatCentsForHumans(balance),
-		)
-	}
-
-	// Free the spots before flipping the status, so a failure here leaves the
-	// member in the club rather than half-removed with sessions still held.
-	if err := s.cancelUpcomingRSVPs(user.ID); err != nil {
-		return nil, err
-	}
-
-	user.MembershipStatus = models.MembershipRemoved
-	user.Role = models.RolePending
-	user.UpdatedAt = time.Now()
-	if err := database.DB.Save(user).Error; err != nil {
-		return nil, err
-	}
-
-	return user, nil
+	return &user, nil
 }
 
 // ReinstateMember puts a removed member back in the club. Their ledger history

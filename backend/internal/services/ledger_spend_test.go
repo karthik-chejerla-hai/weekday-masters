@@ -205,7 +205,7 @@ func TestPersonalSpendNativeGuestsReversalsAndReplacement(t *testing.T) {
 	check(host.ID, 0, 0)
 	replacement := settle()
 	check(host.ID, hostCharge, 1)
-	// The generic transaction reversal path does not mark the settlement row.
+	// Generic transaction reversal uses the same atomic settlement reversal path.
 	if _, err := f.ledger.ReverseTransaction(replacement.TransactionID, "correction", f.admin.ID); err != nil {
 		t.Fatal(err)
 	}

@@ -130,12 +130,15 @@ func newHarness(t *testing.T) *harness {
 		admin.DELETE("/sessions/:id", adminHandler.DeleteSession)
 		admin.POST("/sessions/:id/cancel", adminHandler.CancelSession)
 		admin.POST("/sessions/:id/rsvp/:userId", adminHandler.AddPlayerRSVP)
+		admin.POST("/sessions/:id/guests", middleware.RequireApproved(), middleware.RequireAdmin(), adminHandler.SaveGuestRSVP)
+		admin.PUT("/sessions/:id/guests/:guestId", middleware.RequireApproved(), middleware.RequireAdmin(), adminHandler.SaveGuestRSVP)
+		admin.DELETE("/sessions/:id/guests/:guestId", middleware.RequireApproved(), middleware.RequireAdmin(), adminHandler.DeleteGuestRSVP)
 		admin.PUT("/club", middleware.RequireApproved(), middleware.RequireAdmin(), adminHandler.UpdateClub)
 		admin.POST("/announcements", notificationHandler.SendAnnouncement)
 
 		admin.POST("/sessions/:id/settlement/preview", settlementHandler.PreviewSettlement)
 		admin.POST("/sessions/:id/settle", settlementHandler.SettleSession)
-		admin.POST("/settlements/:id/reverse", settlementHandler.ReverseSettlement)
+		admin.POST("/settlements/:id/reverse", middleware.RequireApproved(), middleware.RequireAdmin(), settlementHandler.ReverseSettlement)
 	}
 
 	h.router = r

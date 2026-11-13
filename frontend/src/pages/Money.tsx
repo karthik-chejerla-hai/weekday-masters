@@ -9,6 +9,7 @@ import TopupForm from '../components/money/TopupForm';
 import FormDisclosure from '../components/money/FormDisclosure';
 import PositionPanel from '../components/money/PositionPanel';
 import AssetPurchaseForms from '../components/money/AssetPurchaseForms';
+import AssetPurchaseHistory from '../components/money/AssetPurchaseHistory';
 import SpendAnalytics from '../components/money/SpendAnalytics';
 import type { ClubPosition, PlayerBalance } from '../types';
 
@@ -136,6 +137,7 @@ export default function Money() {
           {position && (isAdmin && !positionError && !position.assets_pending
             ? <AssetPurchaseForms position={position} revision={revision} onRecorded={load} />
             : <PositionPanel position={position} />)}
+          {isAdmin && position && !positionError && !position.assets_pending && <AssetPurchaseHistory revision={revision} onRecorded={load} />}
         </div>
       )}
     </div>
