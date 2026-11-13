@@ -156,7 +156,26 @@ export const getNotificationPermission = (): NotificationPermission | 'unsupport
 // Silent refresh never opens a permission prompt.
 export const getExistingPushToken = async (): Promise<string | null> => {
   if (getNotificationPermission() !== 'granted') return null;
-  return requestNotificationPermission();
+  if (!isFirebaseConfigured()) {
+    // A deployed page can lose its config while an older worker still receives
+    // push. Only confirmed local absence can bypass former-account cleanup.
+    if ('serviceWorker' in navigator) {
+      for (const registration of await navigator.serviceWorker.getRegistrations()) {
+        if (registration.pushManager && await registration.pushManager.getSubscription()) {
+          throw new Error('Restore push configuration to clean up the existing browser registration.');
+        }
+      }
+    }
+    return null;
+  }
+  const msg = await initializeMessaging();
+  if (!msg || !workerRegistration) throw new Error('Could not inspect the browser push registration.');
+  // Account switching must distinguish a failed lookup from confirmed absence.
+  // This path never requests permission and lets discovery failures be retried.
+  return getToken(msg, {
+    vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
+    serviceWorkerRegistration: workerRegistration,
+  });
 };
 export const deletePushToken = async (): Promise<void> => {
   const msg = await initializeMessaging();
