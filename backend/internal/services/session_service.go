@@ -129,6 +129,18 @@ func validateRecurringDeadline(deadline, startsAt time.Time) error {
 	return nil
 }
 
+// wallClock holds calendar fields in UTC, not an instant. Resolve them only
+// after calendar arithmetic so a Sydney clock gap cannot change the rule.
+func resolveRecurringDeadlineClock(wallClock time.Time) (time.Time, error) {
+	deadline := time.Date(wallClock.Year(), wallClock.Month(), wallClock.Day(),
+		wallClock.Hour(), wallClock.Minute(), wallClock.Second(), wallClock.Nanosecond(), utils.SydneyLocation)
+	const clockFormat = "2006-01-02T15:04:05"
+	if deadline.Format(clockFormat) != wallClock.Format(clockFormat) {
+		return time.Time{}, fmt.Errorf("%w: %s does not exist in Australia/Sydney. Choose another recurring deadline time", errRecurringDeadline, wallClock.Format(clockFormat))
+	}
+	return deadline, nil
+}
+
 // generateRecurringSessions creates recurring session instances
 func (s *SessionService) generateRecurringSessions(tx *gorm.DB, parent *models.Session, occurrences, defaultHours int) error {
 	if parent.RecurringDayOfWeek == nil {
@@ -180,11 +192,9 @@ func (s *SessionService) generateRecurringSessions(tx *gorm.DB, parent *models.S
 				childDateSyd := nextDate.In(utils.SydneyLocation)
 				wallClock := time.Date(childDateSyd.Year(), childDateSyd.Month(), childDateSyd.Day()-daysBefore,
 					deadlineHour, deadlineMin, deadlineSec, 0, time.UTC)
-				childDeadline = time.Date(wallClock.Year(), wallClock.Month(), wallClock.Day(),
-					deadlineHour, deadlineMin, deadlineSec, 0, utils.SydneyLocation)
-				const clockFormat = "2006-01-02T15:04:05"
-				if childDeadline.Format(clockFormat) != wallClock.Format(clockFormat) {
-					return fmt.Errorf("%w: %s does not exist in Australia/Sydney. Choose another recurring deadline time", errRecurringDeadline, wallClock.Format(clockFormat))
+				childDeadline, err = resolveRecurringDeadlineClock(wallClock)
+				if err != nil {
+					return err
 				}
 			}
 			if err := validateRecurringDeadline(childDeadline, startsAt); err != nil {
@@ -256,7 +266,9 @@ func (s *SessionService) GetSessionByID(id uuid.UUID) (*models.Session, error) {
 	var session models.Session
 	if err := database.DB.Preload("RSVPs", func(db *gorm.DB) *gorm.DB {
 		return db.Order("rsvp_timestamp ASC")
-	}).Preload("RSVPs.User").Preload("Creator").
+	}).
+		Preload("GuestRSVPs", func(db *gorm.DB) *gorm.DB { return db.Order("rsvp_timestamp ASC, id ASC") }).
+		Preload("GuestRSVPs.ChargedToUser").Preload("RSVPs.User").Preload("Creator").
 		First(&session, "id = ?", id).Error; err != nil {
 		return nil, err
 	}
@@ -276,7 +288,8 @@ func (s *SessionService) ListUpcomingSessions() ([]models.Session, error) {
 		Preload("RSVPs", func(db *gorm.DB) *gorm.DB {
 			return db.Order("rsvp_timestamp ASC")
 		}).
-		Preload("RSVPs.User").
+		Preload("GuestRSVPs", func(db *gorm.DB) *gorm.DB { return db.Order("rsvp_timestamp ASC, id ASC") }).
+		Preload("GuestRSVPs.ChargedToUser").Preload("RSVPs.User").
 		Order("session_date ASC, start_time ASC").
 		Find(&sessions).Error; err != nil {
 		return nil, err
@@ -292,7 +305,7 @@ func (s *SessionService) ListCancelledUpcomingSessions() ([]models.Session, erro
 	today := utils.StartOfDay(now)
 
 	if err := database.DB.Where("(ends_at IS NULL OR ends_at >= ?) AND session_date >= ? AND status = ?", time.Now(), today, models.SessionStatusCancelled).
-		Preload("RSVPs").
+		Preload("RSVPs").Preload("GuestRSVPs.ChargedToUser").
 		Order("session_date ASC, start_time ASC").
 		Find(&sessions).Error; err != nil {
 		return nil, err
@@ -343,7 +356,13 @@ func (s *SessionService) UpdateSession(id uuid.UUID, input UpdateSessionInput) (
 				oldCalendarDay := time.Date(oldDay.Year(), oldDay.Month(), oldDay.Day(), 0, 0, 0, 0, time.UTC)
 				newCalendarDay := time.Date(newDay.Year(), newDay.Month(), newDay.Day(), 0, 0, 0, 0, time.UTC)
 				days := int(newCalendarDay.Sub(oldCalendarDay).Hours() / 24)
-				shifted := session.RecurringRSVPDeadline.In(utils.SydneyLocation).AddDate(0, 0, days)
+				original := session.RecurringRSVPDeadline.In(utils.SydneyLocation)
+				wallClock := time.Date(original.Year(), original.Month(), original.Day()+days,
+					original.Hour(), original.Minute(), original.Second(), original.Nanosecond(), time.UTC)
+				shifted, err := resolveRecurringDeadlineClock(wallClock)
+				if err != nil {
+					return err
+				}
 				session.RecurringRSVPDeadline = &shifted
 			}
 			session.SessionDate = *input.SessionDate
@@ -417,7 +436,11 @@ func (s *SessionService) DeleteSession(id uuid.UUID) error {
 		if err := tx.Model(&models.RSVP{}).Where("session_id = ?", id).Count(&rsvpCount).Error; err != nil {
 			return err
 		}
-		if rsvpCount > 0 {
+		var guestCount int64
+		if err := tx.Model(&models.GuestRSVP{}).Where("session_id = ?", id).Count(&guestCount).Error; err != nil {
+			return err
+		}
+		if rsvpCount+guestCount > 0 {
 			return errors.New("this session has RSVPs; use the cancel action to notify members")
 		}
 		// A reminder scan may already have materialized stages and queued events

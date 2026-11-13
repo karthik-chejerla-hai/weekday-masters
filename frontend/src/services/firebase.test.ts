@@ -71,3 +71,44 @@ it('does not attach a late foreground listener after unmount', async () => {
   await initializeMessaging();
   expect(sdk.onMessage).not.toHaveBeenCalled();
 });
+
+it('does not mistake a failed silent token lookup for an absent registration', async () => {
+  Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: {
+    register: vi.fn(async () => ({ active: {} })),
+  } });
+  sdk.getToken.mockRejectedValueOnce(new Error('token lookup offline'));
+  const { getExistingPushToken } = await import('./firebase');
+  await expect(getExistingPushToken()).rejects.toThrow('token lookup offline');
+  expect(Notification.requestPermission).not.toHaveBeenCalled();
+});
+
+it('retains a retryable failure when silent worker initialization fails', async () => {
+  const register = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ active: {} });
+  Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: { register } });
+  const { getExistingPushToken } = await import('./firebase');
+  await expect(getExistingPushToken()).rejects.toThrow('Could not inspect');
+  expect(await getExistingPushToken()).toBe('device-token');
+  expect(Notification.requestPermission).not.toHaveBeenCalled();
+});
+
+it('allows a browser without push configuration to have no existing token', async () => {
+  vi.stubEnv('VITE_FIREBASE_API_KEY', '');
+  Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: {
+    getRegistrations: vi.fn(async () => [{ pushManager: { getSubscription: vi.fn(async () => null) } }]),
+  } });
+  const { getExistingPushToken } = await import('./firebase');
+  expect(await getExistingPushToken()).toBeNull();
+  expect(sdk.getToken).not.toHaveBeenCalled();
+  expect(Notification.requestPermission).not.toHaveBeenCalled();
+});
+
+it('does not infer absence from missing config when a browser subscription survives', async () => {
+  vi.stubEnv('VITE_FIREBASE_API_KEY', '');
+  Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: {
+    getRegistrations: vi.fn(async () => [{ pushManager: { getSubscription: vi.fn(async () => ({})) } }]),
+  } });
+  const { getExistingPushToken } = await import('./firebase');
+  await expect(getExistingPushToken()).rejects.toThrow('configuration');
+  expect(sdk.getToken).not.toHaveBeenCalled();
+  expect(Notification.requestPermission).not.toHaveBeenCalled();
+});

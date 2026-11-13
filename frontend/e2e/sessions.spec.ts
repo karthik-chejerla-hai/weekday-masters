@@ -22,7 +22,7 @@ for (const full of [false, true]) {
       await json(route, rsvp);
     });
     await page.goto('/dashboard');
-    await page.getByRole('link', { name: 'Details', exact: true }).click();
+    await page.getByRole('link', { name: 'Friday badminton, Friday, 16 October 2026' }).click();
     await expect(page.getByRole('heading', { name: 'Friday badminton' })).toBeVisible();
     await page.getByRole('button', { name: full ? 'Join Waitlist' : "I'm In", exact: true }).click();
     await expect(page.getByText(full ? "You're on the waitlist at position #2" : '1 / 6 players', { exact: true })).toBeVisible();
@@ -67,6 +67,10 @@ for (const path of ['/dashboard', '/sessions']) {
     await page.goto(path);
     const link = page.getByRole('link', { name: 'Friday badminton, Friday, 16 October 2026', exact: true });
     await expect(link).toBeVisible();
+    await expect(page.getByText('Open session for details')).toHaveCount(0);
+    if (path === '/dashboard') {
+      await expect(page.getByRole('link', { name: 'Details', exact: true })).toHaveCount(0);
+    }
     // Tab through the actual page to prove the card participates in tab order.
     for (let i = 0; i < 30 && !(await link.evaluate(el => el === document.activeElement)); i++) {
       await page.keyboard.press('Tab');

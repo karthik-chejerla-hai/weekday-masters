@@ -12,6 +12,35 @@ Deploy Rally to Google Cloud (free tier).
 └─────────────────┘     └─────────────────┘     └─────────────────┘
 ```
 
+## Production pipeline
+
+`ci.yml` runs backend tests, frontend checks and browser tests for every pull
+request and push to `main`. After all checks and the coverage report pass on
+`main`, its `build-backend` job builds and publishes the backend image to Artifact
+Registry with the commit SHA tag. PR runs do not publish production images or
+call the production deployment workflow.
+
+CI then calls `deploy.yml` with the build's immutable image digest. Deployment
+runs the migration binary from that image before deploying the same digest to
+Cloud Run. The backend deployment job does not compile source or push images.
+The frontend build and Firebase deployment still run after backend deployment.
+
+For a manual production run, dispatch **CI & Test Coverage** on `main`. It runs
+the checks before building and deploying. Dispatches on other branches run only
+the checks. `deploy.yml` has no independent push or manual trigger.
+
+To retry a failed deployment, use **Re-run failed jobs** on the original CI run.
+This keeps the successful build job and reuses its digest. **Re-run all jobs**
+also reruns the build. If registry retention has removed an old image, deployment
+fails instead of silently rebuilding; start a full CI run to publish it again.
+
+### Automatic production deployment
+
+Production environments have no required reviewers or wait timer. The existing
+`main` branch restrictions remain in place. A merge to `main` runs CI, builds the
+backend image, and deploys without a manual approval step. Failed checks still
+prevent deployment.
+
 ## Preview environments
 
 Every pull request gets its own Neon branch, created by `preview-deploy.yml` and
@@ -37,7 +66,7 @@ Hosting step went unnoticed — merged PRs kept serving a public preview until t
 Two things outlive it, and are handled by `infra-retention.yml` rather than at
 PR-close time:
 
-- **Artifact Registry images.** Every production and preview deploy pushes a
+- **Artifact Registry images.** Every production build and preview deploy pushes a
   commit-tagged image. An Artifact Registry cleanup policy, defined in
   `.github/artifact-registry-cleanup-policy.json` and applied by that workflow,
   retains the existing preview behavior: `pr-`-tagged images become eligible
@@ -116,9 +145,15 @@ cd backend
 gcloud run deploy rally-api \
   --source . \
   --region australia-southeast1 \
+  --cpu-throttling \
+  --min 0 \
+  --min-instances 0 \
   --allow-unauthenticated \
-  --set-env-vars "GIN_MODE=release" \
-  --set-env-vars "TIMEZONE=Australia/Sydney"
+  --update-env-vars "GIN_MODE=release" \
+  --update-env-vars "TIMEZONE=Australia/Sydney" \
+  --update-env-vars "OTEL_ENABLED=false" \
+  --remove-env-vars "OTEL_SERVICE_NAME,OTEL_RESOURCE_ATTRIBUTES,OTEL_EXPORTER_OTLP_ENDPOINT,OTEL_EXPORTER_OTLP_TIMEOUT,OTEL_METRIC_EXPORT_INTERVAL" \
+  --remove-secrets "OTEL_EXPORTER_OTLP_HEADERS"
 ```
 
 ### 2.2 Set Environment Variables
@@ -129,11 +164,17 @@ After initial deployment, set secrets:
 # Set environment variables (replace with your values)
 gcloud run services update rally-api \
   --region australia-southeast1 \
-  --set-env-vars "DATABASE_URL=postgresql://user:pass@ep-xxx.neon.tech/dbname?sslmode=require" \
-  --set-env-vars "AUTH0_DOMAIN=your-tenant.auth0.com" \
-  --set-env-vars "AUTH0_AUDIENCE=https://your-api-identifier" \
-  --set-env-vars "ADMIN_EMAIL=admin@example.com" \
-  --set-env-vars "FRONTEND_URL=https://your-project.web.app"
+  --cpu-throttling \
+  --min 0 \
+  --min-instances 0 \
+  --update-env-vars "DATABASE_URL=postgresql://user:pass@ep-xxx.neon.tech/dbname?sslmode=require" \
+  --update-env-vars "AUTH0_DOMAIN=your-tenant.auth0.com" \
+  --update-env-vars "AUTH0_AUDIENCE=https://your-api-identifier" \
+  --update-env-vars "ADMIN_EMAIL=admin@example.com" \
+  --update-env-vars "FRONTEND_URL=https://your-project.web.app" \
+  --update-env-vars "OTEL_ENABLED=false" \
+  --remove-env-vars "OTEL_SERVICE_NAME,OTEL_RESOURCE_ATTRIBUTES,OTEL_EXPORTER_OTLP_ENDPOINT,OTEL_EXPORTER_OTLP_TIMEOUT,OTEL_METRIC_EXPORT_INTERVAL" \
+  --remove-secrets "OTEL_EXPORTER_OTLP_HEADERS"
 ```
 
 ### 2.3 Get Backend URL
@@ -332,12 +373,14 @@ alone does not prove a token is registered or a notification reached the device.
 there are no tokens or all devices fail. No live notifications were sent during
 local verification.
 
-## Grafana Cloud observability
+## Production logging and metrics
 
-See [OBSERVABILITY.md](OBSERVABILITY.md) for backend OTLP logs and metrics,
-Secret Manager credentials, GitHub deployment variables and Grafana verification.
-Export is disabled by default. Enabling it in production also selects
-instance-based Cloud Run billing to support background telemetry export.
+Production and preview deployments keep the OTLP exporter disabled, use
+request-based Cloud Run billing, and scale to zero. Use Google Cloud Logs
+Explorer and Cloud Run / Cloud Monitoring for operational visibility. See
+[OBSERVABILITY.md](OBSERVABILITY.md) for queries, cost notes, rollout checks and
+rollback guidance. Background reminder timing is an accepted interim tradeoff
+under request-based billing and is tracked in issue #99.
 
 ## Private notification worker
 

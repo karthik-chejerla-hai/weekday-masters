@@ -13,6 +13,7 @@ export function notificationDestination(data: Record<string, string> = {}): stri
     const settlement = split && uuid.test(data.settlement_id || '') ? `?settlement_id=${data.settlement_id}` : '';
     return `/sessions/${data.session_id}${split ? '/settlement' : ''}${settlement}`;
   }
+  if (data.type === 'push_test') return '/dashboard';
   if (['balance_low', 'balance_negative'].includes(data.type)) return '/money';
   if (uuid.test(data.notification_id || '')) return `/notifications/${data.notification_id}`;
   return '/notifications';

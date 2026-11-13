@@ -38,6 +38,7 @@ to specific conditions rather than matching on message text:
 | `shuttle_stock_short` | 422 | Settlement needs more shuttles than stock holds. `details` carries `required_units`, `available_units`. Drives the inline purchase prompt. |
 | `session_already_settled` | 409 | A live settlement exists. Reverse it first. |
 | `transaction_already_reversed` | 409 | That transaction has already been reversed. |
+| `reversal_not_allowed` | 422 | A reversal transaction cannot itself be reversed. |
 | `invariant_violated` | 500 | The club-position identity failed; the transaction was rolled back and nothing was written. Should never surface. |
 | `not_settleable` | 422 | The session is cancelled, or has not yet finished. |
 

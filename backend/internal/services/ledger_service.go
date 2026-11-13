@@ -39,6 +39,10 @@ type PostInput struct {
 	Kind                  models.TransactionKind
 	SessionID             *uuid.UUID
 	ReversesTransactionID *uuid.UUID
+	CorrectsTransactionID *uuid.UUID
+	CorrectionReason      string
+	MoneyOperationID      *uuid.UUID
+	OperationStep         *int16
 	Description           string
 	OccurredAt            time.Time
 	CreatedBy             uuid.UUID
@@ -58,6 +62,9 @@ type PlayerBalance struct {
 func (s *LedgerService) Post(input PostInput) (*models.Transaction, error) {
 	var txn *models.Transaction
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockFinancialTransactions(tx); err != nil {
+			return err
+		}
 		var err error
 		txn, err = s.PostWithin(tx, input)
 		return err
@@ -82,6 +89,11 @@ func (s *LedgerService) PostWithin(tx *gorm.DB, input PostInput) (*models.Transa
 		input.OccurredAt = utils.NowInSydney()
 	}
 
+	// Defensive for callers that do not prelock application rows. Orchestration
+	// entry points must still acquire this before their session/original locks.
+	if err := lockFinancialTransactions(tx); err != nil {
+		return nil, err
+	}
 	if err := lockAccounts(tx, input.Movements); err != nil {
 		return nil, err
 	}
@@ -90,6 +102,10 @@ func (s *LedgerService) PostWithin(tx *gorm.DB, input PostInput) (*models.Transa
 		Kind:                  input.Kind,
 		SessionID:             input.SessionID,
 		ReversesTransactionID: input.ReversesTransactionID,
+		CorrectsTransactionID: input.CorrectsTransactionID,
+		CorrectionReason:      input.CorrectionReason,
+		MoneyOperationID:      input.MoneyOperationID,
+		OperationStep:         input.OperationStep,
 		Description:           input.Description,
 		OccurredAt:            input.OccurredAt,
 		CreatedBy:             input.CreatedBy,
@@ -122,6 +138,14 @@ func (s *LedgerService) PostWithin(tx *gorm.DB, input PostInput) (*models.Transa
 	}
 
 	return &txn, nil
+}
+
+// lockFinancialTransactions excludes the importer's stronger table lock before
+// the caller holds user/session/original/account locks. Every financial
+// orchestration takes this first; PostWithin repeats it defensively for callers
+// without prelocks. Acquiring it only after application row locks is too late.
+func lockFinancialTransactions(tx *gorm.DB) error {
+	return tx.Exec("LOCK TABLE transactions IN ROW EXCLUSIVE MODE").Error
 }
 
 // lockAccounts takes row locks on every account a transaction touches, in a
@@ -551,32 +575,52 @@ func (s *LedgerService) RecordOpeningBalances(in OpeningBalancesInput) (*models.
 //
 // Negation is correct by construction: if the original balanced, so does its
 // mirror image, which means a reversal can never fail the invariant check. It
-// also means reversal needs to understand nothing about what the original meant
-// — only what it moved. Balances unwind correctly even if the members involved
-// have transacted since, because entries accumulate rather than snapshot.
+// also means the inverse needs only the original movements. Session reversals
+// additionally coordinate settlement state through SettlementService. Balances
+// unwind correctly even if the members involved have transacted since, because
+// entries accumulate rather than snapshot.
 func (s *LedgerService) ReverseTransaction(transactionID uuid.UUID, description string, createdBy uuid.UUID) (*models.Transaction, error) {
+	// Transaction identity/kind is immutable. Discover session transactions before
+	// locking anything: settlement and reversal must both lock the session first.
 	var original models.Transaction
-	if err := database.DB.First(&original, "id = ?", transactionID).Error; err != nil {
+	if err := database.DB.Select("id", "kind").First(&original, "id = ?", transactionID).Error; err != nil {
 		return nil, err
 	}
 	if original.Kind == models.TxnSessionSettlement {
-		return nil, newLedgerError("settlement_reversal_required", 409, "Reverse this session split using its settlement controls.")
+		var settlement models.Settlement
+		if err := database.DB.Where("transaction_id = ?", transactionID).First(&settlement).Error; err != nil {
+			return nil, err
+		}
+		return NewSettlementService(s).ReverseSettlement(settlement.ID, description, createdBy)
 	}
+
 	var result *models.Transaction
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockFinancialTransactions(tx); err != nil {
+			return err
+		}
 		var err error
-		result, err = s.ReverseTransactionWithin(tx, transactionID, description, createdBy)
+		result, err = s.reverseTransactionWithin(tx, transactionID, description, createdBy)
 		return err
 	})
-	return result, err
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
-// ReverseTransactionWithin keeps account locks, invariant checks and an origin's
-// related history/state changes inside one transaction.
-func (s *LedgerService) ReverseTransactionWithin(tx *gorm.DB, transactionID uuid.UUID, description string, createdBy uuid.UUID) (*models.Transaction, error) {
+// reverseTransactionWithin appends an exact inverse in the caller's transaction.
+// For a session transaction, only settlement orchestration may call this, with
+// the session and settlement already locked. Lock order is session -> settlement
+// -> original transaction -> affected accounts in ID order. Settle shares the
+// session-first order; asset purchase correction also locks its original before accounts.
+func (s *LedgerService) reverseTransactionWithin(tx *gorm.DB, transactionID uuid.UUID, description string, createdBy uuid.UUID) (*models.Transaction, error) {
 	var original models.Transaction
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Preload("Entries").First(&original, "id = ?", transactionID).Error; err != nil {
 		return nil, err
+	}
+	if original.Kind == models.TxnReversal {
+		return nil, newLedgerError(CodeReversalNotAllowed, 422, "A reversal cannot be reversed. Record a new transaction instead.")
 	}
 	if original.Kind == models.TxnSplitwiseImport || original.Kind == models.TxnImportAssets {
 		return nil, errors.New("imported history requires a reviewed correction, not an individual reversal")
@@ -606,7 +650,6 @@ func (s *LedgerService) ReverseTransactionWithin(tx *gorm.DB, transactionID uuid
 	if len(movements) == 0 {
 		return nil, errors.New("ledger: nothing to reverse")
 	}
-
 	if description == "" {
 		description = "Reversal of " + string(original.Kind)
 	}

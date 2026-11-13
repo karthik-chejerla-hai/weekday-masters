@@ -3,7 +3,7 @@ import { deletePushToken, getExistingPushToken, requestNotificationPermission } 
 
 const key = 'rally:push-installation:v2';
 const snapshots = new WeakMap<object, string>();
-type LocalDevice = { owner: string; installation: string; secret: string; device?: PushEnrollment; disabled: boolean; operationID?: string; cleanupPending?: boolean; cleanupIntent?: string; cleanupGeneration?: number; registrationAttempted?: boolean; legacyCleanupToken?: string };
+type LocalDevice = { owner: string; installation: string; secret: string; device?: PushEnrollment; disabled: boolean; operationID?: string; cleanupPending?: boolean; cleanupIntent?: string; cleanupGeneration?: number; registrationAttempted?: boolean; legacyCleanupToken?: string; legacyCheckPending?: boolean };
 function read(): LocalDevice | null {
   const raw = window.localStorage.getItem(key);
   if (!raw) return null;
@@ -64,6 +64,15 @@ async function cleanupLegacy(local: LocalDevice) {
  if (result.cleanup_required) { await deletePushToken(); currentOperation(local); }
  local.legacyCleanupToken = undefined; write(local);
 }
+async function discoverLegacy(local: LocalDevice) {
+ const token = local.legacyCleanupToken || await getExistingPushToken();
+ currentOperation(local);
+ if (token) {
+  local.legacyCleanupToken = token; write(local);
+  await cleanupLegacy(local);
+ }
+ local.legacyCheckPending = false; write(local);
+}
 async function cleanup(local: LocalDevice, owned = false) {
  if (!local.cleanupIntent) { local.cleanupIntent = crypto.randomUUID(); write(local); }
  const intent = local.cleanupIntent;
@@ -105,7 +114,7 @@ export function preparePushAccount(owner: string): Promise<void> {
  return serial(async () => {
   const local = read();
   if (local && local.owner === owner) {
-   if (local.legacyCleanupToken) await cleanupLegacy(beginOperation(local));
+   if (local.legacyCheckPending || local.legacyCleanupToken) await discoverLegacy(beginOperation(local));
    return;
   }
   if (local) {
@@ -113,10 +122,8 @@ export function preparePushAccount(owner: string): Promise<void> {
   }
   // Claim the absent local state before waiting for Firebase; another tab's
   // later identity or cleanup action must fence this sign-in's response.
-  const recovery=identity(owner);saveNewIdentity(recovery);
-  const token=await getExistingPushToken();currentOperation(recovery);
-  if (!token) return;
-  recovery.legacyCleanupToken=token;write(recovery);await cleanupLegacy(recovery);
+  const recovery={...identity(owner),legacyCheckPending:true};saveNewIdentity(recovery);
+  await discoverLegacy(recovery);
  });
 }
 async function ownedLocal(owner: string): Promise<LocalDevice> {
