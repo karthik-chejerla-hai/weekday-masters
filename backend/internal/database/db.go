@@ -46,12 +46,18 @@ func Migrate() error {
 		}
 	}
 
+	// The operation sequence must exist before AutoMigrate creates its default.
+	// Its cyclic transaction FKs are added only after both tables exist.
+	if err := prepareMemberMoneyMigration(DB); err != nil {
+		return err
+	}
 	err := DB.AutoMigrate(
 		&models.Club{},
 		&models.User{},
 		&models.InvitationDelivery{},
 		&models.Session{},
 		&models.RSVP{},
+		&models.GuestRSVP{},
 		&models.GameResult{},
 		&models.GameRevision{},
 		// Notification models
@@ -61,6 +67,7 @@ func Migrate() error {
 		&models.Announcement{},
 		// Ledger models
 		&models.Account{},
+		&models.MoneyOperation{},
 		&models.Transaction{},
 		&models.LedgerEntry{},
 		&models.BalanceCorrection{},
@@ -85,6 +92,9 @@ func Migrate() error {
 	}
 
 	if err := applyLedgerConstraints(); err != nil {
+		return err
+	}
+	if err := applyMemberMoneyConstraints(DB); err != nil {
 		return err
 	}
 

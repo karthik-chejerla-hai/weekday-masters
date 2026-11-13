@@ -88,6 +88,18 @@ it('first login retires an unadopted foreign legacy token without transferring i
  vi.mocked(api.revokeForeignLegacyToken).mockResolvedValue({cleanup_required:true});await preparePushAccount('other');
  expect(api.revokeForeignLegacyToken).toHaveBeenCalledWith('token');expect(deletePushToken).toHaveBeenCalledOnce();expect(api.enrollPushDevice).not.toHaveBeenCalled();
 });
+it('retries failed first-login legacy discovery before completing same-account sign-in', async () => {
+ vi.mocked(getExistingPushToken).mockRejectedValueOnce(new Error('lookup failed')).mockResolvedValueOnce('former-token');
+ vi.mocked(api.revokeForeignLegacyToken).mockResolvedValue({cleanup_required:true});
+ await expect(preparePushAccount('new-member')).rejects.toThrow('lookup failed');
+ const pending=JSON.parse(values.get('rally:push-installation:v2')!);
+ expect(pending.legacyCheckPending).toBe(true);expect(api.revokeForeignLegacyToken).not.toHaveBeenCalled();
+ await preparePushAccount('new-member');
+ expect(api.revokeForeignLegacyToken).toHaveBeenCalledWith('former-token');expect(deletePushToken).toHaveBeenCalledOnce();
+ const complete=JSON.parse(values.get('rally:push-installation:v2')!);
+ expect(complete.installation).toBe(pending.installation);expect(complete.legacyCheckPending).toBe(false);
+ expect(complete.legacyCleanupToken).toBeUndefined();
+});
 it('first login preserves same-owner legacy token for silent adoption', async () => {
  vi.mocked(api.revokeForeignLegacyToken).mockResolvedValue({cleanup_required:false});await preparePushAccount('member');expect(deletePushToken).not.toHaveBeenCalled();
  vi.mocked(api.getPushDevices).mockResolvedValue([]);vi.mocked(api.adoptPushDevice).mockImplementation(async input=>({...device,installation_id:input.installation_id}));

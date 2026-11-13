@@ -1100,6 +1100,91 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /admin/sessions/{id}/guests:
+    post:
+      tags: ["Admin: Sessions"]
+      summary: Create a named guest RSVP
+      description: Admin-only. Requires an upcoming open session and an approved paying member. IN guests use a vacant place. OUT releases it to the waiting list.
+      operationId: createGuestRSVP
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuestRSVPInput"
+      responses:
+        "200":
+          description: Saved guest RSVP
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestRSVP"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/sessions/{id}/guests/{guestId}:
+    put:
+      tags: ["Admin: Sessions"]
+      summary: Update a named guest RSVP
+      description: Admin-only. Requires an upcoming open session and an approved paying member. IN guests use a vacant place. OUT releases it to the waiting list.
+      operationId: updateGuestRSVP
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - name: guestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuestRSVPInput"
+      responses:
+        "200":
+          description: Saved guest RSVP
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestRSVP"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+    delete:
+      tags: ["Admin: Sessions"]
+      summary: Remove a guest RSVP completely
+      description: Admin-only. Requires an upcoming open session with no settlement history. Removing an IN guest frees their place and promotes the first waiting member. No money moves.
+      operationId: deleteGuestRSVP
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - name: guestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Guest RSVP removed
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /admin/club:
     put:
       tags: ["Admin: Club"]
@@ -1464,6 +1549,76 @@ paths:
                   total: { type: integer }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /admin/asset-purchases:
+    get:
+      tags: [Ledger]
+      summary: Page shuttle and court-credit purchases (approved admins only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: query, name: limit, schema: { type: integer, default: 50, minimum: 1, maximum: 200 } }
+        - { in: query, name: offset, schema: { type: integer, default: 0, minimum: 0 } }
+      responses:
+        "200":
+          description: Purchases ordered by purchase date then recording time, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      allOf:
+                        - { $ref: "#/components/schemas/Transaction" }
+                        - type: object
+                          properties:
+                            amount_cents: { type: integer, format: int64 }
+                            units: { type: integer }
+                            reversed: { type: boolean }
+                            actor_name: { type: string }
+                  total: { type: integer }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /admin/asset-purchases/{id}/correct:
+    post:
+      tags: [Ledger]
+      summary: Correct a shuttle or court-credit purchase (approved admins only)
+      description: >
+        Atomically append an exact reversal and replacement linked to the original.
+        Retain its purchase date and all existing entries. A nonblank reason is required.
+        Identical submissions by the same admin return the existing replacement;
+        conflicting corrections and already reversed purchases return 409.
+        Invalid resulting shuttle stock is rejected. Settled member charges are retained.
+        Use balance-corrections for a verified bank or court balance instead.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount_cents, reason]
+              properties:
+                amount_cents: { type: integer, format: int64, minimum: 1, maximum: 4503599627370495 }
+                units:
+                  type: integer
+                  minimum: 0
+                  maximum: 2147483647
+                  description: Positive shuttle count for shuttle purchases; zero for court credit.
+                reason: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        "200":
+          description: Replacement transaction, also returned for an identical retry
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transaction" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: Purchase not found }
+        "409": { description: Conflicting correction, reversed purchase, invalid stock or pending imported assets }
+
   /admin/transactions/court-credit:
     post:
       tags: [Ledger]
@@ -1538,7 +1693,9 @@ paths:
       description: >
         Posts the exact negation of the original. This is the only way to undo
         anything — there is deliberately no edit or delete endpoint, and both the
-        original and its reversal stay visible.
+        original and its reversal stay visible. Approved admins only. Session charges
+        use the same atomic reversal as the settlement endpoint: ledger effects and
+        settlement status commit together. Reversal transactions cannot be reversed.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -1553,6 +1710,11 @@ paths:
       responses:
         "201":
           $ref: "#/components/responses/TransactionCreated"
+        "422":
+          description: Reversing a reversal is forbidden (reversal_not_allowed).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LedgerError" }
         "409":
           $ref: "#/components/responses/LedgerConflict"
         "403":
@@ -1928,7 +2090,9 @@ paths:
       description: >
         Unwinds the charges, the court credit and the shuttle count, and frees the
         session to be settled again. Both the settlement and its reversal remain
-        visible.
+        visible. Approved admins only. Ledger undo and settlement reversal metadata
+        commit atomically under the session lock; competing reversals cannot both
+        succeed. A failed write leaves the original settlement and money unchanged.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -2782,12 +2946,53 @@ components:
         updated_at:
           type: string
           format: date-time
+        guest_rsvps:
+          type: array
+          items:
+            $ref: "#/components/schemas/GuestRSVP"
         rsvps:
           type: array
           items:
             $ref: "#/components/schemas/RSVP"
         creator:
           $ref: "#/components/schemas/User"
+
+    GuestRSVPInput:
+      type: object
+      required: [guest_name, charged_to_user_id, status]
+      properties:
+        guest_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        charged_to_user_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [in, out]
+    GuestRSVP:
+      allOf:
+        - $ref: "#/components/schemas/GuestRSVPInput"
+        - type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            session_id:
+              type: string
+              format: uuid
+            rsvp_timestamp:
+              type: string
+              format: date-time
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+            charged_to_user:
+              $ref: "#/components/schemas/User"
 
     RSVP:
       type: object
@@ -3294,6 +3499,7 @@ components:
             - shuttle_stock_short
             - session_already_settled
             - transaction_already_reversed
+            - reversal_not_allowed
             - opening_balances_already_recorded
             - not_settleable
             - invariant_violated
@@ -3333,6 +3539,8 @@ components:
             - reversal
         session_id: { type: string, format: uuid }
         reverses_transaction_id: { type: string, format: uuid }
+        corrects_transaction_id: { type: string, format: uuid }
+        correction_reason: { type: string }
         description: { type: string }
         occurred_at:
           type: string
