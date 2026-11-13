@@ -66,19 +66,21 @@ func (s *SchedulerService) Stop() {
 }
 
 // checkSessionReminders checks for sessions that need reminders sent
-func (s *SchedulerService) checkSessionReminders(ctx context.Context) {
+func (s *SchedulerService) checkSessionReminders(ctx context.Context) error {
 	now := utils.NowInSydney()
 	log.Printf("Checking session reminders at %s", now.Format("2006-01-02 15:04"))
 
 	// Check for 24h reminders
-	s.sendSessionRemindersForWindow(ctx, now, s.reminderHours24, "24h")
+	if err := s.sendSessionRemindersForWindow(ctx, now, s.reminderHours24, "24h"); err != nil {
+		return err
+	}
 
 	// Check for 12h reminders
-	s.sendSessionRemindersForWindow(ctx, now, s.reminderHours12, "12h")
+	return s.sendSessionRemindersForWindow(ctx, now, s.reminderHours12, "12h")
 }
 
 // sendSessionRemindersForWindow sends reminders for sessions starting within a time window
-func (s *SchedulerService) sendSessionRemindersForWindow(ctx context.Context, now time.Time, hoursAhead int, label string) {
+func (s *SchedulerService) sendSessionRemindersForWindow(ctx context.Context, now time.Time, hoursAhead int, label string) error {
 	// Calculate the target time window (e.g., 24h from now, within a 1-hour window)
 	windowStart := now.Add(time.Duration(hoursAhead) * time.Hour)
 	windowEnd := windowStart.Add(1 * time.Hour)
@@ -93,7 +95,7 @@ func (s *SchedulerService) sendSessionRemindersForWindow(ctx context.Context, no
 
 	if err != nil {
 		log.Printf("Error fetching sessions for %s reminders: %v", label, err)
-		return
+		return err
 	}
 
 	for _, session := range sessions {
@@ -101,28 +103,32 @@ func (s *SchedulerService) sendSessionRemindersForWindow(ctx context.Context, no
 		sessionStart, err := s.parseSessionDateTime(session)
 		if err != nil {
 			log.Printf("Error parsing session time: %v", err)
-			continue
+			return err
 		}
 
 		if sessionStart.After(windowStart) && sessionStart.Before(windowEnd) {
-			s.sendSessionReminders(ctx, session, label)
+			if err := s.sendSessionReminders(ctx, session, label); err != nil {
+				return err
+			}
 		}
 	}
+
+	return nil
 }
 
 // sendSessionReminders sends reminders to all users who have RSVP'd to a session
-func (s *SchedulerService) sendSessionReminders(ctx context.Context, session models.Session, label string) {
+func (s *SchedulerService) sendSessionReminders(ctx context.Context, session models.Session, label string) error {
 
 	// Get all RSVPs with status "in" for this session
 	var rsvps []models.RSVP
 	err := database.DB.WithContext(ctx).Where("session_id = ? AND status = ?", session.ID, models.RSVPStatusIn).Find(&rsvps).Error
 	if err != nil {
 		log.Printf("Error fetching RSVPs for session %s: %v", session.ID, err)
-		return
+		return err
 	}
 
 	if len(rsvps) == 0 {
-		return
+		return nil
 	}
 
 	// Format session date for display
@@ -138,15 +144,17 @@ func (s *SchedulerService) sendSessionReminders(ctx context.Context, session mod
 		}
 
 		if err := s.notificationService.SendNotification(ctx, rsvp.UserID, models.NotificationSessionReminder, title, body, data); err != nil {
-			log.Printf("Error sending session reminder to user %s: %v", rsvp.UserID, err)
+			return err
 		}
 	}
 
 	log.Printf("Sent %s session reminders to %d users for session %s", label, len(rsvps), session.Title)
+
+	return nil
 }
 
 // checkDeadlineReminders checks for sessions with approaching RSVP deadlines
-func (s *SchedulerService) checkDeadlineReminders(ctx context.Context) {
+func (s *SchedulerService) checkDeadlineReminders(ctx context.Context) error {
 	now := utils.NowInSydney()
 
 	// Calculate the deadline window (e.g., deadlines within the next 6 hours)
@@ -164,27 +172,33 @@ func (s *SchedulerService) checkDeadlineReminders(ctx context.Context) {
 
 	if err != nil {
 		log.Printf("Error fetching sessions for deadline reminders: %v", err)
-		return
+		return err
 	}
 
 	for _, session := range sessions {
-		s.sendDeadlineReminders(ctx, session)
+		if err := s.sendDeadlineReminders(ctx, session); err != nil {
+			return err
+		}
 	}
+
+	return nil
 }
 
 // sendDeadlineReminders sends deadline alerts to users who haven't RSVP'd yet
-func (s *SchedulerService) sendDeadlineReminders(ctx context.Context, session models.Session) {
+func (s *SchedulerService) sendDeadlineReminders(ctx context.Context, session models.Session) error {
 	// Get all approved members
 	var users []models.User
 	err := database.DB.WithContext(ctx).Where("membership_status = ?", models.MembershipApproved).Find(&users).Error
 	if err != nil {
 		log.Printf("Error fetching users for deadline reminders: %v", err)
-		return
+		return err
 	}
 
 	// Get existing RSVPs for this session
 	var existingRSVPs []models.RSVP
-	database.DB.WithContext(ctx).Where("session_id = ?", session.ID).Find(&existingRSVPs)
+	if err := database.DB.WithContext(ctx).Where("session_id = ?", session.ID).Find(&existingRSVPs).Error; err != nil {
+		return err
+	}
 
 	// Build map of users who have already RSVP'd
 	rsvpUserMap := make(map[uuid.UUID]bool)
@@ -211,7 +225,7 @@ func (s *SchedulerService) sendDeadlineReminders(ctx context.Context, session mo
 		}
 
 		if err := s.notificationService.SendNotification(ctx, user.ID, models.NotificationRSVPDeadline, title, body, data); err != nil {
-			log.Printf("Error sending deadline reminder to user %s: %v", user.ID, err)
+			return err
 		} else {
 			notifiedCount++
 		}
@@ -220,6 +234,8 @@ func (s *SchedulerService) sendDeadlineReminders(ctx context.Context, session mo
 	if notifiedCount > 0 {
 		log.Printf("Sent RSVP deadline reminders to %d users for session %s", notifiedCount, session.Title)
 	}
+
+	return nil
 }
 
 // parseSessionDateTime returns when a session actually starts.
@@ -241,8 +257,8 @@ func (s *SchedulerService) parseSessionDateTime(session models.Session) (time.Ti
 	return startsAt, nil
 }
 
-// RunOnce keeps the legacy producer active through Release 3. The persisted
-// Release 4 cutover marker stops every surviving API revision on its next tick.
+// RunOnce runs the legacy producer only from private scheduled execution.
+// The Release 4 cutover marker prevents old worker revisions producing reminders.
 func (s *SchedulerService) RunOnce(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -254,10 +270,14 @@ func (s *SchedulerService) RunOnce(ctx context.Context) error {
 	if count > 0 {
 		return nil
 	}
-	s.checkSessionReminders(ctx)
+	if err := s.checkSessionReminders(ctx); err != nil {
+		return err
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	s.checkDeadlineReminders(ctx)
+	if err := s.checkDeadlineReminders(ctx); err != nil {
+		return err
+	}
 	return ctx.Err()
 }

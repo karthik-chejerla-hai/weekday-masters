@@ -37,9 +37,13 @@ func main() {
 	notifications := services.NewNotificationService(services.NotificationConfig{
 		Disabled: cfg.NotificationsDisabled, FirebaseProjectID: cfg.FirebaseProjectID, FirebaseCredentials: cfg.FirebaseCredentials, FrontendURL: cfg.FrontendURL,
 	})
+	legacy := services.NewSchedulerService(services.SchedulerConfig{
+		NotificationService: notifications, SessionReminderHours24: cfg.SessionReminderHours24,
+		SessionReminderHours12: cfg.SessionReminderHours12, DeadlineReminderHours: cfg.DeadlineReminderHours,
+	})
 	// Preview worker does not inherit the API's diagnostic email allowlist.
 	router := handlers.NewNotificationWorkerRouter(audience, schedulerEmail, idtoken.Validate, func(ctx context.Context) (any, error) {
-		result, err := notifications.ProcessNotificationWork(ctx, 100)
+		result, err := runScheduledWork(ctx, cfg.NotificationsDisabled, legacy.RunOnce, notifications.ProcessNotificationWork)
 		emitWorkerHealth("notification_drain", result, err)
 		return result, err
 	}, func(ctx context.Context) (any, error) {
@@ -75,4 +79,14 @@ func emitWorkerHealth(event string, result any, err error) {
 		severity = "ERROR"
 	}
 	_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"severity": severity, "event": event, "result": result, "failed": failed})
+}
+
+// The scheduled worker owns both production and delivery; an idle API is not needed.
+func runScheduledWork(ctx context.Context, stopped bool, scan func(context.Context) error, drain func(context.Context, int) (*services.DeliveryRunSummary, error)) (*services.DeliveryRunSummary, error) {
+	if !stopped {
+		if err := scan(ctx); err != nil {
+			return nil, err
+		}
+	}
+	return drain(ctx, 100)
 }
