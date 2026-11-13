@@ -1,9 +1,12 @@
 name: Deploy
 
 on:
-  push:
-    branches: [main]
-  workflow_dispatch: # Allow manual trigger
+  workflow_call:
+    inputs:
+      image-digest:
+        description: Published backend image digest from the successful build job
+        required: true
+        type: string
 
 env:
   GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
@@ -18,11 +21,11 @@ jobs:
   # ============================================
   deploy-backend:
     name: Deploy Backend
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
 
-    # Recording this as a GitHub Deployment gives the repo an Environments panel and
-    # per-commit deploy status. No protection rules are set here — add required
-    # reviewers under Settings -> Environments if you want an approval gate.
+    # Keep deployment history without manual approval. In repository settings,
+    # production-api permits main and has no required reviewers or wait timer.
     environment:
       name: production-api
       url: ${{ steps.backend-url.outputs.url }}
@@ -63,27 +66,22 @@ jobs:
           username: oauth2accesstoken
           password: ${{ steps.auth.outputs.access_token }}
 
-      - name: Build and push Docker image
-        working-directory: backend
+      - name: Select published backend image
+        env:
+          IMAGE_DIGEST: ${{ inputs.image-digest }}
         run: |
-          IMAGE="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO }}/${{ env.BACKEND_SERVICE_NAME }}:${{ github.sha }}"
-          docker build -t $IMAGE .
-          docker push $IMAGE
-          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+          if [[ ! "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::A valid published backend image digest is required"
+            exit 1
+          fi
+          IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REGISTRY_REPO}/${BACKEND_SERVICE_NAME}@${IMAGE_DIGEST}"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
 
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.22'
-          cache-dependency-path: backend/go.sum
-
-      # Schema is applied here, as an explicit step, rather than on server startup —
-      # that avoids concurrent Cloud Run revisions racing to migrate.
+      # Run the migration binary from the exact image deployed below.
       - name: Run database migrations
-        working-directory: backend
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: go run ./cmd/migrate
+        run: docker run --rm -e DATABASE_URL "$IMAGE" ./migrate
 
       - name: Deploy private notification worker
         if: vars.NOTIFICATION_WORKER_ENABLED == 'true'
@@ -102,51 +100,37 @@ jobs:
       - name: Deploy to Cloud Run
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          OTEL_ENABLED: ${{ vars.OTEL_ENABLED || 'false' }}
-          OTEL_ENDPOINT: ${{ vars.OTEL_EXPORTER_OTLP_ENDPOINT }}
-          OTEL_HEADERS_SECRET: ${{ vars.OTEL_HEADERS_SECRET }}
         run: |
-          telemetry_flags=(--set-env-vars="OTEL_ENABLED=${OTEL_ENABLED}")
-          if [[ "$OTEL_ENABLED" == "true" ]]; then
-            if [[ -z "$OTEL_ENDPOINT" || -z "$OTEL_HEADERS_SECRET" ]]; then
-              echo "OTEL requires OTEL_EXPORTER_OTLP_ENDPOINT and OTEL_HEADERS_SECRET repository variables" >&2
-              exit 1
-            fi
-            telemetry_flags+=(
-              --set-env-vars="OTEL_SERVICE_NAME=rally-api"
-              --set-env-vars="OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=production"
-              --set-env-vars="OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_ENDPOINT}"
-              --set-env-vars="OTEL_EXPORTER_OTLP_TIMEOUT=3000"
-              --set-env-vars="OTEL_METRIC_EXPORT_INTERVAL=30000"
-              --update-secrets="OTEL_EXPORTER_OTLP_HEADERS=${OTEL_HEADERS_SECRET}:latest"
-              --no-cpu-throttling
-            )
-          fi
           # A preview deploy on an open PR writes to this same service, so this
           # can lose an optimistic-concurrency race. See the script.
           .github/scripts/gcloud-retry-on-conflict.sh \
             gcloud run deploy ${{ env.BACKEND_SERVICE_NAME }} \
             --project ${{ env.GCP_PROJECT_ID }} \
-            --image ${{ env.IMAGE }} \
+            --image "$IMAGE" \
             --region ${{ env.GCP_REGION }} \
-            "${telemetry_flags[@]}" \
             --platform managed \
+            --cpu-throttling \
+            --min 0 \
+            --min-instances 0 \
             --allow-unauthenticated \
-            --set-env-vars="GIN_MODE=release" \
-            --set-env-vars="NOTIFICATIONS_DISABLED=${{ vars.NOTIFICATIONS_DISABLED || 'true' }}" \
-            --set-env-vars="NOTIFICATION_WORKER_ENABLED=${{ vars.NOTIFICATION_WORKER_ENABLED || 'false' }}" \
-            --set-env-vars="INVITATION_TEST_EMAILS_ENABLED=${{ vars.INVITATION_TEST_EMAILS_ENABLED || 'false' }}" \
-            --set-env-vars="TIMEZONE=Australia/Sydney" \
-            --set-env-vars="FRONTEND_URL=${{ secrets.FRONTEND_URL }}" \
-            --set-env-vars="AUTH0_DOMAIN=${{ secrets.AUTH0_DOMAIN }}" \
-            --set-env-vars="AUTH0_AUDIENCE=${{ secrets.AUTH0_AUDIENCE }}" \
-            --set-env-vars="ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }}" \
-            --set-env-vars="DATABASE_URL=${{ secrets.DATABASE_URL }}" \
-            --set-env-vars="GROQ_API_KEY=${GROQ_API_KEY}" \
-            --set-env-vars="FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}" \
-            --set-env-vars="SENDGRID_API_KEY=${{ secrets.SENDGRID_API_KEY }}" \
-            --set-env-vars="SENDGRID_FROM_EMAIL=${{ secrets.SENDGRID_FROM_EMAIL }}" \
-            --set-env-vars="SENDGRID_FROM_NAME=Rally"
+            --update-env-vars="NOTIFICATION_WORKER_ENABLED=${{ vars.NOTIFICATION_WORKER_ENABLED || 'false' }}" \
+            --update-env-vars="OTEL_ENABLED=false" \
+            --remove-env-vars="SESSION_REMINDER_HOURS_24,SESSION_REMINDER_HOURS_12,DEADLINE_REMINDER_HOURS,OTEL_SERVICE_NAME,OTEL_RESOURCE_ATTRIBUTES,OTEL_EXPORTER_OTLP_ENDPOINT,OTEL_EXPORTER_OTLP_TIMEOUT,OTEL_METRIC_EXPORT_INTERVAL" \
+            --remove-secrets="OTEL_EXPORTER_OTLP_HEADERS" \
+            --update-env-vars="GIN_MODE=release" \
+            --update-env-vars="NOTIFICATIONS_DISABLED=${{ vars.NOTIFICATIONS_DISABLED || 'true' }}" \
+            --update-env-vars="INVITATION_TEST_EMAILS_ENABLED=${{ vars.INVITATION_TEST_EMAILS_ENABLED || 'false' }}" \
+            --update-env-vars="TIMEZONE=Australia/Sydney" \
+            --update-env-vars="FRONTEND_URL=${{ secrets.FRONTEND_URL }}" \
+            --update-env-vars="AUTH0_DOMAIN=${{ secrets.AUTH0_DOMAIN }}" \
+            --update-env-vars="AUTH0_AUDIENCE=${{ secrets.AUTH0_AUDIENCE }}" \
+            --update-env-vars="ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }}" \
+            --update-env-vars="DATABASE_URL=${{ secrets.DATABASE_URL }}" \
+            --update-env-vars="GROQ_API_KEY=${GROQ_API_KEY}" \
+            --update-env-vars="FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}" \
+            --update-env-vars="SENDGRID_API_KEY=${{ secrets.SENDGRID_API_KEY }}" \
+            --update-env-vars="SENDGRID_FROM_EMAIL=${{ secrets.SENDGRID_FROM_EMAIL }}" \
+            --update-env-vars="SENDGRID_FROM_NAME=Rally"
 
       - name: Route traffic to latest revision
         run: |
@@ -163,7 +147,7 @@ jobs:
             --project ${{ env.GCP_PROJECT_ID }} \
             --region ${{ env.GCP_REGION }} \
             --format='value(status.url)')
-          echo "url=$URL" >> $GITHUB_OUTPUT
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
           echo "Backend deployed to: $URL"
 
     outputs:
@@ -241,7 +225,7 @@ jobs:
 
       - name: Read WIF credentials
         id: creds
-        run: echo "json=$(cat '${{ steps.auth.outputs.credentials_file_path }}')" >> $GITHUB_OUTPUT
+        run: echo "json=$(cat '${{ steps.auth.outputs.credentials_file_path }}')" >> "$GITHUB_OUTPUT"
 
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0

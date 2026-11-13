@@ -17,6 +17,7 @@ const (
 	CodeShuttleStockShort         LedgerErrorCode = "shuttle_stock_short"
 	CodeSessionAlreadySettled     LedgerErrorCode = "session_already_settled"
 	CodeTransactionAlreadyReverse LedgerErrorCode = "transaction_already_reversed"
+	CodeReversalNotAllowed        LedgerErrorCode = "reversal_not_allowed"
 	CodeInvariantViolated         LedgerErrorCode = "invariant_violated"
 	CodeNotSettleable             LedgerErrorCode = "not_settleable"
 	CodeOpeningBalancesRecorded   LedgerErrorCode = "opening_balances_already_recorded"

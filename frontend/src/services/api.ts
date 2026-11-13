@@ -14,6 +14,8 @@ import type {
   UpdateProfileInput,
   Session,
   RSVP,
+  GuestRSVP,
+  GuestRSVPInput,
   SessionWithSummary,
   AuthCallbackResponse,
   CreateSessionInput,
@@ -27,6 +29,7 @@ import type {
   LedgerActivityView,
   Transaction,
   BalanceCorrection,
+  AssetPurchase,
   SettlementInput,
   SettlementPreview,
   SettlementView,
@@ -247,6 +250,18 @@ class ApiService {
   }
 
   // Admin - RSVP Management
+  async saveGuestRSVP(sessionId: string, input: GuestRSVPInput, guestId?: string): Promise<GuestRSVP> {
+    const url = `/admin/sessions/${sessionId}/guests`;
+    const response = guestId
+      ? await this.client.put<GuestRSVP>(`${url}/${guestId}`, input)
+      : await this.client.post<GuestRSVP>(url, input);
+    return response.data;
+  }
+
+  async deleteGuestRSVP(sessionId: string, guestId: string): Promise<void> {
+    await this.client.delete(`/admin/sessions/${sessionId}/guests/${guestId}`);
+  }
+
   async adminAddRSVP(sessionId: string, userId: string, status: SelectableRSVPStatus): Promise<RSVP> {
     const response = await this.client.post<RSVP>(`/admin/sessions/${sessionId}/rsvp/${userId}`, { status });
     return response.data;
@@ -416,6 +431,16 @@ class ApiService {
   async listBalanceCorrections(limit = 20, offset = 0): Promise<{ items: BalanceCorrection[]; total: number }> {
     const response = await this.client.get<{ items: BalanceCorrection[]; total: number }>('/admin/balance-corrections', { params: { limit, offset } });
     return { items: response.data.items ?? [], total: response.data.total ?? 0 };
+  }
+
+  async listAssetPurchases(limit = 20, offset = 0): Promise<{ items: AssetPurchase[]; total: number }> {
+    const response = await this.client.get<{ items: AssetPurchase[]; total: number }>('/admin/asset-purchases', { params: { limit, offset } });
+    return { items: response.data.items ?? [], total: response.data.total ?? 0 };
+  }
+
+  async correctAssetPurchase(id: string, input: { amount_cents: number; units: number; reason: string }): Promise<Transaction> {
+    const response = await this.client.post<Transaction>(`/admin/asset-purchases/${id}/correct`, input);
+    return response.data;
   }
 
   async recordShuttlePurchase(units: number, amountCents: number, description?: string, occurredAt?: string): Promise<Transaction> {

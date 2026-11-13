@@ -75,7 +75,12 @@ resulting balance is below threshold (FR-034).
 Settling twice concurrently yields exactly one settlement; the loser gets `409`.
 
 To correct a settled session: `POST /api/admin/transactions/:id/reverse` against the
-settlement's transaction, then settle again. Both remain visible in history.
+settlement's transaction, then settle again. The reversal updates both the ledger
+and settlement status atomically, using the same path as
+`POST /api/admin/settlements/:id/reverse`. Both require an approved admin.
+Concurrent reversals through either endpoint yield exactly one success; other
+requests receive `transaction_already_reversed`. The session lock also serializes
+reversal against settlement. Both records remain visible in history.
 
 ---
 

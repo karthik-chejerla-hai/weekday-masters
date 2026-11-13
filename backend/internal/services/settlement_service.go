@@ -192,6 +192,13 @@ func (s *SettlementService) defaultLines(sessionID uuid.UUID, hasExtra bool) ([]
 		}
 		lines = append(lines, LineInput{UserID: rsvp.UserID, InBase: true, InExtra: hasExtra})
 	}
+	var guests []models.GuestRSVP
+	if err := database.DB.Where("session_id = ? AND status = ?", sessionID, models.RSVPStatusIn).Order("rsvp_timestamp ASC, id ASC").Find(&guests).Error; err != nil {
+		return nil, err
+	}
+	for _, guest := range guests {
+		lines = append(lines, LineInput{UserID: guest.ChargedToUserID, GuestName: guest.GuestName, InBase: true, InExtra: hasExtra})
+	}
 	return lines, nil
 }
 
@@ -490,6 +497,9 @@ func (s *SettlementService) Settle(in SettleInput) (*models.Settlement, *Settlem
 	var preview *SettlementPreview
 
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockFinancialTransactions(tx); err != nil {
+			return err
+		}
 		var session models.Session
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			First(&session, "id = ?", in.SessionID).Error; err != nil {
@@ -716,6 +726,9 @@ func (s *SettlementService) ReverseSettlement(settlementID uuid.UUID, reason str
 	}
 	var reversal *models.Transaction
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockFinancialTransactions(tx); err != nil {
+			return err
+		}
 		var session models.Session
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&session, "id = ?", reference.SessionID).Error; err != nil {
 			return err
@@ -730,8 +743,15 @@ func (s *SettlementService) ReverseSettlement(settlementID uuid.UUID, reason str
 		if reason == "" {
 			reason = "Settlement reversed"
 		}
+		var original models.Transaction
+		if err := tx.First(&original, "id = ?", settlement.TransactionID).Error; err != nil {
+			return err
+		}
+		if original.Kind != models.TxnSessionSettlement || original.SessionID == nil || *original.SessionID != session.ID {
+			return ErrNotSettleable("The settlement does not reference its session's charge transaction.")
+		}
 		var err error
-		reversal, err = s.ledger.ReverseTransactionWithin(tx, settlement.TransactionID, reason, reversedBy)
+		reversal, err = s.ledger.reverseTransactionWithin(tx, settlement.TransactionID, reason, reversedBy)
 		if err != nil {
 			return err
 		}
