@@ -890,6 +890,34 @@ paths:
         "503":
           description: Notifications are paused or disabled
 
+  /admin/notifications/{id}/delivery:
+    get:
+      tags: [Notifications]
+      summary: Read aggregate push delivery outcome
+      description: Approved admins only. Counts expose no device identifiers, addresses, proofs or provider errors. Provider acceptance does not confirm device receipt.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Persisted aggregate outcome and counts by device-attempt state
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [notification_id, state, devices]
+                properties:
+                  notification_id: { type: string, format: uuid }
+                  state: { type: string, enum: [pending, claimed, completed, partial, failed, uncertain, suppressed, expired] }
+                  devices:
+                    type: object
+                    additionalProperties: { type: integer, minimum: 0 }
+        '400': { description: Invalid notification ID }
+        '401': { description: Authentication required }
+        '403': { description: Approved admin required }
+        '404': { description: No delivery intent exists }
   /admin/notifications/test-push:
     post:
       tags: ["Admin: Members"]

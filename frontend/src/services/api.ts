@@ -360,6 +360,10 @@ class ApiService {
     return response.data.items ?? [];
   }
 
+  async getNotificationDelivery(id: string): Promise<{notification_id:string;state:string;devices:Record<string,number>}> {
+    return (await this.client.get(`/admin/notifications/${id}/delivery`)).data;
+  }
+
   async nudgeBalance(userId: string, requestId: string): Promise<BalanceNudgeResult> {
     const response = await this.client.post<BalanceNudgeResult>(`/admin/users/${userId}/balance-nudge`, { request_id: requestId });
     return response.data;
