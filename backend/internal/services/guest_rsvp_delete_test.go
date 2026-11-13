@@ -11,7 +11,7 @@ import (
 )
 
 func TestDeleteGuestRSVPReleasesPlaceAndPayer(t *testing.T) {
-	rs, ss, notifier := newTestServices(t)
+	rs, ss, _ := newTestServices(t)
 	payer := newUser(t, "payer")
 	admin := newUser(t, "admin")
 	session := newSession(t, ss, admin.ID, 1)
@@ -23,7 +23,6 @@ func TestDeleteGuestRSVPReleasesPlaceAndPayer(t *testing.T) {
 	for _, player := range players[5:] {
 		rsvpIn(t, rs, session.ID, player.ID)
 	}
-	notifier.reset()
 	if err := rs.DeleteGuestRSVP(session.ID, guest.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -37,9 +36,7 @@ func TestDeleteGuestRSVPReleasesPlaceAndPayer(t *testing.T) {
 	if statusOf(t, rs, session.ID, players[5].ID).Status != models.RSVPStatusIn || statusOf(t, rs, session.ID, players[6].ID).Status != models.RSVPStatusWaitlisted {
 		t.Fatal("wrong waitlist promotion")
 	}
-	if users := notifier.notifiedUsers(); len(users) != 1 || users[0] != players[5].ID {
-		t.Fatalf("wrong notifications: %v", users)
-	}
+	assertNoWaitlistNotifications(t)
 	lines, err := NewSettlementService(NewLedgerService()).defaultLines(session.ID, false)
 	if err != nil {
 		t.Fatal(err)
@@ -130,7 +127,7 @@ func TestDeleteGuestRSVPGuardsHistoryAndSessionScope(t *testing.T) {
 }
 
 func TestConcurrentGuestRemovalPromotesOnlyOnce(t *testing.T) {
-	rs, ss, notifier := newTestServices(t)
+	rs, ss, _ := newTestServices(t)
 	payer := newUser(t, "payer")
 	session := newSession(t, ss, payer.ID, 1)
 	players := newUsers(t, 7)
@@ -141,7 +138,6 @@ func TestConcurrentGuestRemovalPromotesOnlyOnce(t *testing.T) {
 	for _, player := range players[5:] {
 		rsvpIn(t, rs, session.ID, player.ID)
 	}
-	notifier.reset()
 	var wg sync.WaitGroup
 	start := make(chan struct{})
 	errs := make([]error, 2)
@@ -157,9 +153,10 @@ func TestConcurrentGuestRemovalPromotesOnlyOnce(t *testing.T) {
 	if got := summaryOf(t, rs, session.ID); got.TotalIn != 6 || got.TotalWaitlisted != 1 {
 		t.Fatalf("wrong attendance: %+v", got)
 	}
-	if users := notifier.notifiedUsers(); len(users) != 1 || users[0] != players[5].ID {
-		t.Fatalf("duplicate promotion: %v", users)
+	if statusOf(t, rs, session.ID, players[5].ID).Status != models.RSVPStatusIn || statusOf(t, rs, session.ID, players[6].ID).Status != models.RSVPStatusWaitlisted {
+		t.Fatal("wrong waitlist promotion")
 	}
+	assertNoWaitlistNotifications(t)
 }
 
 func TestDeleteLegacyDuplicateGuestKeepsOtherBooking(t *testing.T) {

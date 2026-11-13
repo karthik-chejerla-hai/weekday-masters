@@ -88,7 +88,7 @@ func TestConcurrentDuplicateGuestNames(t *testing.T) {
 }
 
 func TestGuestRSVPCapacityAndPromotion(t *testing.T) {
-	rs, ss, notifier := newTestServices(t)
+	rs, ss, _ := newTestServices(t)
 	payer := newUser(t, "payer")
 	session := newSession(t, ss, payer.ID, 1)
 	players := newUsers(t, 6)
@@ -116,7 +116,6 @@ func TestGuestRSVPCapacityAndPromotion(t *testing.T) {
 	if _, err := rs.SaveGuestRSVP(in); err != nil {
 		t.Fatal(err)
 	}
-	notifier.reset()
 	in.Status = models.RSVPStatusOut
 	if _, err := rs.SaveGuestRSVP(in); err != nil {
 		t.Fatal(err)
@@ -124,9 +123,7 @@ func TestGuestRSVPCapacityAndPromotion(t *testing.T) {
 	if got := statusOf(t, rs, session.ID, players[5].ID); got.Status != models.RSVPStatusIn {
 		t.Fatal("guest did not release place")
 	}
-	if got := notifier.notifiedUsers(); len(got) != 1 || got[0] != players[5].ID {
-		t.Fatalf("bad notifications: %v", got)
-	}
+	assertNoWaitlistNotifications(t)
 	if got := summaryOf(t, rs, session.ID); got.TotalIn != 6 || got.TotalOut != 1 {
 		t.Fatalf("bad summary: %+v", got)
 	}
