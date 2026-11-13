@@ -39,12 +39,11 @@ func main() {
 	})
 	// Preview worker does not inherit the API's diagnostic email allowlist.
 	router := handlers.NewNotificationWorkerRouter(audience, schedulerEmail, idtoken.Validate, func(ctx context.Context) (any, error) {
-		scan, err := notifications.QueueDueRSVPReminders(ctx, time.Now().UTC(), 100)
-		emitWorkerHealth("rsvp_reminder_scan", scan, err)
-		if err != nil {
-			return nil, err
-		}
-		result, err := notifications.ProcessNotificationWork(ctx, 100)
+		result, err := runScheduledWork(ctx, false, func(ctx context.Context) error {
+			scan, err := notifications.QueueDueRSVPReminders(ctx, time.Now().UTC(), 100)
+			emitWorkerHealth("rsvp_reminder_scan", scan, err)
+			return err
+		}, notifications.ProcessNotificationWork)
 		emitWorkerHealth("notification_drain", result, err)
 		return result, err
 	}, func(ctx context.Context) (any, error) {
@@ -80,4 +79,14 @@ func emitWorkerHealth(event string, result any, err error) {
 		severity = "ERROR"
 	}
 	_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"severity": severity, "event": event, "result": result, "failed": failed})
+}
+
+// The scheduled worker owns both production and delivery; an idle API is not needed.
+func runScheduledWork(ctx context.Context, stopped bool, scan func(context.Context) error, drain func(context.Context, int) (*services.DeliveryRunSummary, error)) (*services.DeliveryRunSummary, error) {
+	if !stopped {
+		if err := scan(ctx); err != nil {
+			return nil, err
+		}
+	}
+	return drain(ctx, 100)
 }

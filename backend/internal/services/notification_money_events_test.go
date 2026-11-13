@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"firebase.google.com/go/v4/messaging"
+	"fmt"
 	"github.com/google/uuid"
 	"github.com/weekday-masters/backend/internal/database"
 	"github.com/weekday-masters/backend/internal/models"
@@ -120,55 +121,72 @@ func TestSessionReceiptFailureRollsBackSettlementAndLedger(t *testing.T) {
 	assertBalanced(t)
 }
 func TestReversalCorrectionAtomicAndOriginalSplitHistorical(t *testing.T) {
-	f := newSettlementFixture(t, 24, 10000)
-	player := f.member(t, "player")
-	ns := &NotificationService{fcmEnabled: true, fcmClient: &ttlPushClient{}}
-	addDeliveryDevice(t, player, "receipt-device")
-	f.settlement.WithNotifier(ns)
-	input := SettleInput{SessionID: f.session.ID, SettledBy: f.admin.ID, Lines: []LineInput{{UserID: player.ID, InBase: true}}}
-	record, _, err := f.settlement.Settle(input)
-	if err != nil {
-		t.Fatal(err)
+	for _, generic := range []bool{false, true} {
+		t.Run(fmt.Sprintf("generic=%v", generic), func(t *testing.T) {
+			f := newSettlementFixture(t, 24, 10000)
+			player := f.member(t, "player")
+			ns := &NotificationService{fcmEnabled: true, fcmClient: &ttlPushClient{}}
+			addDeliveryDevice(t, player, "receipt-device")
+			f.settlement.WithNotifier(ns)
+			input := SettleInput{SessionID: f.session.ID, SettledBy: f.admin.ID, Lines: []LineInput{{UserID: player.ID, InBase: true}}}
+			record, _, err := f.settlement.Settle(input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			original := receiptFor(t, record.ID, player.ID, models.NotificationSessionCharge)
+			snapshot := original.Data
+			var reversal *models.Transaction
+			if generic {
+				reversal, err = f.ledger.ReverseTransaction(record.TransactionID, "Correction", f.admin.ID)
+			} else {
+				reversal, err = f.settlement.ReverseSettlement(record.ID, "Correction", f.admin.ID)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			correctionEvent := receiptFor(t, record.ID, player.ID, models.NotificationSessionChargeReversed)
+			var correctionOutbox models.NotificationOutbox
+			if err := database.DB.Where("notification_id = ?", correctionEvent.ID).First(&correctionOutbox).Error; err != nil {
+				t.Fatal(err)
+			}
+			if correctionOutbox.State != models.DeliveryPending {
+				t.Fatalf("correction lost notifier configuration: %s", correctionOutbox.State)
+			}
+			if _, err := f.settlement.ReverseSettlement(record.ID, "duplicate", f.admin.ID); err == nil {
+				t.Fatal("settlement reversed twice")
+			}
+			correction := moneyFacts(t, correctionEvent)
+			if correction["reversal_transaction_id"] != reversal.ID.String() || correction["balance_after_cents"] != "0" {
+				t.Fatalf("incorrect correction snapshot: %v", correction)
+			}
+			var pending models.NotificationOutbox
+			if err := database.DB.Where("notification_id = ?", original.ID).First(&pending).Error; err != nil {
+				t.Fatal(err)
+			}
+			if pending.State != models.DeliverySuppressed || pending.LastErrorCode != "split_reversed" {
+				t.Fatal("pending original receipt not suppressed")
+			}
+			if receiptFor(t, record.ID, player.ID, models.NotificationSessionCharge).Data != snapshot {
+				t.Fatal("original receipt mutated")
+			}
+			second, _, err := f.settlement.Settle(input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if second.ID == record.ID {
+				t.Fatal("re-settlement reused identity")
+			}
+			oldView, err := f.settlement.SettlementForSessionVersion(f.session.ID, record.ID)
+			if err != nil || oldView == nil || oldView.ReversedAt == nil || *oldView.SettlementID != record.ID {
+				t.Fatalf("original receipt points at replacement: %+v %v", oldView, err)
+			}
+			live, err := f.settlement.SettlementForSession(f.session.ID)
+			if err != nil || *live.SettlementID != second.ID {
+				t.Fatal("live split not replacement")
+			}
+			assertBalanced(t)
+		})
 	}
-	original := receiptFor(t, record.ID, player.ID, models.NotificationSessionCharge)
-	snapshot := original.Data
-	if _, err := f.ledger.ReverseTransaction(record.TransactionID, "bypass", f.admin.ID); err == nil {
-		t.Fatal("generic reversal bypassed settlement state")
-	}
-	reversal, err := f.settlement.ReverseSettlement(record.ID, "Correction", f.admin.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	correction := moneyFacts(t, receiptFor(t, record.ID, player.ID, models.NotificationSessionChargeReversed))
-	if correction["reversal_transaction_id"] != reversal.ID.String() || correction["balance_after_cents"] != "0" {
-		t.Fatalf("incorrect correction snapshot: %v", correction)
-	}
-	var pending models.NotificationOutbox
-	if err := database.DB.Where("notification_id = ?", original.ID).First(&pending).Error; err != nil {
-		t.Fatal(err)
-	}
-	if pending.State != models.DeliverySuppressed || pending.LastErrorCode != "split_reversed" {
-		t.Fatal("pending original receipt not suppressed")
-	}
-	if receiptFor(t, record.ID, player.ID, models.NotificationSessionCharge).Data != snapshot {
-		t.Fatal("original receipt mutated")
-	}
-	second, _, err := f.settlement.Settle(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if second.ID == record.ID {
-		t.Fatal("re-settlement reused identity")
-	}
-	oldView, err := f.settlement.SettlementForSessionVersion(f.session.ID, record.ID)
-	if err != nil || oldView == nil || oldView.ReversedAt == nil || *oldView.SettlementID != record.ID {
-		t.Fatalf("original receipt points at replacement: %+v %v", oldView, err)
-	}
-	live, err := f.settlement.SettlementForSession(f.session.ID)
-	if err != nil || *live.SettlementID != second.ID {
-		t.Fatal("live split not replacement")
-	}
-	assertBalanced(t)
 }
 func TestReversalNotificationFailureRollsBackReversalStateAndMoney(t *testing.T) {
 	f := newSettlementFixture(t, 24, 10000)

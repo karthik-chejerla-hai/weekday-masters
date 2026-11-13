@@ -27,6 +27,25 @@ func (h *NotificationHandler) RegisterAdminRoutes(protected *gin.RouterGroup) {
 	admin := protected.Group("/admin", middleware.RequireApproved(), middleware.RequireAdmin())
 	admin.POST("/notifications/test-push", h.SendTestPush)
 	admin.POST("/users/:id/balance-nudge", h.SendBalanceNudge)
+	admin.GET("/notifications/:id/delivery", h.GetDeliveryStatus)
+}
+
+func (h *NotificationHandler) GetDeliveryStatus(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid notification ID"})
+		return
+	}
+	status, err := h.notificationService.GetDeliveryStatus(c.Request.Context(), id)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Delivery status not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not load delivery status"})
+		return
+	}
+	c.JSON(http.StatusOK, status)
 }
 
 // RegisterHistoryRoutes binds approval consistently in production and tests.

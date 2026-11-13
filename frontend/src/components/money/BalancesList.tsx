@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import DeliveryStatus from '../notifications/DeliveryStatus';
 import { Bell, Loader2 } from 'lucide-react';
 import Avatar from '../ui/Avatar';
 import BalanceChip from './BalanceChip';
@@ -17,6 +18,7 @@ interface BalancesListProps {
 type NudgeStatus = {
   state: 'sending' | 'sent' | 'error';
   message?: string;
+  notificationId?: string;
 };
 
 function apiMessage(error: unknown) {
@@ -52,6 +54,7 @@ export default function BalancesList({ balances, lowThresholdCents, currentUserI
         ...current,
         [balance.user_id]: {
           state: 'sent',
+          notificationId: result.notification_id,
           message: balanceNudgeMessage(result, balance.name),
         },
       }));
@@ -100,6 +103,7 @@ export default function BalancesList({ balances, lowThresholdCents, currentUserI
                     {nudgeStatus.message}
                   </p>
                 )}
+                {canNudge && nudgeStatus?.notificationId && <DeliveryStatus notificationId={nudgeStatus.notificationId} />}
               </div>
               <div className="flex shrink-0 flex-col items-end gap-2">
                 <BalanceChip

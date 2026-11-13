@@ -1,3 +1,4 @@
+import DeliveryStatus from '../notifications/DeliveryStatus';
 import { useRef, useState } from 'react';
 import { Bell, Loader2 } from 'lucide-react';
 import { api } from '../../services/api';
@@ -10,6 +11,7 @@ export default function MemberBalanceNudge({ balance }: { balance: PlayerBalance
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [message, setMessage] = useState('');
+  const [notificationId,setNotificationId] = useState<string>();
   const [error, setError] = useState(false);
   if (balance.balance_cents >= 2000) return null;
   async function nudge() {
@@ -17,7 +19,7 @@ export default function MemberBalanceNudge({ balance }: { balance: PlayerBalance
     requestId.current ||= crypto.randomUUID();
     try {
       const result = await api.nudgeBalance(balance.user_id, requestId.current);
-      setMessage(balanceNudgeMessage(result, balance.name)); setDone(true);
+      setMessage(balanceNudgeMessage(result, balance.name)); setNotificationId(result.notification_id); setDone(true);
     } catch (failure) {
       setError(true);
       setMessage((failure as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not record this reminder. Try again.');
@@ -32,5 +34,6 @@ export default function MemberBalanceNudge({ balance }: { balance: PlayerBalance
       </button>
     </div>
     {message && <p role={error ? 'alert' : 'status'} className={error ? 'text-red-600' : 'text-slate-600'}>{message}</p>}
+    {notificationId && <DeliveryStatus notificationId={notificationId} />}
   </div>;
 }

@@ -28,7 +28,7 @@ type SettlementService struct {
 }
 
 func NewSettlementService(ledger *LedgerService) *SettlementService {
-	return &SettlementService{ledger: ledger}
+	return &SettlementService{ledger: ledger, notifier: ledger.notifier}
 }
 
 // LineInput is one participant as the admin has them on the settlement form.
@@ -1024,6 +1024,7 @@ type BalanceNotifier interface {
 
 func (s *SettlementService) WithNotifier(notifier BalanceNotifier) *SettlementService {
 	s.notifier = notifier
+	s.ledger.notifier = notifier
 	return s
 }
 
