@@ -187,8 +187,13 @@ from the token and, for first-time registration, from Auth0's `/userinfo`. Email
 and identity MUST NEVER be read from the request body; only display fields
 (`name`, `profile_picture`) may be.
 
-**Notifications** — FCM push and SendGrid email, both optional and independently
-initialised. Neither may become a hard startup dependency.
+**Notifications** — Rally member alerts use registered-device FCM push through a
+durable, private outbox worker. The supported types are RSVP reminders, session
+charges, balance alerts and admin announcements; category preferences do not
+override device registration. Provider setup and delivery failures must not make
+the public API unavailable or roll back the originating business transaction.
+Email is not a member alert channel; SendGrid remains limited to explicit
+invitations, and must not become a hard startup dependency.
 
 ## Development Workflow and Quality Gates
 

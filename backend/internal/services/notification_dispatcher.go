@@ -629,7 +629,11 @@ func (p notificationFCMProvider) Send(ctx context.Context, n models.Notification
 	if link := p.s.notificationURL(data); link != "" {
 		webpush.FCMOptions = &messaging.WebpushFCMOptions{Link: link}
 	}
-	response, err := p.s.fcmClient.SendEachForMulticast(ctx, &messaging.MulticastMessage{Tokens: []string{token}, Notification: &messaging.Notification{Title: n.Title, Body: n.Body}, Data: data, Webpush: webpush})
+	message := &messaging.MulticastMessage{Tokens: []string{token}, Notification: &messaging.Notification{Title: n.Title, Body: n.Body}, Data: data, Webpush: webpush}
+	if err := limitPushPreview(message); err != nil {
+		return DeliveryProviderResult{State: models.DeliveryFailed, Code: "push_payload_too_large"}
+	}
+	response, err := p.s.fcmClient.SendEachForMulticast(ctx, message)
 	if err == nil && response != nil && len(response.Responses) == 1 && response.Responses[0] != nil {
 		if response.Responses[0].Success {
 			return DeliveryProviderResult{State: models.DeliveryAccepted}

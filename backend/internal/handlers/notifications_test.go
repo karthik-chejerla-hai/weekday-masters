@@ -144,26 +144,23 @@ func TestSendAnnouncement_RecordsItAndNotifiesApprovedMembers(t *testing.T) {
 
 	var announcement models.Announcement
 	h.as(admin).post("/api/admin/announcements", map[string]string{
-		"title": "Courts closed Friday",
-		"body":  "The venue is resurfacing the floor.",
+		"request_id": uuid.NewString(),
+		"title":      "Courts closed Friday",
+		"body":       "The venue is resurfacing the floor.",
 	}).expect(http.StatusCreated).decode(&announcement)
 
 	if announcement.CreatedBy != admin.ID {
 		t.Fatalf("expected the announcement to be attributed to the admin, got %s", announcement.CreatedBy)
 	}
 
-	// SendBulkNotification fans out to one goroutine per member and returns
-	// without waiting, so the rows appear shortly after the response.
-	got := eventually(t, func() (map[uuid.UUID]bool, bool) {
-		var notified []models.Notification
-		database.DB.Where("notification_type = ?", models.NotificationAdminAnnouncement).Find(&notified)
-
-		seen := map[uuid.UUID]bool{}
-		for _, n := range notified {
-			seen[n.UserID] = true
-		}
-		return seen, len(seen) >= 2
-	})
+	var notified []models.Notification
+	if err := database.DB.Where("notification_type = ?", models.NotificationAdminAnnouncement).Find(&notified).Error; err != nil {
+		t.Fatal(err)
+	}
+	got := map[uuid.UUID]bool{}
+	for _, notice := range notified {
+		got[notice.UserID] = true
+	}
 
 	if !got[admin.ID] || !got[player.ID] {
 		t.Fatalf("expected both approved members to be notified, got %v", got)
@@ -280,4 +277,25 @@ func TestBalanceNudgeRequestIdentityAndConflict(t *testing.T) {
 	if conflict.Code != "request_id_conflict" {
 		t.Fatalf("wrong conflicting reuse result: %s", conflict.Code)
 	}
+}
+
+func TestAnnouncementRequestRetryConflictAndApprovedAdminGate(t *testing.T) {
+	h := newHarness(t)
+	admin := makeAdmin(t)
+	player := makePlayer(t)
+	request := uuid.NewString()
+	input := map[string]string{"request_id": request, "title": "News", "body": "Message"}
+	h.as(nil).post("/api/admin/announcements", input).expect(http.StatusUnauthorized)
+	h.as(player).post("/api/admin/announcements", input).expect(http.StatusForbidden)
+	var first, second services.AnnouncementPublication
+	h.as(admin).post("/api/admin/announcements", input).expect(http.StatusCreated).decode(&first)
+	h.as(admin).post("/api/admin/announcements", input).expect(http.StatusCreated).decode(&second)
+	if first.ID != second.ID || first.AudienceCount != 2 || first.QueuedCount != 0 || first.SuppressedCount != 2 {
+		t.Fatal(first, second)
+	}
+	input["body"] = "Changed"
+	h.as(admin).post("/api/admin/announcements", input).expect(http.StatusConflict)
+	admin.MembershipStatus = models.MembershipPending
+	database.DB.Model(admin).Update("membership_status", models.MembershipPending)
+	h.as(admin).post("/api/admin/announcements", input).expect(http.StatusForbidden)
 }

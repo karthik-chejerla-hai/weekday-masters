@@ -161,10 +161,11 @@ describe('request contracts', () => {
     await api.updateClub({ venue_name: 'New Courts' });
     expect(client.put).toHaveBeenCalledWith('/admin/club', { venue_name: 'New Courts' });
 
-    await api.sendAnnouncement('Title', 'Body');
+    await api.sendAnnouncement('Title', 'Body', 'request-id');
     expect(client.post).toHaveBeenCalledWith('/admin/announcements', {
       title: 'Title',
       body: 'Body',
+      request_id: 'request-id',
     });
   });
 });

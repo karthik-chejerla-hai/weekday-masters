@@ -1,12 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Settings, Users, Calendar, Check, X, Loader2, MapPin, Save, Building, Megaphone, Send } from 'lucide-react';
 import { api } from '../services/api';
+import { useAuth } from '../context/useAuth';
+import { announcementRequest, clearAnnouncementRequest } from '../services/announcement-request';
 import type { TimeFormat, User } from '../types';
 import Avatar from '../components/ui/Avatar';
 import { displayName } from '../utils/members';
 
 export default function Admin() {
+  const { user } = useAuth();
+  const announcementAttempt = useRef<ReturnType<typeof announcementRequest> | null>(null);
+  const publishingAnnouncement = useRef(false);
   const [joinRequests, setJoinRequests] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
@@ -113,25 +118,26 @@ export default function Admin() {
       return;
     }
 
-    setIsSendingAnnouncement(true);
-    setAnnouncementMessage(null);
+    if(publishingAnnouncement.current)return;
+    publishingAnnouncement.current=true;
+    setIsSendingAnnouncement(true);setAnnouncementMessage(null);
+    const actor=user?.id || 'admin';
+    announcementAttempt.current=announcementRequest(actor,announcementForm.title,announcementForm.body,announcementAttempt.current);
     try {
-      await api.sendAnnouncement(announcementForm.title, announcementForm.body);
-      setAnnouncementMessage({ type: 'success', text: 'Announcement sent to all members!' });
-      setAnnouncementForm({ title: '', body: '' });
-    } catch (error) {
-      console.error('Failed to send announcement:', error);
-      setAnnouncementMessage({ type: 'error', text: 'Failed to send announcement' });
-    } finally {
-      setIsSendingAnnouncement(false);
-    }
+      const result=await api.sendAnnouncement(announcementForm.title.trim(),announcementForm.body.trim(),announcementAttempt.current.requestId);
+      setAnnouncementMessage({type:'success',text:`Announcement saved for ${result.audience_count} members. Push queued for ${result.queued_count}; ${result.suppressed_count} will not receive push.`});
+      clearAnnouncementRequest(actor);announcementAttempt.current=null;setAnnouncementForm({title:'',body:''});
+    } catch(error) {
+      const message=(error as {response?:{data?:{message?:string}}})?.response?.data?.message;
+      setAnnouncementMessage({type:'error',text:message || 'Could not confirm publication. Retry without changing the message to check it safely.'});
+    } finally {publishingAnnouncement.current=false;setIsSendingAnnouncement(false);}
   };
 
   return (
     <div className="space-y-6">
       {notificationsPaused && (
         <div role="status" className="rounded-lg border border-secondary-300 bg-secondary-50 p-3 text-sm text-secondary-900">
-          All notifications are paused while the imported data is reviewed.
+          Push delivery is paused. Published announcements remain available in notification history.
         </div>
       )}
       <div>
@@ -287,7 +293,7 @@ export default function Admin() {
       <div className="bg-white rounded-xl border border-slate-200 p-6">
         <h2 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
           <Megaphone className="w-5 h-5 text-primary-600" />
-          Send Announcement
+          Publish announcement
         </h2>
         <p className="text-sm text-slate-600 mb-4">
           Send a notification to all club members via push notification.
@@ -295,11 +301,14 @@ export default function Admin() {
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
+            <label htmlFor="announcement-title" className="block text-sm font-medium text-slate-700 mb-1">
               Title
             </label>
             <input
               type="text"
+              id="announcement-title"
+              maxLength={200}
+              disabled={isSendingAnnouncement}
               value={announcementForm.title}
               onChange={(e) => setAnnouncementForm({ ...announcementForm, title: e.target.value })}
               placeholder="Announcement title"
@@ -308,10 +317,13 @@ export default function Admin() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
+            <label htmlFor="announcement-message" className="block text-sm font-medium text-slate-700 mb-1">
               Message
             </label>
             <textarea
+              id="announcement-message"
+              maxLength={5000}
+              disabled={isSendingAnnouncement}
               value={announcementForm.body}
               onChange={(e) => setAnnouncementForm({ ...announcementForm, body: e.target.value })}
               placeholder="Write your announcement message..."
@@ -321,7 +333,7 @@ export default function Admin() {
           </div>
 
           {announcementMessage && (
-            <div className={`p-3 rounded-lg text-sm ${
+            <div role={announcementMessage.type === 'error' ? 'alert' : 'status'} className={`p-3 rounded-lg text-sm ${
               announcementMessage.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
             }`}>
               {announcementMessage.text}
@@ -330,7 +342,7 @@ export default function Admin() {
 
           <button
             onClick={handleSendAnnouncement}
-            disabled={notificationsPaused || isSendingAnnouncement || !announcementForm.title.trim() || !announcementForm.body.trim()}
+            disabled={isSendingAnnouncement || !announcementForm.title.trim() || !announcementForm.body.trim()}
             className="bg-secondary-500 text-white px-6 py-2 rounded-lg font-medium hover:bg-secondary-600 transition-colors disabled:opacity-50 flex items-center gap-2"
           >
             {isSendingAnnouncement ? (
@@ -338,7 +350,7 @@ export default function Admin() {
             ) : (
               <Send className="w-4 h-4" />
             )}
-            Send Announcement
+            Publish announcement
           </button>
         </div>
       </div>

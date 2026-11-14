@@ -56,7 +56,7 @@ export default function MemberPushPanel({ member, onStatus }: { member: User; on
               <button type="button" className="text-primary-700 underline ml-auto" onClick={() => void load()}>Refresh</button>
             </div>
             {member.membership_status !== 'approved' && <p>This member is not approved. Their saved devices cannot receive normal alerts.</p>}
-            <p>All supported push alerts are included on registered devices.</p>
+            <p>Registered devices receive RSVP reminders, session charges, balance alerts and admin announcements.</p>
             <div>
               <h3 className="font-medium mb-2">Registered devices</h3>
               {status.devices.length === 0 ? <p>No registered devices. Push alerts cannot reach this member.</p> :

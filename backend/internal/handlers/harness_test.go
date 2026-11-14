@@ -97,6 +97,7 @@ func newHarness(t *testing.T) *harness {
 		api.POST("/users/me/push-tokens", notificationHandler.ObsoletePushMutation)
 		api.DELETE("/users/me/push-tokens", notificationHandler.ObsoletePushMutation)
 		notificationHandler.RegisterHistoryRoutes(api)
+		notificationHandler.RegisterAnnouncementRoutes(api)
 		notificationHandler.RegisterDeviceRoutes(api)
 
 		api.GET("/users", userHandler.ListMembers)
@@ -134,7 +135,6 @@ func newHarness(t *testing.T) *harness {
 		admin.PUT("/sessions/:id/guests/:guestId", middleware.RequireApproved(), middleware.RequireAdmin(), adminHandler.SaveGuestRSVP)
 		admin.DELETE("/sessions/:id/guests/:guestId", middleware.RequireApproved(), middleware.RequireAdmin(), adminHandler.DeleteGuestRSVP)
 		admin.PUT("/club", middleware.RequireApproved(), middleware.RequireAdmin(), adminHandler.UpdateClub)
-		admin.POST("/announcements", notificationHandler.SendAnnouncement)
 
 		admin.POST("/sessions/:id/settlement/preview", settlementHandler.PreviewSettlement)
 		admin.POST("/sessions/:id/settle", settlementHandler.SettleSession)

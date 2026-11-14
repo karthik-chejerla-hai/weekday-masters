@@ -78,13 +78,13 @@
 
 ## Release 6: US6 — Announcements and cancellations
 
-- [ ] T044 [US6] Move announcement publication/audience/request identity/fan-out into one service transaction in `backend/internal/services/announcement_service.go` and invoke it from `backend/internal/handlers/notifications.go`.
-- [ ] T045 [US6] Add outbox intent to existing atomic cancellation history creation and remove immediate delivery in `backend/internal/services/session_service.go`, reusing existing recipient events.
-- [ ] T046 [P] [US6] Test publication/fan-out rollback/retry/restart, cancellation and send-time membership in `backend/internal/services/announcement_service_test.go` and `backend/internal/services/session_cancellation_test.go`.
+- [x] T044 [US6] Move announcement publication/audience/request identity/fan-out into one service transaction in `backend/internal/services/announcement_service.go` and invoke it from `backend/internal/handlers/notifications.go`.
+- [x] T045 [US6] Add outbox intent to existing atomic cancellation history creation and remove immediate delivery in `backend/internal/services/session_service.go`, reusing existing recipient events.
+- [x] T046 [P] [US6] Test publication/fan-out rollback/retry/restart, cancellation and send-time membership in `backend/internal/services/announcement_service_test.go` and `backend/internal/services/session_cancellation_test.go`.
 
 ## Final validation and documentation
 
-- [ ] T047 Update final API/category/compatibility contracts in `backend/internal/handlers/openapi.yaml`, profile/admin copy in `frontend/src/components/members/MemberPushPanel.tsx` and notification architecture in `AGENTS.md` and `.specify/memory/constitution.md`.
+- [x] T047 Update final API/category/compatibility contracts in `backend/internal/handlers/openapi.yaml`, profile/admin copy in `frontend/src/components/members/MemberPushPanel.tsx` and notification architecture in `AGENTS.md` and `.specify/memory/constitution.md`.
 - [ ] T048 Run and record quickstart/CI checks and isolated preview migration/worker rehearsal in `specs/011-notification-delivery/quickstart.md`, verifying no token leakage, stale backlog replay or production-message side effects.
 
 ## Dependencies and release gates
