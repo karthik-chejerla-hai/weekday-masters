@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import Dashboard from './Dashboard';
 import { useAuth } from '../context/useAuth';
@@ -8,7 +8,7 @@ import type { Session } from '../types';
 
 vi.mock('../context/useAuth', () => ({ useAuth: vi.fn() }));
 vi.mock('../services/api', () => ({
-  api: { listSessions: vi.fn(), listCancelledSessions: vi.fn(), listUnsettledSessions: vi.fn(), getClub: vi.fn() },
+  api: { listSessions: vi.fn(), listCancelledSessions: vi.fn(), listUnsettledSessions: vi.fn(), getClub: vi.fn(), previewRSVPReminder: vi.fn(), sendRSVPReminder: vi.fn() },
 }));
 
 function makeSession(overrides: Partial<Session> = {}): Session {
@@ -231,4 +231,35 @@ it('does not offer score entry for a cancelled session within its scheduled wind
     await screen.findByText('Next week');
     expect(screen.queryByRole('link', { name: 'Record score' })).not.toBeInTheDocument();
   } finally { clock.mockRestore(); }
+});
+
+
+it('preserves an uncertain reminder request when the dashboard switches to score entry', async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-11-14T00:00:00Z'));
+  vi.mocked(useAuth).mockReturnValue({ user: { id: 'admin-1', name: 'Admin' }, isAdmin: true } as ReturnType<typeof useAuth>);
+  vi.mocked(api.listSessions).mockResolvedValue([makeSession({
+    session_date: '2026-11-14T00:00:00Z', starts_at: '2026-11-14T00:00:02Z',
+    ends_at: '2026-11-14T02:00:02Z', rsvp_deadline: '2026-11-14T00:00:01Z',
+  })]);
+  vi.mocked(api.previewRSVPReminder).mockResolvedValue({ audience_count: 1, next_allowed_at: null });
+  vi.mocked(api.sendRSVPReminder).mockRejectedValueOnce(new Error('response lost')).mockResolvedValueOnce({
+    id: 'batch-1', request_id: 'saved-request', session_id: 'session-1', audience_count: 1,
+    queued_count: 1, suppressed_count: 0, next_allowed_at: '2026-11-14T01:00:00Z', created_at: '2026-11-14T00:00:00Z',
+  });
+  try {
+    await act(async () => { renderPage(); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Remind players to RSVP' })); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Confirm reminders' })); });
+    expect(screen.getByRole('alert')).toHaveTextContent('Try again');
+    const originalRequest = vi.mocked(api.sendRSVPReminder).mock.calls[0];
+    await act(async () => { vi.advanceTimersByTime(3_000); });
+    expect(screen.getByRole('heading', { name: 'Session in progress' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Record score' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Remind players to RSVP' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry confirmation' })).toBeEnabled();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retry confirmation' })); });
+    expect(vi.mocked(api.sendRSVPReminder).mock.calls[1]).toEqual(originalRequest);
+    expect(screen.getByRole('status')).toHaveTextContent('1 push reminder queued');
+  } finally { vi.useRealTimers(); }
 });

@@ -512,3 +512,16 @@ export interface GuestRSVP {
 
 export type GuestRSVPInput = Pick<GuestRSVP, 'guest_name' | 'charged_to_user_id' | 'status'>;
 export type PlayerResponse = RSVP | GuestRSVP;
+
+export interface RSVPReminderPreview {
+  audience_count: number;
+  next_allowed_at: string | null;
+}
+export interface RSVPReminderBatch extends RSVPReminderPreview {
+  id: string;
+  request_id: string;
+  session_id: string;
+  queued_count: number;
+  suppressed_count: number;
+  created_at: string;
+}

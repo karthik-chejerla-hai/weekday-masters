@@ -727,3 +727,25 @@ func TestRejectedRotatingAddressRetriesAreBoundedByExpiryAndCount(t *testing.T) 
 		})
 	}
 }
+
+func TestFCMDeliveryCapsTTLWithoutExtendingShorterLifetimes(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		ttl  time.Duration
+		want string
+	}{
+		{"short", time.Minute, "60"},
+		{"at provider limit", 28 * 24 * time.Hour, "2419200"},
+		{"beyond provider limit", 40 * 24 * time.Hour, "2419200"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			client := &ttlPushClient{}
+			service := &NotificationService{fcmClient: client, fcmEnabled: true}
+			notification := models.Notification{ID: uuid.New(), NotificationType: models.NotificationRSVPReminder, Data: "{}"}
+			result := (notificationFCMProvider{service}).Send(context.Background(), notification, "synthetic-device", test.ttl)
+			if result.State != models.DeliveryAccepted || client.message.Webpush.Headers["TTL"] != test.want {
+				t.Fatalf("TTL=%s result=%+v", client.message.Webpush.Headers["TTL"], result)
+			}
+		})
+	}
+}

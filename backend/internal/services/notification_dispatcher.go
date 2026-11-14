@@ -519,7 +519,7 @@ func (s *NotificationService) queueDeliveryPolicy(tx *gorm.DB, notification mode
 			return "invalid_event_data", nil
 		}
 		stage, err := strconv.Atoi(data["rsvp_stage"])
-		if err != nil || stage < 1 || stage > 2 {
+		if data["source"] != "admin_rsvp_reminder" && (err != nil || stage < 1 || stage > 2) {
 			return "invalid_reminder_stage", nil
 		}
 		id, err := uuid.Parse(data["session_id"])
@@ -611,7 +611,13 @@ func (p notificationFCMProvider) Available() bool {
 	return p.s != nil && p.s.fcmEnabled && p.s.fcmClient != nil
 }
 
+// FCM accepts at most four weeks of storage, even when the event remains useful longer.
+const maxFCMMessageTTL = 28 * 24 * time.Hour
+
 func (p notificationFCMProvider) Send(ctx context.Context, n models.Notification, token string, ttl time.Duration) DeliveryProviderResult {
+	if ttl > maxFCMMessageTTL {
+		ttl = maxFCMMessageTTL
+	}
 	seconds := int64(math.Floor(ttl.Seconds()))
 	if seconds < 1 {
 		return DeliveryProviderResult{State: models.DeliveryExpired, Code: "event_expired"}

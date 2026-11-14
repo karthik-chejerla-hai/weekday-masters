@@ -28,7 +28,8 @@ func (s *NotificationService) reconcileRSVPDeliveryWithin(tx *gorm.DB, n *models
 		return false, nil
 	}
 	stage, err := strconv.Atoi(data["rsvp_stage"])
-	if err != nil || stage < 1 || stage > 2 {
+	manual := data["source"] == "admin_rsvp_reminder"
+	if !manual && (err != nil || stage < 1 || stage > 2) {
 		return false, nil
 	}
 	var session models.Session
@@ -41,6 +42,12 @@ func (s *NotificationService) reconcileRSVPDeliveryWithin(tx *gorm.DB, n *models
 		return false, nil
 	}
 	due, expires := RSVPReminderTimes(*session.StartsAt, session.RSVPDeadline, stage)
+	if manual {
+		due, expires = o.DueAt, session.RSVPDeadline
+		if session.StartsAt.Before(expires) {
+			expires = *session.StartsAt
+		}
+	}
 	data["starts_at"] = session.StartsAt.UTC().Format(time.RFC3339Nano)
 	encoded, err := json.Marshal(data)
 	if err != nil {

@@ -23,6 +23,7 @@ import type {
   SelectableRSVPStatus,
   PlayerBalance,
   BalanceNudgeResult,
+  RSVPReminderPreview, RSVPReminderBatch,
   MyBalance,
   PersonalSpend,
   LedgerEntryView,
@@ -362,6 +363,16 @@ class ApiService {
 
   async getNotificationDelivery(id: string): Promise<{notification_id:string;state:string;devices:Record<string,number>}> {
     return (await this.client.get(`/admin/notifications/${id}/delivery`)).data;
+  }
+
+  async previewRSVPReminder(sessionId: string): Promise<RSVPReminderPreview> {
+    const response = await this.client.get<RSVPReminderPreview>(`/admin/sessions/${sessionId}/rsvp-reminder`);
+    return response.data;
+  }
+
+  async sendRSVPReminder(sessionId: string, requestId: string): Promise<RSVPReminderBatch> {
+    const response = await this.client.post<RSVPReminderBatch>(`/admin/sessions/${sessionId}/rsvp-reminder`, { request_id: requestId });
+    return response.data;
   }
 
   async nudgeBalance(userId: string, requestId: string): Promise<BalanceNudgeResult> {

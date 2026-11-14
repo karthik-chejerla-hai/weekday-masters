@@ -100,7 +100,7 @@ export default function Dashboard() {
       ) : (
         <section aria-labelledby="next-session-heading">
           <h2 id="next-session-heading" className="mb-3 text-base font-semibold text-slate-950">{activeSession ? 'Current session' : 'Your next game'}</h2>
-          <SessionCard currentUserId={user?.id} session={nextSession} venueName={club?.venue_name} courtNumber={club?.court_number} timeFormat={club?.time_format} featured recordScore={!!activeSession} />
+          <SessionCard isAdmin={isAdmin} currentUserId={user?.id} session={nextSession} venueName={club?.venue_name} courtNumber={club?.court_number} timeFormat={club?.time_format} featured recordScore={!!activeSession} />
         </section>
       )}
 
@@ -147,7 +147,7 @@ export default function Dashboard() {
             </Link>
           </div>
           <div className="space-y-3">
-            {futureSessions.map((session) => <SessionCard currentUserId={user?.id} key={session.id} session={session} venueName={club?.venue_name} courtNumber={club?.court_number} timeFormat={club?.time_format} />)}
+            {futureSessions.map((session) => <SessionCard isAdmin={isAdmin} currentUserId={user?.id} key={session.id} session={session} venueName={club?.venue_name} courtNumber={club?.court_number} timeFormat={club?.time_format} />)}
           </div>
         </section>
       )}
