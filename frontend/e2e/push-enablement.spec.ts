@@ -38,9 +38,13 @@ test('explicit setup recovers from failed registration and disable survives relo
  await expect(page.getByText('Push is not set up on this device')).toBeVisible();
  fail = false; await page.getByRole('button', { name: 'Enable on this device' }).click();
  await expect(page.getByRole('button', { name: 'Disable on this device' })).toBeVisible();
+ await expect(page.getByText('Push set up on this device', { exact: true })).toHaveCount(1);
+ await page.getByRole('button', { name: 'Check again' }).click();
+ await expect(page.getByText('Device check complete.', { exact: true })).toBeVisible();
+ await expect(page.getByText('Push set up on this device', { exact: true })).toHaveCount(1);
  expect(enrollments).toHaveLength(2);await expect(page.getByRole('switch')).toHaveCount(0);
  await page.getByRole('button', { name: 'Disable on this device' }).click();
- await expect(page.getByText('Push disabled on this device.')).toBeVisible();
+ await expect(page.getByText('Push is not set up on this device', { exact: true })).toBeVisible();
  const count = refreshes.length; await page.reload();
  await expect(page.getByRole('button', { name: 'Enable on this device' })).toBeVisible();
  expect(refreshes).toHaveLength(count); expect(enrollments).toHaveLength(2);
