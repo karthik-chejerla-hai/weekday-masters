@@ -11,6 +11,7 @@ describe('SessionCard Component', () => {
     title: 'Sunday Social Match',
     description: 'Casual badminton games',
     session_date: '2026-04-12T00:00:00Z',
+    starts_at: '2026-04-12T08:00:00Z',
     start_time: '18:00',
     end_time: '20:00',
     courts: 2,
@@ -166,6 +167,13 @@ describe('SessionCard Component', () => {
     if (count === 0) expect(screen.getByText('No confirmed players yet')).toBeInTheDocument();
   });
 
+  it.each([undefined, 'invalid'])('does not advertise late entry when the stored start is %s', starts_at => {
+    render(<MemoryRouter><SessionCard session={{ ...baseSession, starts_at }} /></MemoryRouter>);
+    expect(screen.getByText('RSVP unavailable')).toBeInTheDocument();
+    expect(screen.queryByText('Late RSVPs open')).not.toBeInTheDocument();
+    expect(screen.queryByText('RSVP open')).not.toBeInTheDocument();
+  });
+
   describe('RSVP deadline', () => {
     afterEach(() => {
       vi.useRealTimers();
@@ -201,9 +209,9 @@ describe('SessionCard Component', () => {
       expect(screen.getByText(expected)).toBeInTheDocument();
     });
 
-    it('hides the RSVP deadline once it has passed', () => {
+    it('shows late entry availability after the deadline and before start', () => {
       vi.useFakeTimers();
-      vi.setSystemTime(new Date('2026-04-11T00:00:00Z'));
+      vi.setSystemTime(new Date('2026-04-10T00:00:00Z'));
 
       render(
         <MemoryRouter>
@@ -212,7 +220,7 @@ describe('SessionCard Component', () => {
       );
 
       expect(screen.queryByText(/^RSVP by /)).not.toBeInTheDocument();
-      expect(screen.getByText('RSVP Closed')).toBeInTheDocument();
+      expect(screen.getByText('Late RSVPs open')).toBeInTheDocument();
     });
 
     it('hides the RSVP deadline on a cancelled session', () => {

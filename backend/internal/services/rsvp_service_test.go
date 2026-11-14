@@ -1,8 +1,10 @@
 package services
 
 import (
+	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/weekday-masters/backend/internal/database"
@@ -398,5 +400,234 @@ func TestWaitlistPromotionPreservesExistingNotificationHistory(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("expected original history only, got %d notifications", count)
+	}
+}
+
+// deadlinePassed keeps the session upcoming while exercising its stored deadline.
+func deadlinePassed(t *testing.T, session *models.Session) {
+	t.Helper()
+	if err := database.DB.Model(session).UpdateColumn("rsvp_deadline", time.Now().Add(-time.Hour)).Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLateAttendanceRequests(t *testing.T) {
+	for _, initial := range []models.RSVPStatus{"", models.RSVPStatusOut, models.RSVPStatusMaybe} {
+		for _, full := range []bool{false, true} {
+			t.Run(string(initial)+fmt.Sprint("/full=", full), func(t *testing.T) {
+				rs, ss, _ := newTestServices(t)
+				session := newSession(t, ss, newUser(t, "organiser").ID, 1)
+				user := newUser(t, "late")
+				if full {
+					for _, u := range newUsers(t, 6) {
+						rsvpIn(t, rs, session.ID, u.ID)
+					}
+				}
+				if initial != "" {
+					if _, err := rs.CreateOrUpdateRSVP(RSVPInput{session.ID, user.ID, initial}, false); err != nil {
+						t.Fatal(err)
+					}
+				}
+				deadlinePassed(t, session)
+				got := rsvpIn(t, rs, session.ID, user.ID)
+				want := models.RSVPStatusIn
+				if full {
+					want = models.RSVPStatusWaitlisted
+				}
+				if got.Status != want || !got.IsLateRSVP || got.AddedByAdmin {
+					t.Fatalf("unexpected late response: %+v", got)
+				}
+				if full && got.WaitlistPosition != 1 {
+					t.Fatalf("waitlist position = %d", got.WaitlistPosition)
+				}
+			})
+		}
+	}
+}
+
+func TestConfirmedPlayerLockedAfterDeadline(t *testing.T) {
+	rs, ss, _ := newTestServices(t)
+	session := newSession(t, ss, newUser(t, "organiser").ID, 1)
+	user := newUser(t, "confirmed")
+	rsvpIn(t, rs, session.ID, user.ID)
+	deadlinePassed(t, session)
+	for _, status := range []models.RSVPStatus{models.RSVPStatusOut, models.RSVPStatusMaybe} {
+		if _, err := rs.CreateOrUpdateRSVP(RSVPInput{session.ID, user.ID, status}, false); err == nil {
+			t.Fatalf("allowed IN to %s", status)
+		}
+	}
+	if err := rs.DeleteRSVP(session.ID, user.ID, false); err == nil {
+		t.Fatal("allowed confirmed deletion")
+	}
+	rsvpIn(t, rs, session.ID, user.ID) // Retrying IN keeps the held spot.
+	if got := statusOf(t, rs, session.ID, user.ID); got.Status != models.RSVPStatusIn {
+		t.Fatal(got.Status)
+	}
+	if _, err := rs.CreateOrUpdateRSVP(RSVPInput{session.ID, user.ID, models.RSVPStatusOut}, true); err != nil {
+		t.Fatal("admin override:", err)
+	}
+}
+
+func TestUnconfirmedPlayerMayChangeAfterDeadline(t *testing.T) {
+	for _, initial := range []models.RSVPStatus{"", models.RSVPStatusOut, models.RSVPStatusMaybe, models.RSVPStatusWaitlisted} {
+		for _, target := range []models.RSVPStatus{models.RSVPStatusOut, models.RSVPStatusMaybe, "delete"} {
+			t.Run(string(initial)+"/"+string(target), func(t *testing.T) {
+				rs, ss, _ := newTestServices(t)
+				session := newSession(t, ss, newUser(t, "organiser").ID, 1)
+				user := newUser(t, "unconfirmed")
+				if initial == models.RSVPStatusWaitlisted {
+					for _, u := range newUsers(t, 6) {
+						rsvpIn(t, rs, session.ID, u.ID)
+					}
+				}
+				if initial != "" {
+					status := initial
+					if initial == models.RSVPStatusWaitlisted {
+						status = models.RSVPStatusIn
+					}
+					if _, err := rs.CreateOrUpdateRSVP(RSVPInput{session.ID, user.ID, status}, false); err != nil {
+						t.Fatal(err)
+					}
+				}
+				deadlinePassed(t, session)
+				if target == "delete" {
+					if initial == "" {
+						return
+					}
+					if err := rs.DeleteRSVP(session.ID, user.ID, false); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					got, err := rs.CreateOrUpdateRSVP(RSVPInput{session.ID, user.ID, target}, false)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if got.Status != target {
+						t.Fatalf("status = %s", got.Status)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestLateINClosesAtSessionStart(t *testing.T) {
+	for _, offset := range []time.Duration{0, -time.Hour, -24 * time.Hour} {
+		t.Run(offset.String(), func(t *testing.T) {
+			rs, ss, _ := newTestServices(t)
+			session := newSession(t, ss, newUser(t, "organiser").ID, 1)
+			user := newUser(t, "late")
+			start := time.Now().Add(offset)
+			if err := database.DB.Model(session).UpdateColumns(map[string]interface{}{"starts_at": start, "rsvp_deadline": start.Add(-time.Hour)}).Error; err != nil {
+				t.Fatal(err)
+			}
+			if _, err := rs.CreateOrUpdateRSVP(RSVPInput{session.ID, user.ID, models.RSVPStatusIn}, false); err == nil {
+				t.Fatal("allowed IN after start")
+			}
+			got, err := rs.CreateOrUpdateRSVP(RSVPInput{session.ID, user.ID, models.RSVPStatusIn}, true)
+			if err != nil || !got.AddedByAdmin {
+				t.Fatalf("admin override = %+v, %v", got, err)
+			}
+		})
+	}
+}
+
+func TestConfirmedINRetryPreservesOvercapacitySpot(t *testing.T) {
+	for _, late := range []bool{false, true} {
+		t.Run(fmt.Sprint("late=", late), func(t *testing.T) {
+			rs, ss, _ := newTestServices(t)
+			session := newSession(t, ss, newUser(t, "organiser").ID, 1)
+			users := newUsers(t, 7)
+			for _, user := range users[:6] {
+				rsvpIn(t, rs, session.ID, user.ID)
+			}
+			if _, err := rs.CreateOrUpdateRSVP(RSVPInput{session.ID, users[6].ID, models.RSVPStatusIn}, true); err != nil {
+				t.Fatal(err)
+			}
+			if late {
+				deadlinePassed(t, session)
+			}
+			// Both an ordinary confirmed player and the admin-added player retain their spot.
+			for _, user := range []models.User{users[0], users[6]} {
+				if got := rsvpIn(t, rs, session.ID, user.ID); got.Status != models.RSVPStatusIn {
+					t.Fatalf("retry demoted confirmed player: %+v", got)
+				}
+				if late {
+					for _, status := range []models.RSVPStatus{models.RSVPStatusOut, models.RSVPStatusMaybe} {
+						if _, err := rs.CreateOrUpdateRSVP(RSVPInput{session.ID, user.ID, status}, false); err == nil {
+							t.Fatalf("allowed %s after retry", status)
+						}
+					}
+					if err := rs.DeleteRSVP(session.ID, user.ID, false); err == nil {
+						t.Fatal("allowed deletion after retry")
+					}
+				}
+			}
+			if got := summaryOf(t, rs, session.ID); got.TotalIn != 7 || got.TotalWaitlisted != 0 {
+				t.Fatalf("retry changed attendance: %+v", got)
+			}
+		})
+	}
+}
+
+func TestEnteringWaitlistUsesQueueEntryTime(t *testing.T) {
+	for _, initial := range []models.RSVPStatus{models.RSVPStatusOut, models.RSVPStatusMaybe} {
+		for _, late := range []bool{false, true} {
+			t.Run(string(initial)+fmt.Sprint("/late=", late), func(t *testing.T) {
+				rs, ss, _ := newTestServices(t)
+				session := newSession(t, ss, newUser(t, "organiser").ID, 1)
+				confirmed := newUsers(t, 6)
+				for _, user := range confirmed {
+					rsvpIn(t, rs, session.ID, user.ID)
+				}
+				oldResponseUser := newUser(t, "old-response")
+				old, err := rs.CreateOrUpdateRSVP(RSVPInput{session.ID, oldResponseUser.ID, initial}, false)
+				if err != nil {
+					t.Fatal(err)
+				}
+				firstWaitingUser := newUser(t, "first-waiting")
+				first := rsvpIn(t, rs, session.ID, firstWaitingUser.ID)
+				// Explicit, distinct timestamps make ordering deterministic without sleeps.
+				if err := database.DB.Model(old).UpdateColumn("rsvp_timestamp", time.Now().Add(-2*time.Hour)).Error; err != nil {
+					t.Fatal(err)
+				}
+				if err := database.DB.Model(first).UpdateColumn("rsvp_timestamp", time.Now().Add(-time.Hour)).Error; err != nil {
+					t.Fatal(err)
+				}
+				first = statusOf(t, rs, session.ID, firstWaitingUser.ID)
+				if late {
+					deadlinePassed(t, session)
+				}
+				joined := rsvpIn(t, rs, session.ID, oldResponseUser.ID)
+				if joined.WaitlistPosition != 2 || !joined.RSVPTimestamp.After(first.RSVPTimestamp) {
+					t.Fatalf("late join jumped queue: %+v", joined)
+				}
+				retry := rsvpIn(t, rs, session.ID, firstWaitingUser.ID)
+				if retry.WaitlistPosition != 1 || !retry.RSVPTimestamp.Equal(first.RSVPTimestamp) {
+					t.Fatalf("retry lost queue position: %+v", retry)
+				}
+				if _, err := rs.CreateOrUpdateRSVP(RSVPInput{session.ID, confirmed[0].ID, models.RSVPStatusOut}, true); err != nil {
+					t.Fatal(err)
+				}
+				if got := statusOf(t, rs, session.ID, firstWaitingUser.ID); got.Status != models.RSVPStatusIn {
+					t.Fatal("did not promote longest-waiting player")
+				}
+				if got := statusOf(t, rs, session.ID, oldResponseUser.ID); got.Status != models.RSVPStatusWaitlisted {
+					t.Fatal("promoted later joiner")
+				}
+			})
+		}
+	}
+}
+
+func TestINRequiresResolvedSessionStart(t *testing.T) {
+	rs, ss, _ := newTestServices(t)
+	session := newSession(t, ss, newUser(t, "organiser").ID, 1)
+	user := newUser(t, "player")
+	if err := database.DB.Model(session).UpdateColumn("starts_at", nil).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rs.CreateOrUpdateRSVP(RSVPInput{session.ID, user.ID, models.RSVPStatusIn}, false); err == nil {
+		t.Fatal("accepted IN without resolved start")
 	}
 }

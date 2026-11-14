@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import SessionDetail from './SessionDetail';
@@ -23,6 +23,7 @@ function makeSession(overrides: Partial<Session> = {}): Session {
     title: 'Sunday Social',
     description: 'Casual games',
     session_date: future(10),
+    starts_at: future(10),
     start_time: '18:00',
     end_time: '20:00',
     courts: 2,
@@ -129,12 +130,46 @@ describe('SessionDetail page', () => {
     expect(api.getSession).toHaveBeenCalledTimes(2);
   });
 
-  it('closes RSVP once the deadline has passed', async () => {
-    loads(makeSession({ rsvp_deadline: past(1) }));
+  it.each([undefined, 'out', 'maybe'] as const)('accepts a late IN from %s and reloads the roster', async status => {
+    loads(makeSession({ rsvp_deadline: past(1), rsvps: status ? [makeRSVP({ status })] : [] }));
     renderPage();
 
-    expect(await screen.findByText('RSVP Closed')).toBeInTheDocument();
-    expect(screen.getByText('RSVP is closed for this session')).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: /i'm in/i }));
+    expect(api.createRSVP).toHaveBeenCalledWith('session-1', 'in');
+    expect(api.getSession).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('Late RSVPs open')).toBeInTheDocument();
+  });
+
+  it('allows a late player to join the waitlist', async () => {
+    loads(makeSession({ rsvp_deadline: past(1) }), makeSummary({ total_in: 10, spots_left: 0 }));
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: 'Join Waitlist' }));
+    expect(api.createRSVP).toHaveBeenCalledWith('session-1', 'in');
+  });
+
+  it.each(['maybe', 'out'] as const)('allows a waitlisted player to choose %s after the deadline', async status => {
+    loads(makeSession({ rsvp_deadline: past(1), rsvps: [makeRSVP({ status: 'waitlisted' })] }));
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: status === 'out' ? "Can't Make It" : 'Maybe' }));
+    expect(api.createRSVP).toHaveBeenCalledWith('session-1', status);
+  });
+
+  it.each([0, -3600000, -86400000])('closes IN requests at or after session start (%s ms)', async offset => {
+    loads(makeSession({ starts_at: new Date(Date.now() + offset).toISOString(), rsvp_deadline: past(1) }));
+    renderPage();
+    const button = await screen.findByRole('button', { name: /i'm in/i });
+    expect(button).toBeDisabled();
+    await userEvent.click(button);
+    expect(api.createRSVP).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: "Can't Make It" })).toBeEnabled();
+  });
+
+  it('closes member RSVP controls for a closed session', async () => {
+    loads(makeSession({ status: 'closed' }));
+    renderPage();
+    expect(await screen.findByRole('button', { name: /i'm in/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Maybe' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: "Can't Make It" })).toBeDisabled();
   });
 
   it('locks a confirmed player in after the deadline', async () => {
@@ -147,6 +182,8 @@ describe('SessionDetail page', () => {
 
     expect(await screen.findByText('RSVP deadline has passed')).toBeInTheDocument();
     expect(screen.getByText(/cannot change your RSVP/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Maybe' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: "Can't Make It" })).not.toBeInTheDocument();
   });
 
   it('marks a cancelled session and hides the RSVP controls', async () => {
@@ -290,4 +327,55 @@ describe('admin player RSVPs', () => {
     await screen.findByText('Alex Guest');
     expect(screen.queryByRole('button', { name: "Remove Alex Guest's RSVP" })).not.toBeInTheDocument();
   });
+});
+
+
+it('closes IN when an already-open page reaches the stored start', async () => {
+  const start = Date.now() + 60000;
+  loads(makeSession({ starts_at: new Date(start).toISOString(), rsvp_deadline: past(1) }));
+  const view = renderPage();
+  const button = await screen.findByRole('button', { name: /i'm in/i });
+  expect(button).toBeEnabled();
+  vi.useFakeTimers();
+  try {
+    // Resuming a background tab must refresh eligibility even if its timer was throttled.
+    act(() => {
+      vi.setSystemTime(new Date(start));
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(button).toBeDisabled();
+    expect(screen.getByText('RSVP Closed')).toBeInTheDocument();
+    expect(screen.getByText('The session has started. New IN requests are closed.')).toBeInTheDocument();
+  } finally {
+    view.unmount();
+    vi.useRealTimers();
+  }
+});
+
+it.each([undefined, 'invalid'])('disables IN when the stored start is %s', async starts_at => {
+  loads(makeSession({ starts_at, rsvp_deadline: past(1) }));
+  renderPage();
+  expect(await screen.findByRole('button', { name: /i'm in/i })).toBeDisabled();
+  expect(screen.getByText('RSVP unavailable')).toBeInTheDocument();
+  expect(screen.getByText('Session start time is unavailable. Please contact an admin.')).toBeInTheDocument();
+});
+
+it('shows an API rejection, refreshes the roster and lets the member retry', async () => {
+  vi.mocked(api.createRSVP).mockRejectedValueOnce({ isAxiosError: true, response: { data: { error: 'Session was closed by an admin.' } } });
+  loads(makeSession({ rsvp_deadline: past(1) }));
+  renderPage();
+  await userEvent.click(await screen.findByRole('button', { name: /i'm in/i }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Session was closed by an admin.');
+  expect(api.getSession).toHaveBeenCalledTimes(2);
+  await userEvent.click(screen.getByRole('button', { name: /i'm in/i }));
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(api.createRSVP).toHaveBeenCalledTimes(2);
+});
+
+it('shows a retry message for a network failure', async () => {
+  vi.mocked(api.createRSVP).mockRejectedValueOnce(new Error('offline'));
+  loads(makeSession());
+  renderPage();
+  await userEvent.click(await screen.findByRole('button', { name: /i'm in/i }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not save your RSVP. Please try again.');
 });

@@ -6,6 +6,8 @@ interface RSVPButtonProps {
   currentStatus?: RSVPStatus;
   onRSVP: (status: SelectableRSVPStatus) => Promise<void>;
   disabled?: boolean;
+  /** New attendance requests close when the session starts. */
+  inDisabled?: boolean;
   /** Session is at capacity, so picking "in" will join the waitlist instead. */
   isFull?: boolean;
   /** 1-based queue position when the current user is waitlisted. */
@@ -16,6 +18,7 @@ export default function RSVPButton({
   currentStatus,
   onRSVP,
   disabled,
+  inDisabled,
   isFull,
   waitlistPosition,
 }: RSVPButtonProps) {
@@ -25,7 +28,7 @@ export default function RSVPButton({
   const isWaitlisted = currentStatus === 'waitlisted';
 
   const handleClick = async (status: SelectableRSVPStatus) => {
-    if (isLoading || disabled) return;
+    if (isLoading || disabled || (status === 'in' && inDisabled)) return;
 
     setIsLoading(true);
     setLoadingStatus(status);
@@ -81,6 +84,7 @@ export default function RSVPButton({
       {buttons.map(({ status, icon: Icon, label, activeClass }) => {
         // A waitlisted player is queued for the "in" spot, so that button reads active.
         const isActive = currentStatus === status || (status === 'in' && isWaitlisted);
+        const isDisabled = disabled || (status === 'in' && inDisabled);
         const isLoadingThis = loadingStatus === status;
 
         return (
@@ -89,14 +93,14 @@ export default function RSVPButton({
             aria-label={label}
             aria-pressed={isActive}
             onClick={() => handleClick(status)}
-            disabled={disabled || isLoading}
+            disabled={isDisabled || isLoading}
             className={`
               min-w-0 flex-1 flex flex-col sm:flex-row items-center justify-center gap-2 px-2 sm:px-4 py-3 rounded-lg border-2 text-xs sm:text-base font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-700 focus-visible:ring-offset-2
               ${isActive
                 ? activeClass
                 : 'border-slate-300 text-slate-600 hover:border-slate-400 hover:bg-slate-50'
               }
-              ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
+              ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}
             `}
           >
             {isLoadingThis ? (
