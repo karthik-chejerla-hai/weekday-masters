@@ -8,6 +8,7 @@ export default function NotificationSettings({ isAdmin = false }: { isAdmin?: bo
   const { user } = useAuth();
   const userID = user?.id;
   const [registered, setRegistered] = useState(false);
+  const [setupKnown, setSetupKnown] = useState(false);
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -21,10 +22,11 @@ export default function NotificationSettings({ isAdmin = false }: { isAdmin?: bo
     if (manual) setMessage(null);
     try {
       setRegistered(await notificationService.restorePushNotifications(userID));
+      setSetupKnown(true);
       setError(null);
       if (manual) setMessage('Device check complete.');
     }
-    catch { setError('Could not check this device. Try again.'); }
+    catch { setSetupKnown(false); setError('Could not check this device. Try again.'); }
     finally { setLoading(false); setChecking(false); }
   }, [userID]);
   useEffect(() => {
@@ -40,12 +42,13 @@ export default function NotificationSettings({ isAdmin = false }: { isAdmin?: bo
       if (enable) {
         const success = await notificationService.enablePushNotifications(userID);
         setRegistered(success);
-        if (!success) { setError('Allow notifications in your browser settings, then try again.'); return; }
+        if (!success) { setSetupKnown(false); setError('Allow notifications in your browser settings, then try again.'); return; }
       } else {
         await notificationService.disablePushNotifications(userID); setRegistered(false);
       }
+      setSetupKnown(true);
       window.dispatchEvent(new Event('notification-settings-changed'));
-    } catch { setError('Device setup could not finish. Try again; Rally has not confirmed success.'); }
+    } catch { setSetupKnown(false); setError('Device setup could not finish. Try again; Rally has not confirmed success.'); }
     finally { setBusy(false); }
   }
   async function test() {
@@ -54,10 +57,29 @@ export default function NotificationSettings({ isAdmin = false }: { isAdmin?: bo
     catch { setError('Could not send the test notification.'); }
     finally { setBusy(false); }
   }
+  let status = 'Disabled';
+  let statusStyle = 'bg-slate-100 text-slate-600';
+  if (loading || checking) {
+    status = 'Checking…';
+  } else if (!supported) {
+    status = 'Unavailable';
+  } else if (permission === 'denied') {
+    status = 'Blocked';
+    statusStyle = 'bg-amber-50 text-amber-800';
+  } else if (!setupKnown || (registered && permission !== 'granted')) {
+    status = 'Not confirmed';
+    statusStyle = 'bg-amber-50 text-amber-800';
+  } else if (registered) {
+    status = 'Enabled';
+    statusStyle = 'bg-emerald-50 text-emerald-700';
+  }
   return <section id="push-notifications" className="card p-6 space-y-4">
-    <h3 className="text-lg font-semibold flex items-center gap-2"><Bell className="w-5 h-5" />Push notifications</h3>
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <h3 className="text-lg font-semibold flex items-center gap-2"><Bell className="w-5 h-5" />Push notifications</h3>
+      <span role="status" aria-label="Device push status" className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusStyle}`}>{status}</span>
+      <span className="text-xs text-slate-500">On this device</span>
+    </div>
     <p className="text-sm text-slate-600">Push includes RSVP reminders, session charges, balance alerts and admin announcements. RSVP reminders are due 96 and 60 hours before a session when you have not responded and its RSVP window is open. Check each session's RSVP deadline.</p>
-    {loading || checking ? <p role="status">Checking this device…</p> : <p role="status">{registered ? 'Push set up on this device' : 'Push is not set up on this device'}</p>}
     {!supported && <p>Push is unavailable here. On iPhone or iPad, add Rally to your Home Screen first.</p>}
     {permission === 'denied' && <p>Notifications are blocked. Allow them in your browser settings, then return here.</p>}
     {!loading && <div className="flex flex-wrap gap-3">
