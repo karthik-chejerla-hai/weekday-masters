@@ -6,12 +6,12 @@
 
 **Status**: Revised draft; existing registrations preserved, forward-only policy confirmed; sign-out, deadline normalization and reversal behavior confirmed
 
-**Input**: Replace misleading member notification status; simplify controls to device setup only; send RSVP reminders at 96 and 60 hours before play with a 48-hour deadline; notify session charges and resulting low/negative balance in one message; retain manual balance nudges and announcements; remove waitlist notifications; prepare separately deliverable work.
+**Input**: Replace misleading member notification status; simplify controls to device setup only; send RSVP reminders at 96 and 60 hours before play with configurable deadlines (initial default 50 hours); notify session charges and resulting low/negative balance in one message; retain manual balance nudges and announcements; remove waitlist notifications; prepare separately deliverable work.
 
 ## Confirmed Decisions
 
 - Members enable or disable push on a device. There is no account-wide or per-category switch in the new experience; all four categories are included when a device is enrolled.
-- RSVP closes exactly 48 elapsed hours before the resolved session start. Reminders are due 96 and 60 elapsed hours before that start, rather than calendar-day offsets.
+- RSVP deadlines follow the configurable policy in `specs/008-rsvp-deadlines/spec.md`: an initial 50-hour club default, per-session custom deadlines and explicit bulk default changes. Reminders remain due 96 and 60 elapsed hours before the resolved session start, capped by the stored deadline.
 - The preferred user-facing name is **Session charges**. One notification combines a session charge with any applicable balance warning.
 - A balance below $0 is negative; a balance from $0 inclusive to below $20 is low; exactly $20 receives no balance warning.
 - Push is the only delivery channel in this feature. Invitations remain a separate, explicitly initiated email workflow.
@@ -65,7 +65,7 @@ An approved member who has not responded receives reminders at 96 and 60 hours b
 2. **Given** the member still has no RSVP, **When** the 60-hour point is reached, **Then** one second reminder becomes due.
 3. **Given** any RSVP status including OUT or waitlisted, **When** either reminder is evaluated, **Then** no reminder is sent.
 4. **Given** a response after a reminder was queued, **When** delivery is about to occur, **Then** the reminder is suppressed.
-5. **Given** the 48-hour deadline, **When** it is reached, **Then** existing deadline restrictions apply from that instant, retaining existing admin exceptions and late-RSVP rules.
+5. **Given** the stored session deadline, **When** it is reached, **Then** existing deadline restrictions apply from that instant, retaining existing admin exceptions and late-RSVP rules.
 6. **Given** cancellation, removal, a changed session time or an expired reminder, **When** delivery is attempted, **Then** stale work is suppressed or rescheduled as appropriate.
 7. **Given** repeated or concurrent scheduled checks, **When** the same reminder is found, **Then** only one logical reminder exists per member, session and stage.
 
@@ -125,8 +125,8 @@ An admin publishes an ad hoc announcement to approved members. Session cancellat
 - A member can have no devices, several devices, revoked devices or invalid provider registrations; device counts must describe active registrations only.
 - Disable/reload and multiple tabs must not cause silent enrollment. Account switching must prevent subsequent alerts to that browser for the former account. Ordinary sign-out retains registration; explicit disable revokes it. Switching accounts retires the former account’s registration on that browser.
 - Existing registrations are preserved regardless of legacy master/category flags. No preference-based device revocation or mandatory re-enrollment occurs at rollout.
-- Durations are elapsed hours from the resolved start; Sydney daylight saving must not shift the 96/60/48-hour instants.
-- On rollout, already-closed RSVP windows are not reopened. All still-open future windows adopt 48 hours, including custom deadlines; historical and cancelled sessions retain their deadlines.
+- Durations are elapsed hours from the resolved start; Sydney daylight saving must not shift the 96/60-hour reminder and configured deadline instants.
+- Notification rollout does not alter RSVP deadlines. Explicit admin edits and club-default changes follow the configurable-deadline specification, including future closed/cancelled sessions.
 - A session created late or an outage spanning both reminders must not cause a burst of both stages. Only the latest still-useful stage is eligible.
 - A member who enables a device later receives future alerts; old suppressed work is not replayed as a backlog.
 - A provider may accept a message immediately before a worker crashes. Delivery is best-effort with duplicate mitigation, not a guarantee that the member saw it exactly once.
@@ -142,7 +142,7 @@ An admin publishes an ad hoc announcement to approved members. Session cancellat
 - **FR-002**: Members MUST have device enrollment/removal controls only, covering all four categories. Removal MUST persist and must not remove other devices.
 - **FR-003**: Rollout MUST preserve existing device registrations without re-enrollment, disregard legacy account/category opt-outs, and preserve membership checks, operational notification stops, private token handling and explicitly initiated invitation behavior.
 - **FR-004**: RSVP reminders MUST target approved members with no response at 96 and 60 elapsed hours before the session start; eligibility MUST be checked again immediately before delivery.
-- **FR-005**: The RSVP deadline MUST become 48 elapsed hours before the session start for new sessions and all still-open future windows, including custom deadlines, without reopening closed windows or modifying history.
+- **FR-005**: RSVP deadlines MUST retain the configurable policy from `specs/008-rsvp-deadlines/spec.md`. The initial default is 50 elapsed hours; admins can override one deadline or replace all future deadlines by changing the default. Notification rollout MUST NOT rewrite stored deadlines.
 - **FR-006**: Session-charge messages MUST summarize committed total charges and balances at that split, and MUST open the split directly.
 - **FR-007**: Balance classification MUST use negative below zero, low from zero to below 2000 cents, and no warning at or above 2000 cents. Automatic alerts MUST be combined with the charge message.
 - **FR-008**: Manual nudges MUST reuse balance rules and wording, retain the 24-hour manual cooldown, and open the member’s money page.
@@ -185,8 +185,8 @@ An admin publishes an ad hoc announcement to approved members. Session cancellat
 - Notification history remains available without devices. Paused/disabled operation records event history and suppressed delivery intent; it does not send, and does not replay suppressed work automatically.
 - Ordinary sign-out retains push registration. Only explicit disable, account switching on the same browser, or a provider-confirmed invalid registration retires a device.
 - Reversing a split creates one correction event per included member under Session charges, atomically with the reversal. Pending receipts for the reversed split are suppressed; historical receipts are retained and their destinations identify the original settlement.
-- Reminder usefulness expires at the next stage or the 48-hour deadline. Rollout marks stages already due as skipped; later stages remain eligible.
-- New session forms use the 48-hour deadline without a custom-deadline control. All still-open upcoming windows adopt the new default, including previously custom deadlines; already-closed windows stay closed. A later explicit change to an open session’s date/start converts it to the new default with a visible preview.
+- Reminder usefulness expires at the next stage or the stored session deadline. Rollout marks already-due stages as skipped. An explicit admin deadline extension can re-arm an unpublished stage only while its due time remains in the future; it never replays a past-due or published stage.
+- New session forms retain the club default and custom-deadline controls. Date/start edits and explicit club-default changes follow the configurable-deadline specification. Changing the default replaces deadlines for all future sessions, while historical deadlines stay unchanged.
 - Other event delivery expires 24 hours after creation. Manual nudges re-check current eligibility before delivery; their message states when the quoted balance was checked.
 - Proposed operational defaults and migration rules are documented in the plan for review; the three primary product choices above were explicitly confirmed.
 - No application changes, production messages or cloud-resource changes are authorized by this planning work.

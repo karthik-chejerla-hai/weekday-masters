@@ -540,7 +540,7 @@ paths:
     post:
       tags: [RSVP]
       summary: Create RSVP for a session
-      description: Requires approved membership. Subject to the stored session RSVP deadline.
+      description: Requires approved membership. Subject to the stored session RSVP deadline. The club default is initially 50 elapsed hours before the resolved start, with explicit admin overrides.
       operationId: createRSVP
       parameters:
         - $ref: "#/components/parameters/SessionId"
@@ -2835,6 +2835,12 @@ components:
     Club:
       type: object
       properties:
+        rsvp_deadline_hours:
+          type: integer
+          minimum: 0
+          maximum: 8760
+          default: 50
+          description: Hours before the session start when RSVPs close. Changing this value replaces all future session deadlines, including custom deadlines.
         id:
           type: string
           format: uuid
@@ -3237,7 +3243,7 @@ components:
           format: uuid
         notification_type:
           type: string
-          enum: [session_reminder, rsvp_deadline, waitlist_update, admin_announcement, balance_low, balance_negative]
+          enum: [rsvp_reminder, session_reminder, rsvp_deadline, waitlist_update, admin_announcement, balance_low, balance_negative]
         title:
           type: string
         body:
@@ -3445,6 +3451,12 @@ components:
     UpdateClubRequest:
       type: object
       properties:
+        rsvp_deadline_hours:
+          type: integer
+          minimum: 0
+          maximum: 8760
+          default: 50
+          description: Hours before the session start when RSVPs close. Changing this value replaces all future session deadlines, including custom deadlines.
         notifications_paused:
           type: boolean
           description: Pauses all notification delivery. Does not queue messages for later sending.

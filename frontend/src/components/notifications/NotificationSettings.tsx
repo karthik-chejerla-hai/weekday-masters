@@ -79,7 +79,7 @@ export default function NotificationSettings({ isAdmin = false }: { isAdmin?: bo
       <span role="status" aria-label="Device push status" className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusStyle}`}>{status}</span>
       <span className="text-xs text-slate-500">On this device</span>
     </div>
-    <p className="text-sm text-slate-600">Push includes RSVP reminders, session charges, balance alerts and admin announcements. All supported push alerts are included.</p>
+    <p className="text-sm text-slate-600">Push includes RSVP reminders, session charges, balance alerts and admin announcements. RSVP reminders are due 96 and 60 hours before a session when you have not responded and its RSVP window is open. Check each session's RSVP deadline.</p>
     {!supported && <p>Push is unavailable here. On iPhone or iPad, add Rally to your Home Screen first.</p>}
     {permission === 'denied' && <p>Notifications are blocked. Allow them in your browser settings, then return here.</p>}
     {!loading && <div className="flex flex-wrap gap-3">

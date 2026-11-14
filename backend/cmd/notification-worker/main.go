@@ -37,13 +37,13 @@ func main() {
 	notifications := services.NewNotificationService(services.NotificationConfig{
 		Disabled: cfg.NotificationsDisabled, FirebaseProjectID: cfg.FirebaseProjectID, FirebaseCredentials: cfg.FirebaseCredentials, FrontendURL: cfg.FrontendURL,
 	})
-	legacy := services.NewSchedulerService(services.SchedulerConfig{
-		NotificationService: notifications, SessionReminderHours24: cfg.SessionReminderHours24,
-		SessionReminderHours12: cfg.SessionReminderHours12, DeadlineReminderHours: cfg.DeadlineReminderHours,
-	})
 	// Preview worker does not inherit the API's diagnostic email allowlist.
 	router := handlers.NewNotificationWorkerRouter(audience, schedulerEmail, idtoken.Validate, func(ctx context.Context) (any, error) {
-		result, err := runScheduledWork(ctx, cfg.NotificationsDisabled, legacy.RunOnce, notifications.ProcessNotificationWork)
+		result, err := runScheduledWork(ctx, false, func(ctx context.Context) error {
+			scan, err := notifications.QueueDueRSVPReminders(ctx, time.Now().UTC(), 100)
+			emitWorkerHealth("rsvp_reminder_scan", scan, err)
+			return err
+		}, notifications.ProcessNotificationWork)
 		emitWorkerHealth("notification_drain", result, err)
 		return result, err
 	}, func(ctx context.Context) (any, error) {

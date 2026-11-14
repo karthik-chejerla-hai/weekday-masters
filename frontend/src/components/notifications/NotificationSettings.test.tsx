@@ -42,6 +42,15 @@ it('retains admin self-test only', async () => {
  expect(await screen.findByText('Test notification accepted by 1 of 1 registered devices.')).toBeInTheDocument();
 });
 
+it('describes reminders using each session deadline rather than a fixed close time', async () => {
+ render(<NotificationSettings />);
+ await screen.findByRole('button', { name: 'Disable on this device' });
+ const policy = screen.getByText(/Check each session's RSVP deadline/);
+ expect(policy).toHaveTextContent('96 and 60 hours');
+ expect(policy).toHaveTextContent('its RSVP window is open');
+ expect(policy).not.toHaveTextContent('48 hours');
+});
+
 it('shows the device setup status only once after enabling and checking again', async () => {
  vi.mocked(notificationService.restorePushNotifications).mockResolvedValueOnce(false).mockResolvedValue(true);
  render(<NotificationSettings />);

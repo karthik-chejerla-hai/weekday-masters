@@ -124,7 +124,7 @@ jobs:
             --allow-unauthenticated \
             --update-env-vars="GIN_MODE=release" \
             --update-env-vars="OTEL_ENABLED=false" \
-            --remove-env-vars="OTEL_SERVICE_NAME,OTEL_RESOURCE_ATTRIBUTES,OTEL_EXPORTER_OTLP_ENDPOINT,OTEL_EXPORTER_OTLP_TIMEOUT,OTEL_METRIC_EXPORT_INTERVAL" \
+            --remove-env-vars="SESSION_REMINDER_HOURS_24,SESSION_REMINDER_HOURS_12,DEADLINE_REMINDER_HOURS,OTEL_SERVICE_NAME,OTEL_RESOURCE_ATTRIBUTES,OTEL_EXPORTER_OTLP_ENDPOINT,OTEL_EXPORTER_OTLP_TIMEOUT,OTEL_METRIC_EXPORT_INTERVAL" \
             --remove-secrets="OTEL_EXPORTER_OTLP_HEADERS" \
             --update-env-vars="NOTIFICATIONS_DISABLED=true" \
             --update-env-vars="NOTIFICATION_WORKER_ENABLED=${{ vars.NOTIFICATION_WORKER_ENABLED || 'false' }}" \
@@ -140,10 +140,7 @@ jobs:
             --update-env-vars="FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}" \
             --update-env-vars="SENDGRID_API_KEY=${{ secrets.SENDGRID_API_KEY }}" \
             --update-env-vars="SENDGRID_FROM_EMAIL=${{ secrets.SENDGRID_FROM_EMAIL }}" \
-            --update-env-vars="SENDGRID_FROM_NAME=Rally" \
-            --update-env-vars="SESSION_REMINDER_HOURS_24=24" \
-            --update-env-vars="SESSION_REMINDER_HOURS_12=12" \
-            --update-env-vars="DEADLINE_REMINDER_HOURS=6"
+            --update-env-vars="SENDGRID_FROM_NAME=Rally"
 
       # Smoke check only. The URL is deliberately NOT exported as a job output: the
       # frontend job resolves it itself at build time, because passing it between

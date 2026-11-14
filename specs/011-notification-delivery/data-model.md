@@ -42,6 +42,6 @@ Manual nudge request identity stores/reuses its original event result; cooldown 
 
 - Preserve all existing token rows/ownership; add active lifecycle metadata without deleting or rotating tokens, regardless of old preferences. Assign installation identity automatically on a browser visit; unvisited registrations remain deliverable. Retire preference policy rather than migrating opt-outs. Subsequent explicit device revocations still persist.
 - Do not delete notification history or ledger records. Do not backfill charge events for old settlements/imports.
-- Migrate open future sessions only if their existing RSVP window is still open including custom deadlines; write resolved starts_at - 48h. Preserve closed windows on later edits.
+- Notification migration preserves every stored RSVP deadline. Club defaults, per-session overrides and explicit bulk changes follow `specs/008-rsvp-deadlines/spec.md`. The initial club default is 50 elapsed hours. Future unpublished stages can become pending after an explicit deadline extension only before their due time.
 - Fixed threshold: 2000 cents in shared notification policy; retained Club threshold reporting and nudge UI must match this policy after cutover.
 - Add new tables to `backend/internal/testsupport/db.go` truncation list, respecting foreign keys.
