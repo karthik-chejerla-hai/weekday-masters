@@ -5,7 +5,7 @@ import { api } from '../../services/api';
 import { parseSydneyDateTime } from '../../utils/sydney-time';
 import type { RSVPReminderPreview, Session } from '../../types';
 
-export default function SessionRSVPReminder({ session }: { session: Session }) {
+export default function SessionRSVPReminder({ session, showAction = true }: { session: Session; showAction?: boolean }) {
   const [preview, setPreview] = useState<RSVPReminderPreview>();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -30,7 +30,7 @@ export default function SessionRSVPReminder({ session }: { session: Session }) {
   }, [preview]);
   useEffect(() => { if (message) feedback.current?.focus(); }, [message]);
   const startsAt = session.starts_at ? Date.parse(session.starts_at) : parseSydneyDateTime(`${session.session_date.slice(0, 10)}T${session.start_time}`)?.getTime();
-  const closed = session.status !== 'open' || now >= Date.parse(session.rsvp_deadline) ||
+  const closed = !showAction || session.status !== 'open' || now >= Date.parse(session.rsvp_deadline) ||
     (startsAt === undefined || now >= startsAt);
   const coolingDown = nextAllowedAt !== null && now < Date.parse(nextAllowedAt);
 
@@ -85,10 +85,13 @@ export default function SessionRSVPReminder({ session }: { session: Session }) {
     requestId.current = undefined;
     triggerButton.current?.focus();
   }
+  // Dashboard switches to score entry at session start. Keep an existing
+  // confirmation/result alive while hiding the action for fresh reminders.
+  if (!showAction && !preview && !message) return null;
   return <div className="border-t border-slate-100 p-4 text-sm sm:p-5">
-    <button ref={triggerButton} type="button" className="btn-secondary inline-flex min-h-11 items-center gap-2" disabled={busy || closed || coolingDown || !!preview} onClick={() => void review()}>
+    {showAction && <button ref={triggerButton} type="button" className="btn-secondary inline-flex min-h-11 items-center gap-2" disabled={busy || closed || coolingDown || !!preview} onClick={() => void review()}>
       <Bell className="h-4 w-4" aria-hidden="true" />{busy && !preview ? 'Checking recipients…' : 'Remind players to RSVP'}
-    </button>
+    </button>}
     {closed && <p className="mt-2 text-slate-600">New reminders are available before the RSVP deadline for upcoming open sessions.</p>}
     {coolingDown && <p className="mt-2 text-slate-600">Available again at {formatInTimeZone(nextAllowedAt!, 'Australia/Sydney', "EEE, d MMM 'at' h:mm a")} (Sydney).</p>}
     {preview && <section aria-label="Confirm RSVP reminders" className="mt-3 rounded-lg bg-slate-50 p-3" onKeyDown={event => { if (event.key === 'Escape' && !busy) cancel(); }}>

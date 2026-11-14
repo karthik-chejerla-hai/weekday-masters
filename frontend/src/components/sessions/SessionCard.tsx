@@ -87,7 +87,7 @@ export default function SessionCard({ session, venueName, courtNumber, timeForma
           </p>
         )}
       </Link>
-      {isAdmin && !recordScore && <SessionRSVPReminder key={session.id} session={session} />}
+      {isAdmin && <SessionRSVPReminder key={session.id} session={session} showAction={!recordScore} />}
       {recordScore && !isCancelled && <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 p-4 sm:p-5">
         <Link to={`/sessions/${session.id}/games`} className="btn-primary min-h-11 flex-1 sm:flex-none">Record score</Link>
         <Link to={`/sessions/${session.id}`} className="inline-flex min-h-11 items-center px-2 text-sm font-semibold text-primary-700 underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-700 focus-visible:ring-offset-2">Session details</Link>

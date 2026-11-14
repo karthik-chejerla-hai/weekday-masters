@@ -38,7 +38,8 @@ return 409; a missing session returns 404; cooldown returns 429 with
 `next_allowed_at`. Retry an uncertain network result with the original request ID.
 After an uncertain send, the UI keeps **Retry confirmation** available even if the
 deadline has since passed;
-new submissions remain disabled.
+new submissions remain disabled. The dashboard preserves a pending confirmation
+when the session starts and the card switches to score entry.
 
 ## Schema and verification
 
