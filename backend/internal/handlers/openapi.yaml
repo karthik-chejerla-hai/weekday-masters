@@ -540,7 +540,7 @@ paths:
     post:
       tags: [RSVP]
       summary: Create RSVP for a session
-      description: Requires approved membership. Subject to the stored session RSVP deadline. The club default is initially 50 elapsed hours before the resolved start, with explicit admin overrides.
+      description: Requires approved membership and an open session. IN requests are accepted after the stored RSVP deadline until the resolved session start, subject to capacity and waitlisting. After the deadline, confirmed IN responses cannot change to OUT or Maybe. Unconfirmed players may still choose OUT or Maybe, including waitlist withdrawal. Late attendance requests are flagged.
       operationId: createRSVP
       parameters:
         - $ref: "#/components/parameters/SessionId"
@@ -564,7 +564,7 @@ paths:
     put:
       tags: [RSVP]
       summary: Update RSVP for a session
-      description: Requires approved membership. After deadline, IN cannot be changed to OUT.
+      description: Requires approved membership. Uses the same rules as POST. After the stored deadline, confirmed IN responses cannot change to OUT or Maybe. Unconfirmed players may still change their response; IN requests close at session start.
       operationId: updateRSVP
       parameters:
         - $ref: "#/components/parameters/SessionId"
@@ -588,7 +588,7 @@ paths:
     delete:
       tags: [RSVP]
       summary: Remove RSVP from a session
-      description: Requires approved membership.
+      description: Requires approved membership. Confirmed IN responses cannot be removed after the stored deadline. Waitlisted and other unconfirmed responses may be removed. Cancelled session RSVPs are retained.
       operationId: deleteRSVP
       parameters:
         - $ref: "#/components/parameters/SessionId"

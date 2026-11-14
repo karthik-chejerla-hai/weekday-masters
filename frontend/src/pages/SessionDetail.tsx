@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Calendar, Clock, Users, MapPin, AlertCircle, Loader2 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
-import { formatInTimeZone, fromZonedTime } from 'date-fns-tz';
+import { formatInTimeZone } from 'date-fns-tz';
+import { isAxiosError } from 'axios';
+import { useSessionRSVPTiming } from '../hooks/useSessionRSVPTiming';
 import { useAuth } from '../context/useAuth';
 import { api } from '../services/api';
 import type { Club, Session, RSVPSummary, SelectableRSVPStatus, RSVP, GuestRSVP } from '../types';
@@ -24,6 +26,8 @@ export default function SessionDetail() {
   const [myRsvp, setMyRsvp] = useState<RSVP | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [editingGuest, setEditingGuest] = useState<GuestRSVP | null>(null);
+  const [rsvpError, setRsvpError] = useState<string | null>(null);
+  const { startsAt, now, isDeadlinePassed, canJoin, isStartUnavailable } = useSessionRSVPTiming(session);
   const guestDialog = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -53,8 +57,21 @@ export default function SessionDetail() {
 
   const handleRSVP = async (status: SelectableRSVPStatus) => {
     if (!id) return;
-    await api.createRSVP(id, status);
-    await loadSession();
+    setRsvpError(null);
+    if (status === 'in' && (!Number.isFinite(startsAt) || Date.now() >= startsAt)) {
+      setRsvpError(Number.isFinite(startsAt)
+        ? 'The session has started. New IN requests are closed.'
+        : 'Session start time is unavailable. Please contact an admin.');
+      return;
+    }
+    try {
+      await api.createRSVP(id, status);
+      await loadSession();
+    } catch (error) {
+      const message = isAxiosError(error) ? error.response?.data?.error : undefined;
+      setRsvpError(typeof message === 'string' ? message : 'Could not save your RSVP. Please try again.');
+      await loadSession();
+    }
   };
 
   if (isLoading) {
@@ -78,16 +95,13 @@ export default function SessionDetail() {
   }
 
   const sessionDate = parseISO(session.session_date);
-  const isDeadlinePassed = new Date() > new Date(session.rsvp_deadline);
   const isCancelled = session.status === 'cancelled';
-  const startsAt = session.starts_at ? Date.parse(session.starts_at)
-    : fromZonedTime(`${session.session_date.slice(0, 10)}T${session.start_time}:00`, 'Australia/Sydney').getTime();
-  const emphasizeResults = !isCancelled && startsAt <= Date.now();
+  const emphasizeResults = !isCancelled && startsAt <= now;
   const responseLabel = myRsvp ? {
     in: 'Confirmed', maybe: 'Tentative', out: 'Not attending', waitlisted: 'Waitlisted',
   }[myRsvp.status] : 'Not responded';
-  const canChangeRsvp = !isDeadlinePassed && session.status === 'open';
-  const canOnlyChangeToIn = isDeadlinePassed && myRsvp?.status === 'in';
+  const canChangeRsvp = session.status === 'open';
+  const isConfirmedLocked = isDeadlinePassed && myRsvp?.status === 'in';
   const isWaitlisted = myRsvp?.status === 'waitlisted';
   const confirmedCount = summary?.total_in ?? 0;
   // The backend is the authority on capacity; spots_left already accounts for
@@ -121,8 +135,12 @@ export default function SessionDetail() {
           <h1 className="text-2xl font-bold text-slate-900">{session.title}</h1>
           {isCancelled ? (
             <Badge variant="danger">Cancelled</Badge>
-          ) : isDeadlinePassed || session.status === 'closed' ? (
+          ) : session.status === 'open' && isStartUnavailable ? (
+            <Badge variant="warning">RSVP unavailable</Badge>
+          ) : !canJoin ? (
             <Badge variant="warning">RSVP Closed</Badge>
+          ) : isDeadlinePassed ? (
+            <Badge variant="warning">Late RSVPs open</Badge>
           ) : (
             <Badge variant="success">Open for RSVP</Badge>
           )}
@@ -185,7 +203,7 @@ export default function SessionDetail() {
           </p>
         )}
 
-        {canChangeRsvp && (
+        {canChangeRsvp && !isDeadlinePassed && (
           <div className="mt-4 p-3 bg-amber-50 rounded-lg">
             <p className="text-sm text-amber-800">
               <span className="font-medium">RSVP Deadline:</span>{' '}
@@ -200,13 +218,23 @@ export default function SessionDetail() {
           <h2 className="font-semibold text-slate-900">Your RSVP</h2>
           <p className="mt-1 mb-4 text-sm font-medium text-slate-700">Current response: {responseLabel}</p>
 
-          {canOnlyChangeToIn ? (
+          {rsvpError && <p role="alert" className="mb-3 text-sm text-red-700">{rsvpError}</p>}
+          {isConfirmedLocked ? (
             <div className="p-4 bg-amber-50 rounded-lg text-amber-800 text-sm">
               <p className="font-medium">RSVP deadline has passed</p>
               <p>You confirmed attendance and cannot change your RSVP.</p>
             </div>
           ) : (
             <>
+              {canChangeRsvp && (isDeadlinePassed || isStartUnavailable) && (
+                <p className="mb-3 text-sm text-amber-800">
+                  {isStartUnavailable
+                    ? 'Session start time is unavailable. Please contact an admin.'
+                    : canJoin
+                    ? 'You can still join until the session starts. Once confirmed IN, you cannot withdraw after the deadline.'
+                    : 'The session has started. New IN requests are closed.'}
+                </p>
+              )}
               {capacityNotice && (
                 <div className="mb-3 p-3 bg-amber-50 rounded-lg text-amber-800 text-sm">
                   <p className="font-medium">{capacityNotice.title}</p>
@@ -218,10 +246,11 @@ export default function SessionDetail() {
                 currentStatus={myRsvp?.status}
                 onRSVP={handleRSVP}
                 disabled={!canChangeRsvp}
+                inDisabled={!canJoin}
                 isFull={isFull}
                 waitlistPosition={myRsvp?.waitlist_position}
               />
-              {!canChangeRsvp && !canOnlyChangeToIn && (
+              {!canChangeRsvp && !isConfirmedLocked && (
                 <p className="text-sm text-slate-500 mt-2 text-center">
                   RSVP is closed for this session
                 </p>
@@ -233,7 +262,7 @@ export default function SessionDetail() {
 
       {user?.role === 'admin' && session.status === 'open' && (
         <AdminRSVPForm key={session.id} sessionId={session.id} rsvps={session.rsvps || []}
-          guests={session.guest_rsvps || []} allowGuests={startsAt > Date.now()}
+          guests={session.guest_rsvps || []} allowGuests={startsAt > now}
           deadlinePassed={isDeadlinePassed} isFull={isFull} onSaved={loadSession} />
       )}
 
@@ -248,8 +277,8 @@ export default function SessionDetail() {
         <PlayerList
           rsvps={sessionResponses(session)}
           maxPlayers={session.max_players}
-          onEditGuest={user?.role === 'admin' && session.status === 'open' && startsAt > Date.now() ? setEditingGuest : undefined}
-          onRemoveGuest={user?.role === 'admin' && session.status === 'open' && startsAt > Date.now() ? async guest => {
+          onEditGuest={user?.role === 'admin' && session.status === 'open' && startsAt > now ? setEditingGuest : undefined}
+          onRemoveGuest={user?.role === 'admin' && session.status === 'open' && startsAt > now ? async guest => {
             await api.deleteGuestRSVP(session.id, guest.id);
             await loadSession();
           } : undefined}

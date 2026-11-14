@@ -40,8 +40,9 @@ func (s *RSVPService) CreateOrUpdateRSVP(input RSVPInput, byAdmin bool) (*models
 		now := utils.NowInSydney()
 		isLate := now.After(session.RSVPDeadline)
 
-		if !byAdmin && isLate {
-			return nil, errors.New("RSVP deadline has passed")
+		if !byAdmin && input.Status == models.RSVPStatusIn &&
+			(session.StartsAt == nil || !now.Before(*session.StartsAt)) {
+			return nil, errors.New("cannot mark IN once the session has started")
 		}
 
 		existing := true
@@ -60,24 +61,31 @@ func (s *RSVPService) CreateOrUpdateRSVP(input RSVPInput, byAdmin bool) (*models
 
 		wasConfirmed := existing && rsvp.Status == models.RSVPStatusIn
 
-		// Apply the capacity rule. Admin-added players bypass it.
+		// Only new attendance requests compete for capacity. An IN retry must
+		// retain its confirmed place, even when an admin has exceeded the cap.
 		status := input.Status
-		if status == models.RSVPStatusIn && !byAdmin {
+		if status == models.RSVPStatusIn && !byAdmin && !wasConfirmed {
 			confirmed, err := countConfirmed(tx, input.SessionID)
 			if err != nil {
 				return nil, err
 			}
-			if wasConfirmed {
-				// The spot we already hold is not competition for ourselves.
-				confirmed--
-			}
-
 			if confirmed >= session.MaxPlayers {
 				status = models.RSVPStatusWaitlisted
 			}
 		}
 
 		if existing {
+			// A previous OUT/Maybe response can become a late attendance request.
+			// Keep the flag once set, including while a player waits for a spot.
+			if isLate && input.Status == models.RSVPStatusIn &&
+				rsvp.Status != models.RSVPStatusIn && rsvp.Status != models.RSVPStatusWaitlisted {
+				rsvp.IsLateRSVP = true
+			}
+			if status == models.RSVPStatusWaitlisted && rsvp.Status != models.RSVPStatusWaitlisted {
+				// Queue order starts when attendance is requested, not when an
+				// earlier OUT/Maybe response was recorded. Retries keep their place.
+				rsvp.RSVPTimestamp = now
+			}
 			rsvp.Status = status
 			if byAdmin {
 				rsvp.AddedByAdmin = true

@@ -4,6 +4,7 @@ import { format, parseISO } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import type { Session, TimeFormat, RSVPStatus } from '../../types';
 import { sessionResponses } from '../../utils/player-responses';
+import { useSessionRSVPTiming } from '../../hooks/useSessionRSVPTiming';
 import Badge from '../ui/Badge';
 import SessionRSVPReminder from './SessionRSVPReminder';
 import PlayerRSVPChips from './PlayerRSVPChips';
@@ -29,7 +30,7 @@ export default function SessionCard({ session, venueName, courtNumber, timeForma
   const dateLabel = format(sessionDate, 'EEEE, d MMMM yyyy');
   // Recurring sessions use this date-only title. Preserve every custom title.
   const hasCustomTitle = session.title !== format(sessionDate, 'EEEE - dd MMM yyyy');
-  const isDeadlinePassed = new Date() > new Date(session.rsvp_deadline);
+  const { isDeadlinePassed, canJoin, isStartUnavailable } = useSessionRSVPTiming(session);
   const isCancelled = session.status === 'cancelled';
   const isCurrentSession = recordScore && !isCancelled;
   const responses = sessionResponses(session);
@@ -66,7 +67,10 @@ export default function SessionCard({ session, venueName, courtNumber, timeForma
           {!isCurrentSession && (isCancelled ? <Badge variant="danger">Cancelled</Badge> : <>
             {spotsLeft <= 0 ? <Badge variant="warning">Full{waitingCount > 0 ? ` · ${waitingCount} waiting` : ''}</Badge>
               : spotsLeft <= 2 && <Badge variant="warning">{spotsLeft} spots left</Badge>}
-            {isDeadlinePassed ? <Badge variant="warning">RSVP Closed</Badge> : <Badge variant="success">RSVP open</Badge>}
+            {session.status === 'open' && isStartUnavailable ? <Badge variant="warning">RSVP unavailable</Badge>
+              : !canJoin ? <Badge variant="warning">RSVP Closed</Badge>
+              : isDeadlinePassed ? <Badge variant="warning">Late RSVPs open</Badge>
+              : <Badge variant="success">RSVP open</Badge>}
           </>)}
         </div>
         {!isCurrentSession && <p className="mt-2 rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-900">
