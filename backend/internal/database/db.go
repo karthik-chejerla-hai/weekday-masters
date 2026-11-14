@@ -64,6 +64,7 @@ func Migrate() error {
 		&models.UserNotificationPreferences{},
 		&models.UserPushToken{},
 		&models.Notification{},
+		&models.RSVPReminderBatch{},
 		&models.Announcement{},
 		// Ledger models
 		&models.Account{},

@@ -26,6 +26,8 @@ func NewNotificationHandler(notificationService *services.NotificationService) *
 func (h *NotificationHandler) RegisterAdminRoutes(protected *gin.RouterGroup) {
 	admin := protected.Group("/admin", middleware.RequireApproved(), middleware.RequireAdmin())
 	admin.POST("/notifications/test-push", h.SendTestPush)
+	admin.GET("/sessions/:id/rsvp-reminder", h.PreviewRSVPReminder)
+	admin.POST("/sessions/:id/rsvp-reminder", h.SendRSVPReminder)
 	admin.POST("/users/:id/balance-nudge", h.SendBalanceNudge)
 	admin.GET("/notifications/:id/delivery", h.GetDeliveryStatus)
 }
