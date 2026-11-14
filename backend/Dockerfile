@@ -18,6 +18,7 @@ COPY . .
 # Build the binaries
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o server ./cmd/server
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o migrate ./cmd/migrate
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o notification-worker ./cmd/notification-worker
 
 # Final stage
 FROM alpine:3.19
@@ -30,6 +31,7 @@ RUN apk --no-cache add ca-certificates tzdata
 # Copy binaries from builder
 COPY --from=builder /app/server .
 COPY --from=builder /app/migrate .
+COPY --from=builder /app/notification-worker .
 
 # Cloud Run uses PORT env var
 ENV PORT=8080

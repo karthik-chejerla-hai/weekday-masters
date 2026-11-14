@@ -854,17 +854,17 @@ paths:
       summary: Remind a low-balance member to top up
       description: >
         Approved admins only. Creates a balance alert in the member's Rally
-        notification history and attempts push delivery to their registered
-        devices. The response distinguishes accepted push delivery from an
-        in-app-only reminder. Only approved members below the configured
-        low-balance threshold are eligible, and a member may be nudged at most
+        notification history and durably queues push delivery to their registered
+        devices. The response distinguishes queued delivery from suppressed
+        delivery; queued is not provider acceptance or device arrival. Only
+        approved members below the fixed $20 (2000 cents) threshold are eligible, and a member may be nudged at most
         once every 24 hours.
       operationId: sendBalanceNudge
       parameters:
         - $ref: "#/components/parameters/UserId"
       responses:
         "201":
-          description: Nudge recorded and push delivery attempted
+          description: Nudge recorded with queued or suppressed delivery state
           content:
             application/json:
               schema:
@@ -884,6 +884,34 @@ paths:
         "503":
           description: Notifications are paused or disabled
 
+  /admin/notifications/{id}/delivery:
+    get:
+      tags: [Notifications]
+      summary: Read aggregate push delivery outcome
+      description: Approved admins only. Counts expose no device identifiers, addresses, proofs or provider errors. Provider acceptance does not confirm device receipt.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Persisted aggregate outcome and counts by device-attempt state
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [notification_id, state, devices]
+                properties:
+                  notification_id: { type: string, format: uuid }
+                  state: { type: string, enum: [pending, claimed, completed, partial, failed, uncertain, suppressed, expired] }
+                  devices:
+                    type: object
+                    additionalProperties: { type: integer, minimum: 0 }
+        '400': { description: Invalid notification ID }
+        '401': { description: Authentication required }
+        '403': { description: Approved admin required }
+        '404': { description: No delivery intent exists }
   /admin/notifications/test-push:
     post:
       tags: ["Admin: Members"]
@@ -3081,6 +3109,13 @@ components:
       type: object
       required: [notification_id, balance_cents, push_sent, next_allowed_at]
       properties:
+        delivery_state:
+          type: string
+          enum: [pending, suppressed]
+          description: Durable push state at publication; pending does not claim arrival.
+        suppression_reason:
+          type: string
+          description: Safe reason code when delivery was suppressed.
         notification_id:
           type: string
           format: uuid

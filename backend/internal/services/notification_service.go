@@ -57,10 +57,12 @@ func (e *BalanceNudgeCooldownError) Error() string {
 }
 
 type BalanceNudgeResult struct {
-	NotificationID uuid.UUID `json:"notification_id"`
-	BalanceCents   int64     `json:"balance_cents"`
-	PushSent       bool      `json:"push_sent"`
-	NextAllowedAt  time.Time `json:"next_allowed_at"`
+	NotificationID    uuid.UUID            `json:"notification_id"`
+	BalanceCents      int64                `json:"balance_cents"`
+	PushSent          bool                 `json:"push_sent"`
+	DeliveryState     models.DeliveryState `json:"delivery_state"`
+	SuppressionReason string               `json:"suppression_reason,omitempty"`
+	NextAllowedAt     time.Time            `json:"next_allowed_at"`
 }
 
 // PushTestResult reports provider acceptance for an explicit self-test. It
@@ -156,37 +158,23 @@ func (s *NotificationService) SendNotification(
 	title, body string,
 	data map[string]string,
 ) error {
-	allowed, bypassClubPause, err := s.deliveryPolicy(userID)
+	if database.DB == nil {
+		return errors.New("notification database unavailable")
+	}
+	dataJSON, err := json.Marshal(data)
 	if err != nil {
 		return err
 	}
-	if !allowed {
-		return nil
-	}
-	// Fail closed if the pause cannot be read. The importer sets it in the
-	// same commit as membership, so cron cannot see an unpaused imported user.
-	var club models.Club
-	if err := database.DB.Select("notifications_paused").First(&club).Error; err != nil {
+	notification := models.Notification{UserID: userID, NotificationType: notifType, Title: title, Body: body, Data: string(dataJSON)}
+	return database.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		now := time.Now().UTC()
+		key, expiry, err := notificationDeliveryIdentity(tx, &notification, now)
+		if err != nil {
+			return err
+		}
+		_, err = s.QueueNotificationWithin(tx, &notification, key, now, expiry)
 		return err
-	}
-	if club.NotificationsPaused && !bypassClubPause {
-		return nil
-	}
-	// Create notification record
-	dataJSON, _ := json.Marshal(data)
-	notification := models.Notification{
-		UserID:           userID,
-		NotificationType: notifType,
-		Title:            title,
-		Body:             body,
-		Data:             string(dataJSON),
-	}
-
-	if err := database.DB.Create(&notification).Error; err != nil {
-		return fmt.Errorf("failed to create notification record: %w", err)
-	}
-
-	return s.deliverNotification(ctx, &notification)
+	})
 }
 
 // SendBalanceNudge records a targeted top-up reminder and attempts immediate
@@ -204,6 +192,7 @@ func (s *NotificationService) SendBalanceNudge(
 	}
 
 	var notification models.Notification
+	var delivery *models.NotificationOutbox
 	var balance int64
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
 		var user models.User
@@ -233,7 +222,7 @@ func (s *NotificationService) SendBalanceNudge(
 		`, userID).Scan(&balance).Error; err != nil {
 			return err
 		}
-		if balance >= club.LowBalanceThresholdCents {
+		if balance >= models.NotificationBalanceThresholdCents {
 			return ErrBalanceNudgeNotNeeded
 		}
 
@@ -271,20 +260,21 @@ func (s *NotificationService) SendBalanceNudge(
 			Body:             fmt.Sprintf("An admin sent you a reminder to top up. Your balance is %s.", formatCents(balance)),
 			Data:             string(data),
 		}
-		return tx.Create(&notification).Error
+		now := time.Now().UTC()
+		delivery, err = s.QueueNotificationWithin(tx, &notification, "", now, now.Add(24*time.Hour))
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	if err := s.deliverNotification(ctx, &notification); err != nil {
-		return nil, err
-	}
 	return &BalanceNudgeResult{
-		NotificationID: notification.ID,
-		BalanceCents:   balance,
-		PushSent:       notification.PushSent,
-		NextAllowedAt:  notification.CreatedAt.Add(BalanceNudgeCooldown),
+		NotificationID:    notification.ID,
+		BalanceCents:      balance,
+		PushSent:          notification.PushSent,
+		DeliveryState:     delivery.State,
+		SuppressionReason: delivery.LastErrorCode,
+		NextAllowedAt:     notification.CreatedAt.Add(BalanceNudgeCooldown),
 	}, nil
 }
 
@@ -292,53 +282,51 @@ func (s *NotificationService) SendBalanceNudge(
 // uses this to keep the session, announcement and audience atomic without
 // holding database locks during provider requests.
 func (s *NotificationService) deliverNotification(ctx context.Context, notification *models.Notification) error {
-	allowed, bypassClubPause, err := s.deliveryPolicy(notification.UserID)
-	if err != nil {
+	return database.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		due := notification.CreatedAt
+		if due.IsZero() {
+			due = time.Now().UTC()
+		}
+		key, expiry, err := notificationDeliveryIdentity(tx, notification, due)
+		if err != nil {
+			return err
+		}
+		_, err = s.EnqueueNotificationWithin(tx, notification, key, due, expiry)
 		return err
-	}
-	if !allowed {
-		return nil
-	}
-	var club models.Club
-	if err := database.DB.Select("notifications_paused").First(&club).Error; err != nil {
-		return err
-	}
-	if club.NotificationsPaused && !bypassClubPause {
-		return nil
-	}
-	userID := notification.UserID
-	// Get user
-	var user models.User
-	if err := database.DB.First(&user, "id = ?", userID).Error; err != nil {
-		return fmt.Errorf("failed to get user: %w", err)
-	}
+	})
+}
 
-	if user.MembershipStatus != models.MembershipApproved {
-		return nil
+// Legacy trigger keys preserve current reminder timing without duplicate events
+// from overlapping API revisions. Release 4 replaces these origins atomically.
+func notificationDeliveryIdentity(tx *gorm.DB, n *models.Notification, due time.Time) (string, time.Time, error) {
+	expiry := due.Add(24 * time.Hour)
+	if n.NotificationType != models.NotificationSessionReminder && n.NotificationType != models.NotificationRSVPDeadline {
+		return "", expiry, nil
 	}
 	var data map[string]string
-	if err := json.Unmarshal([]byte(notification.Data), &data); err != nil {
-		return err
+	if err := json.Unmarshal([]byte(n.Data), &data); err != nil {
+		return "", expiry, err
 	}
-	// All delivery paths, including records created by cancellation, carry the
-	// authoritative type for foreground and background click routing.
-	if data == nil {
-		data = make(map[string]string)
+	id, err := uuid.Parse(data["session_id"])
+	if err != nil {
+		return "", expiry, err
 	}
-	data["type"] = string(notification.NotificationType)
-	data["notification_id"] = notification.ID.String()
-	data["destination_path"] = NotificationDestination(data)
-	if s.fcmEnabled && !notification.PushSent {
-		if err := s.sendPushNotification(ctx, userID, notification.Title, notification.Body, data); err != nil {
-			log.Printf("Failed to send push to user %s: %v", userID, err)
-		} else {
-			now := time.Now()
-			notification.PushSent = true
-			notification.PushSentAt = &now
-		}
+	var session models.Session
+	if err := tx.First(&session, "id = ?", id).Error; err != nil {
+		return "", expiry, err
 	}
-	// Preserve read_at if the member opens the notification while delivery runs.
-	return database.DB.Model(notification).Select("push_sent", "push_sent_at").Updates(notification).Error
+	if session.StartsAt == nil {
+		return "", expiry, errors.New("session has no resolved start")
+	}
+	if n.NotificationType == models.NotificationRSVPDeadline {
+		expiry = session.RSVPDeadline
+	} else {
+		expiry = *session.StartsAt
+	}
+	if !expiry.After(due) {
+		expiry = due.Add(time.Nanosecond)
+	}
+	return fmt.Sprintf("legacy:%s:%s:%s:%s", n.NotificationType, id, n.UserID, data["stage"]), expiry, nil
 }
 
 // sendPushNotification sends a push notification to all user devices

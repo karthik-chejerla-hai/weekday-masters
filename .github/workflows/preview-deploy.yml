@@ -119,9 +119,6 @@ jobs:
             --image ${{ env.IMAGE }} \
             --region ${{ env.GCP_REGION }} \
             --platform managed \
-            --cpu-throttling \
-            --min 0 \
-            --min-instances 0 \
             --no-traffic \
             --tag pr-${PR_NUMBER} \
             --allow-unauthenticated \
@@ -130,6 +127,7 @@ jobs:
             --remove-env-vars="OTEL_SERVICE_NAME,OTEL_RESOURCE_ATTRIBUTES,OTEL_EXPORTER_OTLP_ENDPOINT,OTEL_EXPORTER_OTLP_TIMEOUT,OTEL_METRIC_EXPORT_INTERVAL" \
             --remove-secrets="OTEL_EXPORTER_OTLP_HEADERS" \
             --update-env-vars="NOTIFICATIONS_DISABLED=true" \
+            --update-env-vars="NOTIFICATION_WORKER_ENABLED=${{ vars.NOTIFICATION_WORKER_ENABLED || 'false' }}" \
             --update-env-vars="NOTIFICATIONS_DISABLED_ALLOW_EMAIL=${{ secrets.ADMIN_EMAIL }}" \
             --update-env-vars="INVITATION_TEST_EMAILS_ENABLED=false" \
             --update-env-vars="TIMEZONE=Australia/Sydney" \
@@ -150,6 +148,20 @@ jobs:
       # Smoke check only. The URL is deliberately NOT exported as a job output: the
       # frontend job resolves it itself at build time, because passing it between
       # jobs ran it through secret masking and produced an empty VITE_API_URL.
+      - name: Deploy isolated private preview worker
+        if: vars.NOTIFICATION_WORKER_ENABLED == 'true'
+        env:
+          IMAGE: ${{ env.IMAGE }}
+          DATABASE_URL: ${{ steps.neon.outputs.db_url }}
+          NOTIFICATION_WORKER_SERVICE: rally-notifications-pr-${{ github.event.pull_request.number }}
+          NOTIFICATION_WORKER_AUDIENCE: https://rally.internal/notifications/pr-${{ github.event.pull_request.number }}
+          NOTIFICATION_WORKER_RUNTIME_EMAIL: ${{ vars.NOTIFICATION_WORKER_RUNTIME_EMAIL }}
+          NOTIFICATION_SCHEDULER_EMAIL: ${{ vars.NOTIFICATION_SCHEDULER_EMAIL }}
+          NOTIFICATIONS_DISABLED: 'true'
+          FRONTEND_URL: https://invalid.preview
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+        run: bash .github/scripts/notification-worker.sh deploy
+
       - name: Verify preview backend URL resolves
         run: |
           PR_NUMBER=${{ github.event.pull_request.number }}

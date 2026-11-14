@@ -43,14 +43,14 @@
 
 ## Release 3: Durable delivery foundation
 
-- [ ] T021 Define additive event-key/destination/outbox/attempt schema in `backend/internal/models/notification.go`; register explicit migrations in `backend/cmd/migrate/main.go` and tables in `backend/internal/testsupport/db.go`.
-- [ ] T022 Implement transaction-aware event/outbox insertion and unique originating-action identities in `backend/internal/services/notification_outbox.go`.
-- [ ] T023 Add fake-provider/controlled-clock concurrency, rollback, lease recovery, partial acceptance and uncertain-send regression tests in `backend/internal/services/notification_dispatcher_test.go`.
-- [ ] T024 Implement bounded claims, leases, per-device outcomes/retries/expiry and stop/membership/enrollment revalidation in `backend/internal/services/notification_dispatcher.go`; use `backend/internal/services/notification_service.go` for FCM delivery without holding DB locks.
-- [ ] T025 Add private bounded HTTP worker entry point in `backend/cmd/notification-worker/main.go` and image binary in `backend/Dockerfile`, with no public member/admin routes.
-- [ ] T026 Configure private worker deployment, Scheduler OIDC invocation each minute, least-privilege IAM, per-environment stops and independent backlog/failure monitoring in `.github/workflows/deploy.yml`, `.github/workflows/preview-deploy.yml` and `DEPLOY.md`.
-- [ ] T027 Migrate existing send callers to queue via `backend/internal/services/notification_service.go`, using active registrations after release 2 while retaining trigger timing until its own cutover and preventing simultaneous old/new scheduler ownership in `backend/cmd/server/main.go`.
-- [ ] T028 Align fixed notification-threshold reporting and all nudge eligibility at cutover in `backend/internal/handlers/ledger.go`, `backend/internal/models/club.go`, `backend/cmd/migrate/main.go`, `frontend/src/pages/Money.tsx` and `backend/internal/handlers/openapi.yaml`; retain the Club column for compatibility and do not add a threshold editor.
+- [x] T021 Define additive event-key/destination/outbox/attempt schema in `backend/internal/models/notification.go`; register explicit migrations in `backend/cmd/migrate/main.go` and tables in `backend/internal/testsupport/db.go`.
+- [x] T022 Implement transaction-aware event/outbox insertion and unique originating-action identities in `backend/internal/services/notification_outbox.go`.
+- [x] T023 Add fake-provider/controlled-clock concurrency, rollback, lease recovery, partial acceptance and uncertain-send regression tests in `backend/internal/services/notification_dispatcher_test.go`.
+- [x] T024 Implement bounded claims, leases, per-device outcomes/retries/expiry and stop/membership/enrollment revalidation in `backend/internal/services/notification_dispatcher.go`; use `backend/internal/services/notification_service.go` for FCM delivery without holding DB locks.
+- [x] T025 Add private bounded HTTP worker entry point in `backend/cmd/notification-worker/main.go` and image binary in `backend/Dockerfile`, with no public member/admin routes.
+- [x] T026 Configure private worker deployment, Scheduler OIDC invocation each minute, least-privilege IAM, per-environment stops and independent backlog/failure monitoring in `.github/workflows/deploy.yml`, `.github/workflows/preview-deploy.yml` and `DEPLOY.md`.
+- [x] T027 Migrate existing send callers to queue via `backend/internal/services/notification_service.go`, using active registrations after release 2 while retaining trigger timing until its own cutover and preventing simultaneous old/new scheduler ownership in `backend/cmd/server/main.go`.
+- [x] T028 Align fixed notification-threshold reporting and all nudge eligibility at cutover in `backend/internal/handlers/ledger.go`, `backend/internal/models/club.go`, `backend/cmd/migrate/main.go`, `frontend/src/pages/Money.tsx` and `backend/internal/handlers/openapi.yaml`; retain the Club column for compatibility and do not add a threshold editor.
 
 ## Release 4: US3 — RSVP reminders and deadlines
 
