@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -57,6 +58,7 @@ func (e *BalanceNudgeCooldownError) Error() string {
 }
 
 type BalanceNudgeResult struct {
+	RequestID         uuid.UUID            `json:"request_id"`
 	NotificationID    uuid.UUID            `json:"notification_id"`
 	BalanceCents      int64                `json:"balance_cents"`
 	PushSent          bool                 `json:"push_sent"`
@@ -177,105 +179,95 @@ func (s *NotificationService) SendNotification(
 	})
 }
 
-// SendBalanceNudge records a targeted top-up reminder and attempts immediate
-// push delivery. The history record is useful even when the member has opted
-// out of push or has no registered device.
-func (s *NotificationService) SendBalanceNudge(
-	ctx context.Context,
-	userID, sentBy uuid.UUID,
-) (*BalanceNudgeResult, error) {
-	if s.disabled {
-		return nil, ErrNotificationsDisabled
+// SendBalanceNudge captures one manual reminder and its immutable balance
+// snapshot. Stable actor/request identities survive retries; the manual-only
+// cooldown remains serialized independently of automatic session receipts.
+func (s *NotificationService) SendBalanceNudge(ctx context.Context, userID, sentBy uuid.UUID, requests ...uuid.UUID) (*BalanceNudgeResult, error) {
+	requestID := uuid.New()
+	if len(requests) > 0 {
+		requestID = requests[0]
 	}
-	if userID == sentBy {
-		return nil, ErrBalanceNudgeSelf
+	if requestID == uuid.Nil {
+		return nil, ErrNudgeRequestRequired
 	}
-
+	key := fmt.Sprintf("nudge:%s:%s", sentBy, requestID)
 	var notification models.Notification
 	var delivery *models.NotificationOutbox
 	var balance int64
-	err := database.DB.Transaction(func(tx *gorm.DB) error {
+	err := database.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockNotificationKey(tx, key); err != nil {
+			return err
+		}
+		var existing models.NotificationOutbox
+		err := tx.Where("event_key = ?", key).First(&existing).Error
+		if err == nil {
+			if err := tx.First(&notification, "id = ?", existing.NotificationID).Error; err != nil {
+				return err
+			}
+			if notification.UserID != userID {
+				return ErrNudgeRequestConflict
+			}
+			var data map[string]string
+			if err := json.Unmarshal([]byte(notification.Data), &data); err != nil {
+				return err
+			}
+			var parseErr error
+			balance, parseErr = strconv.ParseInt(data["balance_cents"], 10, 64)
+			if parseErr != nil {
+				return parseErr
+			}
+			delivery = &existing
+			return nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		if userID == sentBy {
+			return ErrBalanceNudgeSelf
+		}
 		var user models.User
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, "id = ?", userID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "NO KEY UPDATE"}).First(&user, "id = ?", userID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return ErrMemberNotFound
 			}
 			return err
 		}
-		if user.MembershipStatus != models.MembershipApproved {
+		if !user.IsApproved() {
 			return ErrBalanceNudgeNotAllowed
 		}
-
-		var club models.Club
-		if err := tx.First(&club).Error; err != nil {
+		// Serialize the snapshot with top-ups/settlements using ledger account order.
+		var accounts []models.Account
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", userID).Order("id").Find(&accounts).Error; err != nil {
 			return err
 		}
-		if club.NotificationsPaused {
-			return ErrNotificationsPaused
-		}
-
-		if err := tx.Raw(`
-			SELECT COALESCE(SUM(e.amount_cents), 0)
-			FROM accounts a
-			LEFT JOIN ledger_entries e ON e.account_id = a.id
-			WHERE a.user_id = ?
-		`, userID).Scan(&balance).Error; err != nil {
+		balance, err = balanceWithin(tx, userID)
+		if err != nil {
 			return err
 		}
-		if balance >= models.NotificationBalanceThresholdCents {
+		if BalanceNotificationBand(balance) == "healthy" {
 			return ErrBalanceNudgeNotNeeded
 		}
-
+		now := time.Now().UTC()
 		var previous models.Notification
-		cutoff := time.Now().Add(-BalanceNudgeCooldown)
-		err := tx.Where(
-			"user_id = ? AND created_at > ? AND data ->> 'source' = ?",
-			userID, cutoff, "admin_balance_nudge",
-		).Order("created_at DESC, id DESC").First(&previous).Error
+		err = tx.Where("user_id = ? AND created_at > ? AND data ->> 'source' = ?", userID, now.Add(-BalanceNudgeCooldown), "admin_balance_nudge").Order("created_at DESC,id DESC").First(&previous).Error
 		if err == nil {
 			return &BalanceNudgeCooldownError{NextAllowedAt: previous.CreatedAt.Add(BalanceNudgeCooldown)}
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-
-		notifType := models.NotificationBalanceLow
-		title := "Your Rally balance is running low"
+		kind := models.NotificationBalanceLow
 		if balance < 0 {
-			notifType = models.NotificationBalanceNegative
-			title = "Please top up your Rally balance"
+			kind = models.NotificationBalanceNegative
 		}
-		data, err := json.Marshal(map[string]string{
-			"balance_cents": fmt.Sprintf("%d", balance),
-			"nudged_by":     sentBy.String(),
-			"source":        "admin_balance_nudge",
-		})
-		if err != nil {
-			return err
-		}
-		notification = models.Notification{
-			UserID:           userID,
-			NotificationType: notifType,
-			Title:            title,
-			Body:             fmt.Sprintf("An admin sent you a reminder to top up. Your balance is %s.", formatCents(balance)),
-			Data:             string(data),
-		}
-		now := time.Now().UTC()
-		delivery, err = s.QueueNotificationWithin(tx, &notification, "", now, now.Add(24*time.Hour))
+		notification = models.Notification{UserID: userID, NotificationType: kind, Title: "Balance alert", Body: ManualBalanceMessage(balance, now), Data: mustNotificationJSON(map[string]string{"type": string(kind), "balance_cents": strconv.FormatInt(balance, 10), "balance_band": BalanceNotificationBand(balance), "checked_at": now.Format(time.RFC3339Nano), "nudged_by": sentBy.String(), "request_id": requestID.String(), "source": "admin_balance_nudge"})}
+		delivery, err = s.QueueNotificationWithin(tx, &notification, key, now, now.Add(24*time.Hour))
 		return err
 	})
 	if err != nil {
 		return nil, err
 	}
-
-	return &BalanceNudgeResult{
-		NotificationID:    notification.ID,
-		BalanceCents:      balance,
-		PushSent:          notification.PushSent,
-		DeliveryState:     delivery.State,
-		SuppressionReason: delivery.LastErrorCode,
-		NextAllowedAt:     notification.CreatedAt.Add(BalanceNudgeCooldown),
-	}, nil
+	return &BalanceNudgeResult{RequestID: requestID, NotificationID: notification.ID, BalanceCents: balance, PushSent: notification.PushSent, DeliveryState: delivery.State, SuppressionReason: delivery.LastErrorCode, NextAllowedAt: notification.CreatedAt.Add(BalanceNudgeCooldown)}, nil
 }
 
 // deliverNotification sends an already committed history record. Cancellation
@@ -414,9 +406,13 @@ func (s *NotificationService) notificationURL(data map[string]string) string {
 	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" {
 		return ""
 	}
-	parsed.Path = NotificationDestination(data)
+	destination, err := url.Parse(NotificationDestination(data))
+	if err != nil {
+		return ""
+	}
+	parsed.Path = destination.Path
 	parsed.RawPath = ""
-	parsed.RawQuery = ""
+	parsed.RawQuery = destination.RawQuery
 	parsed.Fragment = ""
 	return parsed.String()
 }

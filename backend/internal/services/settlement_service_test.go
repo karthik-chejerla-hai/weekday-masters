@@ -591,6 +591,13 @@ func TestSettleIsSafeUnderConcurrency(t *testing.T) {
 	if settlements != 1 {
 		t.Errorf("%d live settlements, want 1", settlements)
 	}
+	var receipts int64
+	if err := database.DB.Model(&models.Notification{}).Where("notification_type = ?", models.NotificationSessionCharge).Count(&receipts).Error; err != nil {
+		t.Fatal(err)
+	}
+	if receipts != 1 {
+		t.Fatalf("concurrent confirmation created %d receipts, want one for the charged member", receipts)
+	}
 
 	assertBalanced(t)
 }
@@ -718,14 +725,14 @@ func TestSettleNotifiesPlayersWhoDroppedBelowTheLine(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got := notifier.typeFor(low.ID); got != models.NotificationBalanceLow {
-		t.Errorf("low-balance player got %q, want %q", got, models.NotificationBalanceLow)
+	if got := notifier.typeFor(low.ID); got != models.NotificationSessionCharge {
+		t.Errorf("low-balance player got %q, want %q", got, models.NotificationSessionCharge)
 	}
-	if got := notifier.typeFor(negative.ID); got != models.NotificationBalanceNegative {
-		t.Errorf("player in debt got %q, want %q", got, models.NotificationBalanceNegative)
+	if got := notifier.typeFor(negative.ID); got != models.NotificationSessionCharge {
+		t.Errorf("player in debt got %q, want %q", got, models.NotificationSessionCharge)
 	}
-	if got := notifier.countFor(comfortable.ID); got != 0 {
-		t.Errorf("comfortable player was notified %d times, want 0", got)
+	if got := notifier.countFor(comfortable.ID); got != 1 {
+		t.Errorf("comfortable player received %d receipts, want 1", got)
 	}
 }
 
@@ -783,8 +790,8 @@ func TestSettleNotifiesAHostOnlyOnce(t *testing.T) {
 	}
 }
 
-// A comped player was charged nothing, so there is nothing to tell them.
-func TestSettleDoesNotNotifyACompedPlayer(t *testing.T) {
+// A comped participant still receives a zero-cost receipt.
+func TestSettleIncludesAZeroCostReceiptForACompedPlayer(t *testing.T) {
 	f := newSettlementFixture(t, 24, 10000)
 	notifier := f.withNotifier()
 
@@ -802,8 +809,8 @@ func TestSettleDoesNotNotifyACompedPlayer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got := notifier.countFor(comped.ID); got != 0 {
-		t.Errorf("comped player notified %d times, want 0", got)
+	if got := notifier.countFor(comped.ID); got != 1 {
+		t.Errorf("comped player received %d receipts, want 1", got)
 	}
 }
 

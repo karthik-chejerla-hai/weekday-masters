@@ -21,7 +21,7 @@ import (
 // identity to hold after every write, and an invariant is only as strong as the
 // narrowest gate it can be enforced at. One writer means one place to audit, and
 // one place where a movement that does not balance is refused.
-type LedgerService struct{}
+type LedgerService struct{ notifier BalanceNotifier }
 
 func NewLedgerService() *LedgerService { return &LedgerService{} }
 

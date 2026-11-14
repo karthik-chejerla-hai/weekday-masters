@@ -37,7 +37,7 @@ function ProtectedRoute({ children, requireApproved = true, requireAdmin = false
   }
 
   if (!isAuthenticated) {
-    return <Navigate to={`/?returnTo=${encodeURIComponent(safeAuthReturn(location.pathname))}`} replace />;
+    return <Navigate to={`/?returnTo=${encodeURIComponent(safeAuthReturn(location.pathname + location.search))}`} replace />;
   }
 
   if (requireApproved && !isApproved) {

@@ -385,7 +385,7 @@ func TestConcurrentPushTokenRegistration(t *testing.T) {
 	}
 }
 
-func TestSettlementBalancePushRoutesToMoney(t *testing.T) {
+func TestSettlementChargesIncludeBalanceWarningAndRouteToOriginalSplit(t *testing.T) {
 	for _, balanceType := range []models.NotificationType{models.NotificationBalanceLow, models.NotificationBalanceNegative} {
 		t.Run(string(balanceType), func(t *testing.T) {
 			f := newSettlementFixture(t, 24, 10000)
@@ -398,10 +398,10 @@ func TestSettlementBalancePushRoutesToMoney(t *testing.T) {
 			calls := 0
 			notifier := &NotificationService{fcmEnabled: true, frontendURL: "https://rally.test", fcmClient: stubPushClient(func(_ context.Context, message *messaging.MulticastMessage) (*messaging.BatchResponse, error) {
 				calls++
-				if message.Data["type"] != string(balanceType) || message.Data["balance_cents"] == "" {
+				if message.Data["type"] != string(models.NotificationSessionCharge) || message.Data["balance_after_cents"] == "" || message.Data["charge_cents"] == "" || message.Data["settlement_id"] == "" {
 					t.Errorf("incomplete balance payload: %+v", message.Data)
 				}
-				if message.Webpush.FCMOptions.Link != "https://rally.test/money" {
+				if message.Webpush.FCMOptions.Link != "https://rally.test/sessions/"+f.session.ID.String()+"/settlement?settlement_id="+message.Data["settlement_id"] {
 					t.Errorf("wrong balance link: %s", message.Webpush.FCMOptions.Link)
 				}
 				return &messaging.BatchResponse{SuccessCount: 1, Responses: []*messaging.SendResponse{{Success: true}}}, nil

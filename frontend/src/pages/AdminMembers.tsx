@@ -17,12 +17,14 @@ import {
   Search,
 } from 'lucide-react';
 import { api, type MemberPushStatus } from '../services/api';
-import type { InviteMemberInput, User, UserRole } from '../types';
+import type { InviteMemberInput, User, UserRole, PlayerBalance } from '../types';
 import { displayName, isPendingInvite } from '../utils/members';
 import Avatar from '../components/ui/Avatar';
 import Badge from '../components/ui/Badge';
 import InvitationPanel from '../components/members/InvitationPanel';
 import MemberPushPanel from '../components/members/MemberPushPanel';
+import MemberBalanceNudge from '../components/members/MemberBalanceNudge';
+import { useAuth } from '../context/useAuth';
 
 /**
  * The member endpoints answer failures as `{ "error": "..." }`, and the messages
@@ -61,6 +63,8 @@ const emptyInvite: InviteMemberInput = {
 
 export default function AdminMembers() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [balances, setBalances] = useState<Record<string, PlayerBalance>>({});
 
   const [members, setMembers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -88,7 +92,9 @@ export default function AdminMembers() {
 
   const loadMembers = async () => {
     try {
-      setMembers(await api.adminListMembers());
+      const [loadedMembers, loadedBalances] = await Promise.all([api.adminListMembers(), api.listBalances().catch(() => [])]);
+      setMembers(loadedMembers);
+      setBalances(Object.fromEntries(loadedBalances.map(balance => [balance.user_id, balance])));
       setPushStatuses({});
       setLoadError(null);
     } catch (err) {
@@ -420,6 +426,7 @@ export default function AdminMembers() {
                         onInvitation={() => setInvitationId(invitationId === member.id ? null : member.id)}
                       />
                     )}
+                    {member.membership_status === 'approved' && member.id !== user?.id && balances[member.id] && <MemberBalanceNudge balance={balances[member.id]} />}
                     <MemberPushPanel member={member} onStatus={(status) => setPushStatuses(current => ({ ...current, [member.id]: status }))} />
                     {invitationId === member.id && member.membership_status === 'approved' && isPendingInvite(member) && (
                       <InvitationPanel key={`${member.id}:${member.email}`} member={member} onClose={() => setInvitationId(null)} />

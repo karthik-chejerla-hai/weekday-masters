@@ -68,3 +68,9 @@ it.each([
  worker.handlers.notificationclick({ stopImmediatePropagation: vi.fn(), notification: { close: vi.fn(), data }, waitUntil: (promise: Promise<unknown>) => { completion = promise; } });
  await completion; expect(worker.client.navigate).toHaveBeenCalledWith(`https://rally.test${path}`);
 });
+it('opens the original split from a reversal receipt in the background', async () => {
+ const worker = startWorker(); let completion: Promise<unknown> | undefined;
+ const session = '11111111-1111-4111-8111-111111111111'; const settlement = '22222222-2222-4222-8222-222222222222';
+ worker.handlers.notificationclick({ stopImmediatePropagation: vi.fn(), notification: { close: vi.fn(), data: { type: 'session_charge_reversed', session_id: session, settlement_id: settlement } }, waitUntil: (promise: Promise<unknown>) => { completion = promise; } });
+ await completion; expect(worker.client.navigate).toHaveBeenCalledWith(`https://rally.test/sessions/${session}/settlement?settlement_id=${settlement}`);
+});

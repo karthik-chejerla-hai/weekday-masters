@@ -78,7 +78,7 @@ beforeEach(() => {
   });
   vi.mocked(api.getLedgerActivity).mockResolvedValue({ items: entries.map((entry) => ({ id: entry.id, occurred_at: entry.occurred_at, entry })), total: 2 });
   vi.mocked(api.nudgeBalance).mockResolvedValue({
-    notification_id: 'notice-1', balance_cents: -825, push_sent: true,
+    notification_id: 'notice-1', balance_cents: -825, push_sent: false, delivery_state: 'pending',
     next_allowed_at: '2026-10-08T12:00:00Z',
   });
 });
@@ -228,7 +228,7 @@ describe('Money', () => {
     expect(screen.queryByRole('button', { name: 'Nudge Karthik to top up' })).not.toBeInTheDocument();
 
     await userEvent.click(nudge);
-    await waitFor(() => expect(api.nudgeBalance).toHaveBeenCalledWith('u3'));
+    await waitFor(() => expect(api.nudgeBalance).toHaveBeenCalledWith('u3', expect.any(String)));
     expect(await screen.findByText('Push nudge queued for Jono.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Nudge Jono to top up' })).toBeDisabled();
   });
@@ -242,7 +242,7 @@ describe('Money', () => {
     renderPage();
 
     await userEvent.click(await screen.findByRole('button', { name: 'Nudge Jono to top up' }));
-    expect(await screen.findByText('Jono will see the nudge in Rally; push is unavailable or disabled.')).toBeInTheDocument();
+    expect(await screen.findByText("Jono's reminder is recorded in Rally; push is suppressed or unavailable.")).toBeInTheDocument();
   });
 
   it('reports a load failure instead of showing an empty ledger', async () => {

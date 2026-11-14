@@ -197,7 +197,16 @@ func (h *SettlementHandler) GetSessionSettlement(c *gin.Context) {
 		return
 	}
 
-	view, err := h.settlementService.SettlementForSession(sessionID)
+	settlementID := uuid.Nil
+	if raw, provided := c.GetQuery("settlement_id"); provided {
+		parsed, parseErr := uuid.Parse(raw)
+		if parseErr != nil || parsed == uuid.Nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": "bad_request", "message": "Invalid settlement ID"})
+			return
+		}
+		settlementID = parsed
+	}
+	view, err := h.settlementService.SettlementForSessionVersion(sessionID, settlementID)
 	if err != nil {
 		respondLedgerError(c, err)
 		return

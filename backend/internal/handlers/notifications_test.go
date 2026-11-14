@@ -188,7 +188,7 @@ func TestSendBalanceNudge_TargetsOneLowBalanceMember(t *testing.T) {
 	player := makePlayer(t)
 
 	var result services.BalanceNudgeResult
-	h.as(admin).post("/api/admin/users/"+player.ID.String()+"/balance-nudge", nil).
+	h.as(admin).post("/api/admin/users/"+player.ID.String()+"/balance-nudge", map[string]string{"request_id": uuid.NewString()}).
 		expect(http.StatusCreated).decode(&result)
 	if result.NotificationID == uuid.Nil || result.PushSent || result.BalanceCents != 0 {
 		t.Fatalf("unexpected result: %+v", result)
@@ -202,7 +202,7 @@ func TestSendBalanceNudge_TargetsOneLowBalanceMember(t *testing.T) {
 		t.Fatalf("wrong targeted notification: %+v", notice)
 	}
 
-	h.as(admin).post("/api/admin/users/"+player.ID.String()+"/balance-nudge", nil).
+	h.as(admin).post("/api/admin/users/"+player.ID.String()+"/balance-nudge", map[string]string{"request_id": uuid.NewString()}).
 		expect(http.StatusTooManyRequests)
 }
 
@@ -212,15 +212,15 @@ func TestSendBalanceNudge_RequiresApprovedAdminAndValidTarget(t *testing.T) {
 	player := makePlayer(t)
 	pending := makePending(t)
 
-	h.as(player).post("/api/admin/users/"+admin.ID.String()+"/balance-nudge", nil).
+	h.as(player).post("/api/admin/users/"+admin.ID.String()+"/balance-nudge", map[string]string{"request_id": uuid.NewString()}).
 		expect(http.StatusForbidden)
-	h.as(admin).post("/api/admin/users/not-a-uuid/balance-nudge", nil).
+	h.as(admin).post("/api/admin/users/not-a-uuid/balance-nudge", map[string]string{"request_id": uuid.NewString()}).
 		expect(http.StatusBadRequest)
-	h.as(admin).post("/api/admin/users/"+uuid.NewString()+"/balance-nudge", nil).
+	h.as(admin).post("/api/admin/users/"+uuid.NewString()+"/balance-nudge", map[string]string{"request_id": uuid.NewString()}).
 		expect(http.StatusNotFound)
-	h.as(admin).post("/api/admin/users/"+pending.ID.String()+"/balance-nudge", nil).
+	h.as(admin).post("/api/admin/users/"+pending.ID.String()+"/balance-nudge", map[string]string{"request_id": uuid.NewString()}).
 		expect(http.StatusConflict)
-	h.as(admin).post("/api/admin/users/"+admin.ID.String()+"/balance-nudge", nil).
+	h.as(admin).post("/api/admin/users/"+admin.ID.String()+"/balance-nudge", map[string]string{"request_id": uuid.NewString()}).
 		expect(http.StatusConflict)
 }
 
@@ -257,4 +257,27 @@ func TestNotificationDetail_OwnershipAndApproval(t *testing.T) {
 	other.MembershipStatus = models.MembershipPending
 	h.as(other).get("/api/users/me/notifications/history").expect(http.StatusForbidden)
 	h.as(other).get("/api/notifications/" + n.ID.String()).expect(http.StatusForbidden)
+}
+
+func TestBalanceNudgeRequestIdentityAndConflict(t *testing.T) {
+	h := newHarness(t)
+	admin, player, other := makeAdmin(t), makePlayer(t), makePlayer(t)
+	path := "/api/admin/users/" + player.ID.String() + "/balance-nudge"
+	h.as(admin).post(path, nil).expect(http.StatusBadRequest)
+	h.as(admin).post(path, map[string]string{"request_id": "not-a-uuid"}).expect(http.StatusBadRequest)
+	h.as(admin).post(path, map[string]string{"request_id": uuid.Nil.String()}).expect(http.StatusBadRequest)
+	request := map[string]string{"request_id": uuid.NewString()}
+	var first, retry services.BalanceNudgeResult
+	h.as(admin).post(path, request).expect(http.StatusCreated).decode(&first)
+	h.as(admin).post(path, request).expect(http.StatusCreated).decode(&retry)
+	if first.NotificationID != retry.NotificationID || first.RequestID != retry.RequestID {
+		t.Fatal("retry did not preserve event identity")
+	}
+	var conflict struct {
+		Code string `json:"code"`
+	}
+	h.as(admin).post("/api/admin/users/"+other.ID.String()+"/balance-nudge", request).expect(http.StatusConflict).decode(&conflict)
+	if conflict.Code != "request_id_conflict" {
+		t.Fatalf("wrong conflicting reuse result: %s", conflict.Code)
+	}
 }
