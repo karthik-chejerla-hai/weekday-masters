@@ -16,7 +16,7 @@ it('requires explicit enable after startup finds no registration', async () => {
  vi.mocked(notificationService.restorePushNotifications).mockResolvedValue(false);
  render(<NotificationSettings />); fireEvent.click(await screen.findByRole('button', { name: 'Enable on this device' }));
  await waitFor(() => expect(notificationService.enablePushNotifications).toHaveBeenCalledWith('member'));
- expect(await screen.findByText('Push set up on this device.')).toBeInTheDocument();
+ expect(await screen.findByText('Push set up on this device')).toBeInTheDocument();
 });
 it('does not claim disable success when backend or Firebase cleanup fails', async () => {
  vi.mocked(notificationService.disablePushNotifications).mockRejectedValue(new Error('offline'));
@@ -49,4 +49,30 @@ it('describes reminders using each session deadline rather than a fixed close ti
  expect(policy).toHaveTextContent('96 and 60 hours');
  expect(policy).toHaveTextContent('its RSVP window is open');
  expect(policy).not.toHaveTextContent('48 hours');
+});
+
+it('shows the device setup status only once after enabling and checking again', async () => {
+ vi.mocked(notificationService.restorePushNotifications).mockResolvedValueOnce(false).mockResolvedValue(true);
+ render(<NotificationSettings />);
+ fireEvent.click(await screen.findByRole('button', { name: 'Enable on this device' }));
+ await screen.findByRole('button', { name: 'Disable on this device' });
+ expect(screen.getAllByText(/^Push set up on this device\.?$/)).toHaveLength(1);
+ fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+ expect(await screen.findByText('Device check complete.')).toBeInTheDocument();
+ expect(screen.getAllByText(/^Push set up on this device\.?$/)).toHaveLength(1);
+});
+
+it('makes a manual recheck visible and prevents another action until it finishes', async () => {
+ let resolve!: (value: boolean) => void;
+ const pending = new Promise<boolean>(done => { resolve = done; });
+ vi.mocked(notificationService.restorePushNotifications).mockResolvedValueOnce(true).mockReturnValueOnce(pending);
+ render(<NotificationSettings isAdmin />);
+ fireEvent.click(await screen.findByRole('button', { name: 'Check again' }));
+ expect(screen.getByRole('button', { name: 'Checking…' })).toBeDisabled();
+ expect(screen.getByText('Checking this device…')).toBeInTheDocument();
+ expect(screen.getByRole('button', { name: 'Disable on this device' })).toBeDisabled();
+ expect(screen.getByRole('button', { name: 'Send test notification' })).toBeDisabled();
+ resolve(true);
+ expect(await screen.findByText('Device check complete.')).toBeInTheDocument();
+ expect(screen.getByRole('button', { name: 'Check again' })).toBeEnabled();
 });
