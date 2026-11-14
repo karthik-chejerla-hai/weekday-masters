@@ -274,7 +274,7 @@ func TestSendTestPushTargetsOnlyTheCallerWhileNotificationsAreDisabled(t *testin
 	}
 }
 
-func TestSendTestPushHonoursAccountOptOutAndRequiresADevice(t *testing.T) {
+func TestSendTestPushRequiresADeviceRegardlessOfOldFlags(t *testing.T) {
 	requireDB(t)
 	admin := newUser(t, "pushadmin")
 	calls := 0
@@ -289,8 +289,8 @@ func TestSendTestPushHonoursAccountOptOutAndRequiresADevice(t *testing.T) {
 	if _, err := ns.UpdateUserPreferences(admin.ID, map[string]interface{}{"push_enabled": false}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ns.SendTestPush(context.Background(), admin.ID); !errors.Is(err, ErrPushDisabledForUser) {
-		t.Fatalf("expected opt-out error, got %v", err)
+	if _, err := ns.SendTestPush(context.Background(), admin.ID); !errors.Is(err, ErrNoPushDevices) {
+		t.Fatalf("expected no-device error after inert old flag, got %v", err)
 	}
 	if calls != 0 {
 		t.Fatalf("called FCM %d times despite setup errors", calls)

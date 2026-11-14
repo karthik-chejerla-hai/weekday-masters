@@ -14,7 +14,7 @@ func TestRemoveGuestPayerRequiresReplacement(t *testing.T) {
 	f := newSettlementFixture(t, 24, 10000)
 	payer := f.member(t, "payer")
 	replacement := f.member(t, "replacement")
-	rs := NewRSVPService(nil)
+	rs := NewRSVPService()
 	us := NewUserService("").WithRSVPs(rs)
 	session := newSession(t, f.sessions, f.admin.ID, 1)
 	rsvpIn(t, rs, session.ID, payer.ID)
@@ -84,7 +84,7 @@ func TestRemoveGuestPayerSessionStates(t *testing.T) {
 		t.Run(state, func(t *testing.T) {
 			f := newSettlementFixture(t, 24, 10000)
 			payer := f.member(t, "payer")
-			rs := NewRSVPService(nil)
+			rs := NewRSVPService()
 			session := newSession(t, f.sessions, f.admin.ID, 1)
 			guest := addGuest(t, rs, session.ID, payer.ID, "Alex")
 			switch state {

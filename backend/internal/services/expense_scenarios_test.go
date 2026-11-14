@@ -64,7 +64,7 @@ func TestExpenseRequestedScenariosAfterPreviousExpense(t *testing.T) {
 				t.Fatal(err)
 			}
 			ids := make([]uuid.UUID, tc.players)
-			rsvps := NewRSVPService(nil)
+			rsvps := NewRSVPService()
 			for i := range ids {
 				member := f.member(t, fmt.Sprintf("participant-%d", i+1))
 				ids[i] = member.ID

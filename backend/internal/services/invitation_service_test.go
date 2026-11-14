@@ -258,7 +258,7 @@ func TestInvitedSignInKeepsBalanceHistoryAndRSVP(t *testing.T) {
 		t.Fatal(err)
 	}
 	session := newSession(t, NewSessionService(), admin.ID, 1)
-	rsvp, err := NewRSVPService(nil).CreateOrUpdateRSVP(RSVPInput{SessionID: session.ID, UserID: member.ID, Status: models.RSVPStatusIn}, true)
+	rsvp, err := NewRSVPService().CreateOrUpdateRSVP(RSVPInput{SessionID: session.ID, UserID: member.ID, Status: models.RSVPStatusIn}, true)
 	if err != nil {
 		t.Fatal(err)
 	}

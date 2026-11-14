@@ -28,9 +28,9 @@ it('loads only on request and reports device setup independently of saved accoun
   expect(screen.getByText('2 registered devices')).toBeInTheDocument();
   expect(screen.getByText('Phone')).toBeInTheDocument();
   expect(screen.getByText('Unnamed browser 2')).toBeInTheDocument();
-  expect(screen.getByText('Balance alerts').nextElementSibling).toHaveTextContent('Off');
-  expect(screen.getByText('Session reminders').nextElementSibling).toHaveTextContent('On');
-  expect(screen.getByText(/Account push is off/)).toBeInTheDocument();
+  expect(screen.queryByText('Balance alerts')).not.toBeInTheDocument();
+  expect(screen.getByText('All supported push alerts are included on registered devices.')).toBeInTheDocument();
+  expect(screen.queryByText(/Account push is off/)).not.toBeInTheDocument();
   expect(screen.getByText(/does not confirm current phone or browser settings/)).toBeInTheDocument();
   vi.mocked(api.getMemberPushStatus).mockResolvedValue({ preferences: null, devices: [] });
   await user.click(screen.getByRole('button', { name: 'Refresh' }));

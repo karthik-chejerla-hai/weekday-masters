@@ -279,7 +279,7 @@ func TestCancellationOutboundSettings(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := int32(0)
-			if mode == "enabled" || mode == "provider_failure" {
+			if mode == "enabled" || mode == "opted_out" || mode == "provider_failure" {
 				want = 1
 			}
 			if requests.Load() != want {
@@ -290,7 +290,7 @@ func TestCancellationOutboundSettings(t *testing.T) {
 			if err := database.DB.First(&notice).Error; err != nil {
 				t.Fatal(err)
 			}
-			if notice.PushSent != (mode == "enabled") || notice.EmailSent {
+			if notice.PushSent != (mode == "enabled" || mode == "opted_out") || notice.EmailSent {
 				t.Fatalf("incorrect delivery result: %+v", notice)
 			}
 		})
@@ -345,7 +345,7 @@ func TestCancellationNextSessionHasNotAlreadyStarted(t *testing.T) {
 	}
 }
 
-func TestConcurrentCancellationsDeliverWithNewPreferences(t *testing.T) {
+func TestConcurrentCancellationsDeliverWithoutCreatingObsoletePreferences(t *testing.T) {
 	_, ss, _ := newTestServices(t)
 	member := newUser(t, "member")
 	sessions := []*models.Session{
@@ -365,27 +365,6 @@ func TestConcurrentCancellationsDeliverWithNewPreferences(t *testing.T) {
 
 	ss.WithNotifier(ns)
 
-	// Both cancellations must read missing preferences before either can insert.
-	var arrivals atomic.Int32
-	release := make(chan struct{})
-	const callback = "test:concurrent_cancellation_preferences"
-	if err := database.DB.Callback().Create().Before("gorm:create").Register(callback, func(tx *gorm.DB) {
-		if tx.Statement.Schema == nil || tx.Statement.Schema.Table != "user_notification_preferences" {
-			return
-		}
-		if arrivals.Add(1) == 2 {
-			close(release)
-		}
-		select {
-		case <-release:
-		case <-time.After(5 * time.Second):
-			tx.AddError(errors.New("concurrent preference creation timed out"))
-		}
-	}); err != nil {
-		t.Fatal(err)
-	}
-	defer database.DB.Callback().Create().Remove(callback)
-
 	var wg sync.WaitGroup
 	for _, session := range sessions {
 		wg.Add(1)
@@ -398,9 +377,6 @@ func TestConcurrentCancellationsDeliverWithNewPreferences(t *testing.T) {
 	}
 	wg.Wait()
 
-	if arrivals.Load() != 2 {
-		t.Fatalf("preference creation attempts = %d, want 2", arrivals.Load())
-	}
 	if requests.Load() != 2 {
 		t.Fatalf("provider calls = %d, want 2", requests.Load())
 	}
@@ -423,7 +399,7 @@ func TestConcurrentCancellationsDeliverWithNewPreferences(t *testing.T) {
 	if err := database.DB.Model(&models.Notification{}).Where("push_sent = ?", true).Count(&sent).Error; err != nil || sent != 2 {
 		t.Fatalf("sent notifications = %d, want 2: %v", sent, err)
 	}
-	if err := database.DB.Model(&models.UserNotificationPreferences{}).Where("user_id = ?", member.ID).Count(&preferences).Error; err != nil || preferences != 1 {
-		t.Fatalf("preferences = %d, want 1: %v", preferences, err)
+	if err := database.DB.Model(&models.UserNotificationPreferences{}).Where("user_id = ?", member.ID).Count(&preferences).Error; err != nil || preferences != 0 {
+		t.Fatalf("preferences = %d, want 0: %v", preferences, err)
 	}
 }

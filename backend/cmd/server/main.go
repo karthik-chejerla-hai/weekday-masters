@@ -64,8 +64,7 @@ func run() (runErr error) {
 	}
 	defer sqlDB.Close()
 
-	// Initialize notification service first: the RSVP service uses it to tell players
-	// when they have been promoted off a session waitlist.
+	// Initialize notifications independently of RSVP capacity and waitlist promotion.
 	notificationService := services.NewNotificationService(services.NotificationConfig{
 		Disabled:            cfg.NotificationsDisabled,
 		DisabledAllowEmail:  cfg.NotificationsDisabledAllowEmail,
@@ -85,7 +84,7 @@ func run() (runErr error) {
 	// Initialize services
 	auth0Service := services.NewAuth0Service(cfg.Auth0Domain)
 	sessionService := services.NewSessionService().WithNotifier(notificationService)
-	rsvpService := services.NewRSVPService(notificationService)
+	rsvpService := services.NewRSVPService()
 	// Removing a member gives their upcoming spots back, which is the RSVP
 	// service's job — it owns the session lock and the waitlist promotion.
 	userService := services.NewUserService(cfg.AdminEmail).WithRSVPs(rsvpService)
@@ -184,10 +183,11 @@ func run() (runErr error) {
 
 			// Notification preferences routes (available to all authenticated users)
 			protected.GET("/users/me/notifications", notificationHandler.GetPreferences)
-			protected.PUT("/users/me/notifications", notificationHandler.UpdatePreferences)
-			protected.POST("/users/me/push-tokens", notificationHandler.RegisterPushToken)
-			protected.DELETE("/users/me/push-tokens", notificationHandler.UnregisterPushToken)
+			protected.PUT("/users/me/notifications", notificationHandler.ObsoletePushMutation)
+			protected.POST("/users/me/push-tokens", notificationHandler.ObsoletePushMutation)
+			protected.DELETE("/users/me/push-tokens", notificationHandler.ObsoletePushMutation)
 			notificationHandler.RegisterHistoryRoutes(protected)
+			notificationHandler.RegisterDeviceRoutes(protected)
 
 			// These routes require approved membership
 			approved := protected.Group("")
