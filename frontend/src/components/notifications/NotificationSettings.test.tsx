@@ -16,7 +16,7 @@ it('requires explicit enable after startup finds no registration', async () => {
  vi.mocked(notificationService.restorePushNotifications).mockResolvedValue(false);
  render(<NotificationSettings />); fireEvent.click(await screen.findByRole('button', { name: 'Enable on this device' }));
  await waitFor(() => expect(notificationService.enablePushNotifications).toHaveBeenCalledWith('member'));
- expect(await screen.findByText('Push set up on this device')).toBeInTheDocument();
+ expect(screen.getByRole('status', { name: 'Device push status' })).toHaveTextContent('Enabled');
 });
 it('does not claim disable success when backend or Firebase cleanup fails', async () => {
  vi.mocked(notificationService.disablePushNotifications).mockRejectedValue(new Error('offline'));
@@ -56,10 +56,10 @@ it('shows the device setup status only once after enabling and checking again', 
  render(<NotificationSettings />);
  fireEvent.click(await screen.findByRole('button', { name: 'Enable on this device' }));
  await screen.findByRole('button', { name: 'Disable on this device' });
- expect(screen.getAllByText(/^Push set up on this device\.?$/)).toHaveLength(1);
+ expect(screen.getAllByText('Enabled', { exact: true })).toHaveLength(1);
  fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
  expect(await screen.findByText('Device check complete.')).toBeInTheDocument();
- expect(screen.getAllByText(/^Push set up on this device\.?$/)).toHaveLength(1);
+ expect(screen.getAllByText('Enabled', { exact: true })).toHaveLength(1);
 });
 
 it('makes a manual recheck visible and prevents another action until it finishes', async () => {
@@ -69,10 +69,44 @@ it('makes a manual recheck visible and prevents another action until it finishes
  render(<NotificationSettings isAdmin />);
  fireEvent.click(await screen.findByRole('button', { name: 'Check again' }));
  expect(screen.getByRole('button', { name: 'Checking…' })).toBeDisabled();
- expect(screen.getByText('Checking this device…')).toBeInTheDocument();
+ expect(screen.getByRole('status', { name: 'Device push status' })).toHaveTextContent('Checking…');
  expect(screen.getByRole('button', { name: 'Disable on this device' })).toBeDisabled();
  expect(screen.getByRole('button', { name: 'Send test notification' })).toBeDisabled();
  resolve(true);
  expect(await screen.findByText('Device check complete.')).toBeInTheDocument();
  expect(screen.getByRole('button', { name: 'Check again' })).toBeEnabled();
+});
+
+it('shows a green enabled badge beside the heading for a confirmed device', async () => {
+ render(<NotificationSettings />);
+ await screen.findByRole('button', { name: 'Disable on this device' });
+ const badge = screen.getByRole('status', { name: 'Device push status' });
+ expect(badge).toHaveTextContent(/^Enabled$/);
+ expect(badge).toHaveClass('text-emerald-700');
+ expect(badge.parentElement).toContainElement(screen.getByRole('heading', { name: 'Push notifications' }));
+ expect(screen.queryByText(/^Push set up on this device\.?$/)).not.toBeInTheDocument();
+});
+
+it('shows disabled when this browser has no registration', async () => {
+ vi.mocked(notificationService.restorePushNotifications).mockResolvedValue(false);
+ render(<NotificationSettings />);
+ await screen.findByRole('button', { name: 'Enable on this device' });
+ expect(screen.getByRole('status', { name: 'Device push status' })).toHaveTextContent(/^Disabled$/);
+});
+
+it('does not retain a green status after a failed device recheck', async () => {
+ vi.mocked(notificationService.restorePushNotifications).mockResolvedValueOnce(true).mockRejectedValueOnce(new Error('offline'));
+ render(<NotificationSettings />);
+ fireEvent.click(await screen.findByRole('button', { name: 'Check again' }));
+ await screen.findByRole('alert');
+ const badge = screen.getByRole('status', { name: 'Device push status' });
+ expect(badge).toHaveTextContent(/^Not confirmed$/);
+ expect(badge).not.toHaveClass('text-emerald-700');
+});
+
+it('shows blocked instead of enabled when browser permission is denied', async () => {
+ vi.mocked(notificationService.getPermissionStatus).mockReturnValue('denied');
+ render(<NotificationSettings />);
+ await screen.findByRole('button', { name: 'Disable on this device' });
+ expect(screen.getByRole('status', { name: 'Device push status' })).toHaveTextContent(/^Blocked$/);
 });
