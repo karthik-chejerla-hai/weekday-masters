@@ -67,7 +67,7 @@ export default function AssistantPanel({ sessionId, mode, onGameSaved }: { sessi
           <label htmlFor="assistant-message" className="label">Your message</label>
           <textarea ref={messageInput} id="assistant-message" rows={2} className="input min-h-20 resize-y" maxLength={4000} value={text} disabled={busy || savingGame} aria-describedby="assistant-privacy" onChange={(event) => { setText(event.target.value); setExpense(null); setGame(null); }} placeholder={mode === 'games' ? 'Alice and Bob beat Cara and Dan, 21 to 17.' : sessionId && isAdmin ? 'We played three hours and used eight shuttles.' : 'How much court credit do we have?'} />
           <div className="mt-3 flex flex-wrap items-start justify-between gap-2">
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-auto">
               <VoiceRecorder disabled={!enabled || busy || savingGame} onTranscript={(value) => {
                 setText(value);
                 // Keep late transcripts without replacing a saving review or retry identity.
