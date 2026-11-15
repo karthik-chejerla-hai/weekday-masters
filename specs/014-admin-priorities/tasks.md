@@ -1,0 +1,9 @@
+# Tasks
+
+- [x] Prioritize requests, compact navigation and empty status, align page heading.
+- [x] Collapse settings/announcement forms behind explicit named controls.
+- [x] Preserve behavior and update existing unit/browser workflows to open controls.
+- [x] All 528 frontend tests, build and lint pass (one existing SessionDetail hook warning).
+- [x] Orca browser: desktop and 390px mobile, no horizontal overflow; focused settings summary opens/closes with Enter. Synthetic fixture only.
+
+All 14 existing announcement/deadline browser scenarios pass across desktop and mobile Chromium, including uncertain-publication retries and stale deadline protection.

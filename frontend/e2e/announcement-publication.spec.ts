@@ -8,7 +8,7 @@ test('uncertain publication retries retain identity and display truthful deliver
   if(calls===1)return json(route,{message:'Could not confirm publication. Retry the same message.'},503);
   await json(route,{id:'11111111-1111-4111-8111-111111111111',request_id:requestID,title:input.title,body:input.body,audience_count:4,queued_count:2,suppressed_count:2,delivery_status:'partially_queued'},201);
  });
- await page.goto('/admin');await page.getByLabel('Title',{exact:true}).fill('Court closure');await page.getByLabel('Message',{exact:true}).fill('Friday courts are closed.');
+ await page.goto('/admin');await page.getByText('Write an announcement',{exact:true}).click();await page.getByLabel('Title',{exact:true}).fill('Court closure');await page.getByLabel('Message',{exact:true}).fill('Friday courts are closed.');
  await page.getByRole('button',{name:'Publish announcement'}).click();await expect(page.getByRole('alert')).toHaveText('Could not confirm publication. Retry the same message.');
  await page.getByRole('button',{name:'Publish announcement'}).click();await expect(page.getByText('Announcement saved for 4 members. Push queued for 2; 2 will not receive push.')).toBeVisible();expect(calls).toBe(2);
  await expect(page.getByLabel('Title',{exact:true})).toHaveValue('');

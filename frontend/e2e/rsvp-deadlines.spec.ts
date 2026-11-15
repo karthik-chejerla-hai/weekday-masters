@@ -12,6 +12,7 @@ test('admin changes the default in hours and sees the effect on future sessions'
     await json(route, { ...club, rsvp_deadline_hours: hours });
   });
   await page.goto('/admin');
+  await page.getByText('Edit club settings', { exact: true }).click();
   const input = page.getByLabel('Default RSVP deadline (hours before start)');
   await expect(input).toHaveValue('50');
   await expect(page.getByText(/including custom deadlines/)).toBeVisible();
@@ -77,6 +78,7 @@ test('a venue-only save does not restore a stale deadline default', async ({ pag
     await json(route, { ...club, ...submitted, rsvp_deadline_hours: currentHours });
   });
   await page.goto('/admin');
+  await page.getByText('Edit club settings', { exact: true }).click();
   const input = page.getByLabel('Default RSVP deadline (hours before start)');
   await expect(input).toHaveValue('50');
   // Another admin changes the saved default while this page remains open.

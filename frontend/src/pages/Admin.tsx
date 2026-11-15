@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Settings, Users, Calendar, Check, X, Loader2, MapPin, Save, Building, Megaphone, Send } from 'lucide-react';
+import { Users, Calendar, Check, X, Loader2, MapPin, Save, Building, Megaphone, Send } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/useAuth';
 import { announcementRequest, clearAnnouncementRequest } from '../services/announcement-request';
@@ -140,51 +140,91 @@ export default function Admin() {
           Push delivery is paused. Published announcements remain available in notification history.
         </div>
       )}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-          <Settings className="w-7 h-7 text-primary-600" />
-          Admin Dashboard
-        </h1>
-        <p className="text-slate-600 mt-1">
-          Manage club members and sessions
-        </p>
+      <div className="page-heading">
+        <p className="page-kicker">Club management</p>
+        <h1 className="page-title">Admin</h1>
+        <p className="page-description">Review join requests and manage your club.</p>
       </div>
 
-      <div className="grid sm:grid-cols-2 gap-4">
-        <Link
-          to="/admin/sessions"
-          className="bg-white rounded-xl border border-slate-200 p-6 hover:shadow-md transition-shadow"
-        >
-          <Calendar className="w-10 h-10 text-primary-600 mb-3" />
-          <h3 className="font-semibold text-slate-900">Manage Sessions</h3>
-          <p className="text-sm text-slate-600 mt-1">Create and edit sessions</p>
-        </Link>
-
-        <Link
-          to="/admin/members"
-          className="bg-white rounded-xl border border-slate-200 p-6 hover:shadow-md transition-shadow"
-        >
-          <Users className="w-10 h-10 text-secondary-500 mb-3" />
-          <h3 className="font-semibold text-slate-900">Manage Members</h3>
-          <p className="text-sm text-slate-600 mt-1">
-            Add members, edit their details, or remove them
-          </p>
-        </Link>
-      </div>
-
-      {/* Club Settings */}
-      <div className="bg-white rounded-xl border border-slate-200 p-6">
-        <h2 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
-          <Building className="w-5 h-5 text-primary-600" />
-          Club Settings
+      {/* Join Requests */}
+      <div className="card p-4 sm:p-6" aria-labelledby="join-requests-heading">
+        <h2 id="join-requests-heading" className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
+          <Users className="w-5 h-5 text-primary-600" />
+          Join Requests
+          <span className="text-sm font-normal text-slate-500">
+            ({joinRequests.length} pending)
+          </span>
         </h2>
 
-        <div className="space-y-4">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-8 h-8 text-primary-600 animate-spin" />
+          </div>
+        ) : joinRequests.length === 0 ? (
+          <div className="text-sm text-slate-500">
+            <p>No pending join requests</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {joinRequests.map((user) => (
+              <div
+                key={user.id}
+                className="flex flex-wrap items-center justify-between gap-3 p-3 bg-slate-50 rounded-lg"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <Avatar src={user.profile_picture} name={displayName(user)} />
+                  <div className="min-w-0">
+                    <p className="font-medium text-slate-900">{displayName(user)}</p>
+                    <p className="break-all text-sm text-slate-500">{user.email}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleApprove(user.id)}
+                    disabled={processingId === user.id}
+                    className="min-h-11 min-w-11 flex items-center justify-center p-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors disabled:opacity-50"
+                    aria-label={`Approve ${displayName(user)}`}
+                  >
+                    {processingId === user.id ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <Check className="w-5 h-5" />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => handleReject(user.id)}
+                    disabled={processingId === user.id}
+                    className="min-h-11 min-w-11 flex items-center justify-center p-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors disabled:opacity-50"
+                    aria-label={`Reject ${displayName(user)}`}
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <nav aria-label="Club management" className="flex flex-wrap gap-3">
+        <Link to="/admin/sessions" className="btn-outline gap-2"><Calendar className="h-4 w-4" aria-hidden="true" />Manage sessions</Link>
+        <Link to="/admin/members" className="btn-outline gap-2"><Users className="h-4 w-4" aria-hidden="true" />Manage members</Link>
+      </nav>
+
+      {/* Club Settings */}
+      <section className="card p-4 sm:p-6" aria-labelledby="club-settings-heading">
+        <h2 id="club-settings-heading" className="flex items-center gap-2 font-semibold text-slate-900"><Building className="h-5 w-5 text-primary-700" aria-hidden="true" />Club settings</h2>
+        <p className="mt-2 text-sm text-slate-600">{isLoading ? 'Loading club settings…' : [clubForm.name, clubForm.venue_name].filter(Boolean).join(' · ')}</p>
+        <details className="mt-3">
+          <summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold text-primary-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">Edit club settings</summary>
+        <div className="mt-3 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
+            <label htmlFor="club-name" className="block text-sm font-medium text-slate-700 mb-1">
               Club Name
             </label>
             <input
+              id="club-name"
               type="text"
               value={clubForm.name}
               onChange={(e) => setClubForm({ ...clubForm, name: e.target.value })}
@@ -194,11 +234,12 @@ export default function Admin() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
+            <label htmlFor="club-venue-name" className="block text-sm font-medium text-slate-700 mb-1">
               <MapPin className="w-4 h-4 inline mr-1" />
               Venue Name
             </label>
             <input
+              id="club-venue-name"
               type="text"
               value={clubForm.venue_name}
               onChange={(e) => setClubForm({ ...clubForm, venue_name: e.target.value })}
@@ -208,10 +249,11 @@ export default function Admin() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
+            <label htmlFor="club-venue-address" className="block text-sm font-medium text-slate-700 mb-1">
               Venue Address
             </label>
             <textarea
+              id="club-venue-address"
               value={clubForm.venue_address}
               onChange={(e) => setClubForm({ ...clubForm, venue_address: e.target.value })}
               placeholder="Enter full venue address"
@@ -287,14 +329,14 @@ export default function Admin() {
             Save Club Settings
           </button>
         </div>
-      </div>
+        </details>
+      </section>
 
       {/* Send Announcement */}
-      <div className="bg-white rounded-xl border border-slate-200 p-6">
-        <h2 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
-          <Megaphone className="w-5 h-5 text-primary-600" />
-          Publish announcement
-        </h2>
+      <section className="card p-4 sm:p-6" aria-labelledby="announcements-heading">
+        <h2 id="announcements-heading" className="flex items-center gap-2 font-semibold text-slate-900"><Megaphone className="h-5 w-5 text-primary-700" aria-hidden="true" />Announcements</h2>
+        <details className="mt-3">
+          <summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold text-primary-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">Write an announcement</summary>
         <p className="text-sm text-slate-600 mb-4">
           Send a notification to all club members via push notification.
         </p>
@@ -353,69 +395,10 @@ export default function Admin() {
             Publish announcement
           </button>
         </div>
-      </div>
+        </details>
+      </section>
 
-      {/* Join Requests */}
-      <div className="bg-white rounded-xl border border-slate-200 p-6">
-        <h2 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
-          <Users className="w-5 h-5 text-primary-600" />
-          Join Requests
-          <span className="text-sm font-normal text-slate-500">
-            ({joinRequests.length} pending)
-          </span>
-        </h2>
 
-        {isLoading ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="w-8 h-8 text-primary-600 animate-spin" />
-          </div>
-        ) : joinRequests.length === 0 ? (
-          <div className="text-center py-8 text-slate-500">
-            <Users className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-            <p>No pending join requests</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {joinRequests.map((user) => (
-              <div
-                key={user.id}
-                className="flex items-center justify-between p-4 bg-slate-50 rounded-lg"
-              >
-                <div className="flex items-center gap-3">
-                  <Avatar src={user.profile_picture} name={displayName(user)} />
-                  <div>
-                    <p className="font-medium text-slate-900">{displayName(user)}</p>
-                    <p className="text-sm text-slate-500">{user.email}</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handleApprove(user.id)}
-                    disabled={processingId === user.id}
-                    className="p-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors disabled:opacity-50"
-                    title="Approve"
-                  >
-                    {processingId === user.id ? (
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                    ) : (
-                      <Check className="w-5 h-5" />
-                    )}
-                  </button>
-                  <button
-                    onClick={() => handleReject(user.id)}
-                    disabled={processingId === user.id}
-                    className="p-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors disabled:opacity-50"
-                    title="Reject"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   );
 }
