@@ -792,15 +792,16 @@ func (s *SettlementService) LiveSettlementForSession(sessionID uuid.UUID) (*mode
 
 // PastSessionView is one row of the history list.
 type PastSessionView struct {
-	ImportedDate string     `json:"imported_date,omitempty"`
-	DateBasis    string     `json:"date_basis,omitempty"`
-	SessionID    uuid.UUID  `json:"session_id"`
-	Title        string     `json:"title"`
-	StartsAt     *time.Time `json:"starts_at,omitempty"`
-	EndsAt       *time.Time `json:"ends_at,omitempty"`
-	Settled      bool       `json:"settled"`
-	TotalCents   int64      `json:"total_cents"`
-	PlayerCount  int        `json:"player_count"`
+	ImportedDate string               `json:"imported_date,omitempty"`
+	DateBasis    string               `json:"date_basis,omitempty"`
+	SessionID    uuid.UUID            `json:"session_id"`
+	Title        string               `json:"title"`
+	Status       models.SessionStatus `json:"status,omitempty"`
+	StartsAt     *time.Time           `json:"starts_at,omitempty"`
+	EndsAt       *time.Time           `json:"ends_at,omitempty"`
+	Settled      bool                 `json:"settled"`
+	TotalCents   int64                `json:"total_cents"`
+	PlayerCount  int                  `json:"player_count"`
 }
 
 // ListPastSessions returns sessions that have finished, newest first.
@@ -811,7 +812,7 @@ type PastSessionView struct {
 // historyQuery combines scheduled sessions with imported date-only sessions.
 // All source rows for a play date form one session, including extra-hour rows.
 const historyQuery = importedSessionsQuery + `, history AS (
- SELECT s.id AS session_id, s.title, s.starts_at, s.ends_at,
+ SELECT s.id AS session_id, s.title, s.status, s.starts_at, s.ends_at,
         (st.id IS NOT NULL) AS settled,
         COALESCE(charges.total_cents,0) AS total_cents,
         COALESCE(charges.player_count,0) AS player_count,
@@ -823,7 +824,7 @@ const historyQuery = importedSessionsQuery + `, history AS (
  WHERE s.ends_at IS NOT NULL AND s.ends_at < ?
    AND NOT EXISTS (SELECT 1 FROM imported_schedule matched WHERE matched.session_id = s.id)
  UNION ALL
- SELECT i.session_id,i.title,NULL::timestamptz,NULL::timestamptz,true,i.total_cents,
+ SELECT i.session_id,i.title,NULL::text,NULL::timestamptz,NULL::timestamptz,true,i.total_cents,
         (SELECT COUNT(DISTINCT c.participant_id) FROM splitwise_changes c
          JOIN splitwise_records r ON r.id=c.record_id
          WHERE r.import_id=i.import_id AND r.played_date=i.played_date

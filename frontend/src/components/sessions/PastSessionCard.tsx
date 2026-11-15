@@ -18,6 +18,8 @@ interface PastSessionCardProps {
 export default function PastSessionCard({ session, isAdmin }: PastSessionCardProps) {
   const played = session.imported_date ? parseISO(session.imported_date) : session.ends_at ? parseISO(session.ends_at) : null;
 
+  const cancelled = session.status === 'cancelled';
+
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
       <div className="flex items-start justify-between gap-3">
@@ -30,7 +32,9 @@ export default function PastSessionCard({ session, isAdmin }: PastSessionCardPro
           )}
         </div>
 
-        {session.settled ? (
+        {cancelled ? (
+          <span className="rounded-full border border-slate-300 bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 whitespace-nowrap">Cancelled</span>
+        ) : session.settled ? (
           <span className="text-sm font-semibold text-slate-800 tabular-nums whitespace-nowrap">
             {formatCents(session.total_cents)}
           </span>
@@ -41,9 +45,11 @@ export default function PastSessionCard({ session, isAdmin }: PastSessionCardPro
         )}
       </div>
 
-      {!session.imported_date && <Link to={`/sessions/${session.session_id}/games`} className="mt-3 inline-block text-sm font-medium text-primary-700">Game scores</Link>}
+      {!cancelled && !session.imported_date && <Link to={`/sessions/${session.session_id}/games`} className="mt-3 inline-block text-sm font-medium text-primary-700">Game scores</Link>}
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-        {session.settled ? (
+        {cancelled ? (
+          <span className="text-sm text-slate-500">No settlement required</span>
+        ) : session.settled ? (
           <>
             <span className="text-sm text-slate-500">
               {session.player_count} {session.player_count === 1 ? 'player' : 'players'}{session.imported_date && ' · Settled in Splitwise'}
