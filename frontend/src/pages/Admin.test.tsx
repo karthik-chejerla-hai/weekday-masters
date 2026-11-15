@@ -175,3 +175,39 @@ describe('Admin work priorities', () => {
     expect(await screen.findByText('No pending join requests')).toBeVisible();
   });
 });
+
+describe('Feedback after collapsing pending actions', () => {
+  it.each([false, true])('keeps a late club save result visible (failure=%s)', async (failure) => {
+    let finish!: () => void;
+    vi.mocked(api.updateClub).mockImplementation(() => new Promise((resolve, reject) => {
+      finish = () => failure ? reject(new Error('offline')) : resolve({} as never);
+    }));
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(screen.getByLabelText('Court number')).toHaveValue(8));
+    await user.click(screen.getByRole('button', { name: 'Save Club Settings' }));
+    await user.click(screen.getByText('Edit club settings'));
+    expect(screen.getByText('Saving club settings…')).toBeVisible();
+    finish();
+    const message = await screen.findByText(failure ? 'Failed to save club settings' : 'Club settings saved!');
+    expect(message).toBeVisible();
+  });
+
+  it.each([false, true])('keeps a late announcement result visible (failure=%s)', async (failure) => {
+    let finish!: () => void;
+    vi.mocked(api.sendAnnouncement).mockImplementation(() => new Promise((resolve, reject) => {
+      finish = () => failure ? reject(new Error('response lost')) : resolve({ audience_count: 3, queued_count: 1, suppressed_count: 2 } as never);
+    }));
+    const user = userEvent.setup();
+    renderPage();
+    await user.type(screen.getByLabelText('Title'), 'News');
+    await user.type(screen.getByLabelText('Message'), 'Club news');
+    await user.click(screen.getByRole('button', { name: 'Publish announcement' }));
+    await user.click(screen.getByText('Write an announcement'));
+    expect(screen.getByText('Publishing announcement…')).toBeVisible();
+    finish();
+    const message = await screen.findByText(failure ? /Retry without changing/ : /Announcement saved for 3 members/);
+    expect(message).toBeVisible();
+    expect(message).toHaveTextContent(failure ? 'Retry without changing' : 'Announcement saved for 3 members');
+  });
+});

@@ -7,3 +7,7 @@
 - [x] Orca browser: desktop and 390px mobile, no horizontal overflow; focused settings summary opens/closes with Enter. Synthetic fixture only.
 
 All 14 existing announcement/deadline browser scenarios pass across desktop and mobile Chromium, including uncertain-publication retries and stale deadline protection.
+
+## Adversarial review correction
+
+- [x] Keep pending status and late success/error feedback visible outside collapsed settings/announcement disclosures. Four deferred-response regressions fail on the original change and pass after correction.

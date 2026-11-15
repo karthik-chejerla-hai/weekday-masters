@@ -308,13 +308,7 @@ export default function Admin() {
             </p>
           </div>
 
-          {clubMessage && (
-            <div className={`p-3 rounded-lg text-sm ${
-              clubMessage.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-            }`}>
-              {clubMessage.text}
-            </div>
-          )}
+
 
           <button
             onClick={handleSaveClub}
@@ -330,6 +324,14 @@ export default function Admin() {
           </button>
         </div>
         </details>
+        {isSavingClub && <p role="status" className="mt-3 text-sm text-slate-600">Saving club settings…</p>}
+        {clubMessage && (
+          <div role={clubMessage.type === 'error' ? 'alert' : 'status'} className={`mt-3 p-3 rounded-lg text-sm ${
+              clubMessage.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+            }`}>
+            {clubMessage.text}
+          </div>
+        )}
       </section>
 
       {/* Send Announcement */}
@@ -374,13 +376,7 @@ export default function Admin() {
             />
           </div>
 
-          {announcementMessage && (
-            <div role={announcementMessage.type === 'error' ? 'alert' : 'status'} className={`p-3 rounded-lg text-sm ${
-              announcementMessage.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-            }`}>
-              {announcementMessage.text}
-            </div>
-          )}
+
 
           <button
             onClick={handleSendAnnouncement}
@@ -396,6 +392,14 @@ export default function Admin() {
           </button>
         </div>
         </details>
+        {isSendingAnnouncement && <p role="status" className="mt-3 text-sm text-slate-600">Publishing announcement…</p>}
+        {announcementMessage && (
+          <div role={announcementMessage.type === 'error' ? 'alert' : 'status'} className={`mt-3 p-3 rounded-lg text-sm ${
+              announcementMessage.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+            }`}>
+            {announcementMessage.text}
+          </div>
+        )}
       </section>
 
 
