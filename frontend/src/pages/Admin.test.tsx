@@ -211,3 +211,33 @@ describe('Feedback after collapsing pending actions', () => {
     expect(message).toHaveTextContent(failure ? 'Retry without changing' : 'Announcement saved for 3 members');
   });
 });
+
+describe('Confirmed club summary', () => {
+  it('keeps saved values visible after collapsing unsaved edits or a failed save', async () => {
+    vi.mocked(api.updateClub).mockRejectedValueOnce(new Error('offline'));
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(screen.getByLabelText('Venue Name')).toHaveValue('BadmintonWorx Norwest'));
+    await user.clear(screen.getByLabelText('Venue Name'));
+    await user.type(screen.getByLabelText('Venue Name'), 'Unconfirmed venue');
+    await user.click(screen.getByText('Edit club settings'));
+    expect(screen.getByText('Rally · BadmintonWorx Norwest')).toBeVisible();
+    await user.click(screen.getByText('Edit club settings'));
+    await user.click(screen.getByRole('button', { name: 'Save Club Settings' }));
+    await screen.findByText('Failed to save club settings');
+    await user.click(screen.getByText('Edit club settings'));
+    expect(screen.getByText('Rally · BadmintonWorx Norwest')).toBeVisible();
+    expect(screen.getByLabelText('Venue Name')).toHaveValue('Unconfirmed venue');
+  });
+
+  it('updates the summary only after a successful save with the confirmed values', async () => {
+    vi.mocked(api.updateClub).mockResolvedValue({ name: 'Confirmed club', venue_name: 'Confirmed venue' } as never);
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(screen.getByLabelText('Court number')).toHaveValue(8));
+    await user.click(screen.getByRole('button', { name: 'Save Club Settings' }));
+    await screen.findByText('Club settings saved!');
+    await user.click(screen.getByText('Edit club settings'));
+    expect(screen.getByText('Confirmed club · Confirmed venue')).toBeVisible();
+  });
+});

@@ -11,3 +11,5 @@ All 14 existing announcement/deadline browser scenarios pass across desktop and 
 ## Adversarial review correction
 
 - [x] Keep pending status and late success/error feedback visible outside collapsed settings/announcement disclosures. Four deferred-response regressions fail on the original change and pass after correction.
+
+- [x] Second independent review: collapsed club summary must display the last confirmed name/venue, not unsaved or failed drafts. Preserve a saved summary snapshot, update only on successful load/save, and cover draft collapse, failed save and confirmed response values.

@@ -18,6 +18,7 @@ export default function Admin() {
 
   // Club settings state
   const [clubForm, setClubForm] = useState({ name: '', venue_name: '', venue_address: '', court_number: '', time_format: '24h' as TimeFormat, rsvp_deadline_hours: '50' });
+  const [savedClubSummary, setSavedClubSummary] = useState({ name: '', venue_name: '' });
   const [savedDeadlineHours, setSavedDeadlineHours] = useState(50);
   const [isSavingClub, setIsSavingClub] = useState(false);
   const [notificationsPaused, setNotificationsPaused] = useState(false);
@@ -39,6 +40,7 @@ export default function Admin() {
         api.getClub(),
       ]);
       setJoinRequests(requestsData);
+      setSavedClubSummary({ name: clubData.name || '', venue_name: clubData.venue_name || '' });
       setNotificationsPaused(clubData.notifications_paused ?? false);
       setSavedDeadlineHours(clubData.rsvp_deadline_hours ?? 50);
       setClubForm({
@@ -100,6 +102,7 @@ export default function Admin() {
         court_number: courtNumber,
         ...(deadlineHours !== savedDeadlineHours ? { rsvp_deadline_hours: deadlineHours } : {}),
       });
+      setSavedClubSummary({ name: saved.name ?? settings.name, venue_name: saved.venue_name ?? settings.venue_name });
       const currentDeadlineHours = saved.rsvp_deadline_hours ?? deadlineHours;
       setSavedDeadlineHours(currentDeadlineHours);
       setClubForm(current => ({ ...current, rsvp_deadline_hours: String(currentDeadlineHours) }));
@@ -215,7 +218,7 @@ export default function Admin() {
       {/* Club Settings */}
       <section className="card p-4 sm:p-6" aria-labelledby="club-settings-heading">
         <h2 id="club-settings-heading" className="flex items-center gap-2 font-semibold text-slate-900"><Building className="h-5 w-5 text-primary-700" aria-hidden="true" />Club settings</h2>
-        <p className="mt-2 text-sm text-slate-600">{isLoading ? 'Loading club settings…' : [clubForm.name, clubForm.venue_name].filter(Boolean).join(' · ')}</p>
+        <p className="mt-2 text-sm text-slate-600">{isLoading ? 'Loading club settings…' : [savedClubSummary.name, savedClubSummary.venue_name].filter(Boolean).join(' · ')}</p>
         <details className="mt-3">
           <summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold text-primary-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">Edit club settings</summary>
         <div className="mt-3 space-y-4">
