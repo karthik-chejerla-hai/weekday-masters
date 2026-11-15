@@ -83,14 +83,14 @@ export default function VoiceRecorder({ onTranscript, disabled = false }: { onTr
   return <div className="space-y-2">
     <div className="flex flex-wrap items-center gap-2">
       {state === 'recording' ? <button type="button" className="btn-primary gap-2" onClick={() => recorder.current?.stop()}><Square className="h-4 w-4" /> Stop recording</button> :
-        <button type="button" className="btn-secondary gap-2" onClick={start} disabled={disabled || !supported || state !== 'idle'}>
+        <button type="button" className="btn-outline gap-2" onClick={start} disabled={disabled || !supported || state !== 'idle'}>
           {state === 'permission' || state === 'transcribing' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
           {state === 'transcribing' ? 'Reading recording…' : state === 'permission' ? 'Waiting for microphone…' : 'Tap to speak'}
         </button>}
       {state !== 'idle' && <button type="button" className="btn-outline" onClick={cancel}>Cancel recording</button>}
       {state === 'recording' && <span role="status" className="text-sm text-red-700">Recording, up to 60 seconds</span>}
     </div>
-    {!supported && <p className="text-sm text-slate-600">Voice needs a supported browser on HTTPS or localhost. You can type below.</p>}
+    {!supported && <p className="text-sm text-slate-600">Voice needs a supported browser on HTTPS or localhost. You can type your message.</p>}
     {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
   </div>;
 }

@@ -64,3 +64,26 @@ it('turns a game recording into a review and saves only on explicit confirmation
   expect(await screen.findByText('Game saved.')).toBeInTheDocument();
   expect(saved).toHaveBeenCalledOnce();
 });
+
+it('populates an editable example without sending or saving', async () => {
+  const user = userEvent.setup();
+  render(<MemoryRouter><AssistantPanel /></MemoryRouter>);
+  await user.click(screen.getByRole('button', { name: 'Record a score' }));
+  const input = screen.getByLabelText('Your message');
+  expect(input).toHaveValue('Help me record a doubles game score.');
+  expect(input).toHaveFocus();
+  expect(api.askAssistant).not.toHaveBeenCalled();
+  expect(api.createGame).not.toHaveBeenCalled();
+  await user.clear(input);
+  await user.type(input, 'My edited score');
+  expect(input).toHaveValue('My edited score');
+  expect(api.askAssistant).not.toHaveBeenCalled();
+});
+
+it('offers member examples without expense actions', async () => {
+  vi.mocked(useAuth).mockReturnValue({ isAdmin: false } as never);
+  render(<MemoryRouter><AssistantPanel /></MemoryRouter>);
+  expect(screen.getByRole('button', { name: 'Next session' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Session expense' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /expense/i })).not.toBeInTheDocument();
+});
