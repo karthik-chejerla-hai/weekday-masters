@@ -92,7 +92,6 @@ export default function SessionRSVPReminder({ session, showAction = true }: { se
     {showAction && <button ref={triggerButton} type="button" className="btn-secondary inline-flex min-h-11 items-center gap-2" disabled={busy || closed || coolingDown || !!preview} onClick={() => void review()}>
       <Bell className="h-4 w-4" aria-hidden="true" />{busy && !preview ? 'Checking recipients…' : 'Remind players to RSVP'}
     </button>}
-    {closed && <p className="mt-2 text-slate-600">New reminders are available before the RSVP deadline for upcoming open sessions.</p>}
     {coolingDown && <p className="mt-2 text-slate-600">Available again at {formatInTimeZone(nextAllowedAt!, 'Australia/Sydney', "EEE, d MMM 'at' h:mm a")} (Sydney).</p>}
     {preview && <section aria-label="Confirm RSVP reminders" className="mt-3 rounded-lg bg-slate-50 p-3" onKeyDown={event => { if (event.key === 'Escape' && !busy) cancel(); }}>
       <p>Remind {preview.audience_count} {preview.audience_count === 1 ? 'member' : 'members'} to RSVP for {session.title}?</p>
