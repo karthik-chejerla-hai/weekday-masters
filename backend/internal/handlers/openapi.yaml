@@ -3976,11 +3976,15 @@ components:
         date_basis: { type: string, enum: [title, recorded] }
         session_id: { type: string, format: uuid }
         title: { type: string }
+        status:
+          type: string
+          enum: [open, closed, cancelled]
+          description: Stored native session state. Absent for imported sessions.
         starts_at: { type: string, format: date-time }
         ends_at: { type: string, format: date-time }
         settled:
           type: boolean
-          description: False for a finished session nobody has costed yet. Shown rather than hidden.
+          description: Whether a live settlement exists. Cancelled sessions require no settlement; use status to distinguish them.
         total_cents: { type: integer, format: int64 }
         player_count: { type: integer }
 

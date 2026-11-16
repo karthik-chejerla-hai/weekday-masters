@@ -421,6 +421,8 @@ export interface SettlementView extends SettlementPreview {
 }
 
 export interface PastSession {
+  /** Stored native session state; absent for imported history. */
+  status?: SessionStatus;
   imported_date?: string;
   date_basis?: 'title' | 'recorded';
   session_id: string;
