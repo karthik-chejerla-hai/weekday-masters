@@ -94,8 +94,9 @@ func TestRSVPReminderDispatchRechecksResponsesAndEligibility(t *testing.T) {
 func TestRSVPReminderDispatchDefersWhenEditedStartMovesDueIntoFuture(t *testing.T) {
 	s, ss, user := rsvpScannerFixture(t)
 	session, now, outbox := queueFirstRSVPStage(t, s, ss, user, utils.NowInSydney().AddDate(0, 0, 7).Truncate(time.Minute))
-	newStartTime := session.StartsAt.In(utils.SydneyLocation).Add(time.Hour).Format("15:04")
-	updated, err := ss.UpdateSession(session.ID, UpdateSessionInput{StartTime: &newStartTime})
+	newStart := session.StartsAt.In(utils.SydneyLocation).Add(time.Hour)
+	newStartTime := newStart.Format("15:04")
+	updated, err := ss.UpdateSession(session.ID, UpdateSessionInput{SessionDate: &newStart, StartTime: &newStartTime})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,12 +188,13 @@ func TestRSVPReminderDispatchReconcilesBetweenDeviceAttempts(t *testing.T) {
 	if err := database.DB.Where("user_id = ? AND token = ?", user.ID, "device").Delete(&models.UserPushToken{}).Error; err != nil {
 		t.Fatal(err)
 	}
-	newStartTime := session.StartsAt.In(utils.SydneyLocation).Add(time.Hour).Format("15:04")
+	newStart := session.StartsAt.In(utils.SydneyLocation).Add(time.Hour)
+	newStartTime := newStart.Format("15:04")
 	edited := false
 	provider := &recordedReminderProvider{hook: func(recordedReminderSend) {
 		if !edited {
 			edited = true
-			if _, err := ss.UpdateSession(session.ID, UpdateSessionInput{StartTime: &newStartTime}); err != nil {
+			if _, err := ss.UpdateSession(session.ID, UpdateSessionInput{SessionDate: &newStart, StartTime: &newStartTime}); err != nil {
 				t.Errorf("edit during dispatch: %v", err)
 			}
 		}
