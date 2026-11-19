@@ -1,4 +1,4 @@
-import { ArrowLeftRight, ArrowUpRight, Clapperboard, Landmark, PiggyBank, ReceiptText, RotateCcw, Split, Utensils } from 'lucide-react';
+import { ArrowLeftRight, ArrowUpRight, Clapperboard, Coffee, Landmark, PiggyBank, ReceiptText, RotateCcw, Split, Utensils } from 'lucide-react';
 import { formatInTimeZone } from 'date-fns-tz';
 import { formatCents } from './format';
 import ShuttleIcon from './ShuttleIcon';
@@ -9,6 +9,7 @@ const CATEGORIES = {
   topup: { label: 'Top-up', Icon: PiggyBank, style: 'bg-emerald-50 text-emerald-700' },
   session: { label: 'Session', Icon: ShuttleIcon, style: 'bg-primary-50 text-primary-700' },
   food: { label: 'Food and drink', Icon: Utensils, style: 'bg-orange-50 text-orange-700' },
+  coffee: { label: 'Coffee', Icon: Coffee, style: 'bg-orange-50 text-orange-700' },
   entertainment: { label: 'Entertainment', Icon: Clapperboard, style: 'bg-violet-50 text-violet-700' },
   shuttles: { label: 'Shuttles', Icon: ShuttleIcon, style: 'bg-primary-50 text-primary-700' },
   court_credit: { label: 'Court credit', Icon: Landmark, style: 'bg-sky-50 text-sky-700' },

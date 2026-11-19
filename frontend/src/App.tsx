@@ -7,6 +7,7 @@ import Welcome from './pages/Welcome';
 import Dashboard from './pages/Dashboard';
 import Assistant from './pages/Assistant';
 import AdminExpense from './pages/AdminExpense';
+import AdminSharedExpense from './pages/AdminSharedExpense';
 import Sessions from './pages/Sessions';
 import SessionGames from './pages/SessionGames';
 import HeadToHead from './pages/HeadToHead';
@@ -76,6 +77,7 @@ function AppRoutes() {
         <Route path="/sessions/:id/games" element={<ProtectedRoute><SessionGames /></ProtectedRoute>} />
         <Route path="/assistant" element={<ProtectedRoute><Assistant /></ProtectedRoute>} />
         <Route path="/admin/sessions/:id/expense" element={<ProtectedRoute requireAdmin><AdminExpense /></ProtectedRoute>} />
+        <Route path="/admin/expenses/new" element={<ProtectedRoute requireAdmin><AdminSharedExpense /></ProtectedRoute>} />
         <Route path="/dashboard" element={
           <ProtectedRoute>
             <Dashboard />

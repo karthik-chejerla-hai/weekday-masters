@@ -204,6 +204,7 @@ export type TransactionKind =
   | 'shuttle_purchase'
   | 'session_settlement'
   | 'opening_balance'
+  | 'shared_expense'
 	| 'splitwise_import'
 	| 'import_assets'
   | 'reversal';
@@ -284,7 +285,7 @@ export interface LedgerEntryView {
   occurred_at: string;
   kind: TransactionKind;
   description: string;
-  category: 'topup' | 'session' | 'food' | 'entertainment' | 'shuttles' | 'court_credit' | 'transfer' | 'withdrawal' | 'reversal' | 'opening_balance' | 'other';
+  category: 'topup' | 'session' | 'food' | 'coffee' | 'entertainment' | 'shuttles' | 'court_credit' | 'transfer' | 'withdrawal' | 'reversal' | 'opening_balance' | 'other';
   source?: 'splitwise';
   member_name: string;
   user_id?: string;
@@ -526,4 +527,37 @@ export interface RSVPReminderBatch extends RSVPReminderPreview {
   queued_count: number;
   suppressed_count: number;
   created_at: string;
+}
+
+export type SplitMethod = 'equal' | 'exact' | 'shares';
+
+export interface SharedExpenseParticipant {
+  user_id: string;
+  amount_cents?: number; // exact only
+  weight?: number; // shares only
+}
+
+/** A non-session bill, such as a meal or a coffee, split between members. */
+export interface SharedExpenseInput {
+  description: string;
+  occurred_on: string; // YYYY-MM-DD, Sydney
+  total_cents: number;
+  payer_user_id: string | null; // null: the club bank paid
+  split_method: SplitMethod;
+  participants: SharedExpenseParticipant[];
+  expected_preview?: string;
+}
+
+export interface SharedExpenseLine {
+  user_id: string;
+  name: string;
+  share_cents: number; // what they owe
+  net_cents: number; // the movement on their account
+}
+
+export interface SharedExpensePreview {
+  input: SharedExpenseInput;
+  payer_name: string;
+  lines: SharedExpenseLine[];
+  fingerprint: string;
 }

@@ -30,6 +30,7 @@ type LedgerEntryView struct {
 }
 
 // Source facts distinguish deposits from member-funded expenses and transfers.
+// A shared expense has no stored category: its description picks coffee, food or other.
 // Ambiguous titles remain "other" instead of guessing from a positive amount.
 const ledgerHistorySQL = `WITH history AS (
 	SELECT e.id, e.account_id, e.transaction_id, e.created_at, t.occurred_at, t.kind, t.description,
@@ -46,6 +47,12 @@ const ledgerHistorySQL = `WITH history AS (
 	         WHEN t.kind = 'court_credit_purchase' THEN 'court_credit'
 	         WHEN t.kind = 'shuttle_purchase' THEN 'shuttles'
 	         WHEN t.kind = 'opening_balance' THEN 'opening_balance'
+	         WHEN t.kind = 'shared_expense' THEN
+	           CASE
+	             WHEN lower(t.description) ~ '(coffee|cafe|café|espresso|latte|cappuccino|flat white)' THEN 'coffee'
+	             WHEN lower(t.description) ~ '(meal|dinner|lunch|breakfast|brunch|supper|restaurant|pizza|food)' THEN 'food'
+	             ELSE 'other'
+	           END
 	         WHEN r.id IS NOT NULL THEN
 	           CASE
 	             WHEN lower(r.category) = 'payment' THEN

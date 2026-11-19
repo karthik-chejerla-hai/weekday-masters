@@ -110,6 +110,7 @@ func run() (runErr error) {
 	settlementHandler := handlers.NewSettlementHandler(settlementService)
 	expenseService := services.NewExpenseService(settlementService, ledgerService)
 	expenseHandler := handlers.NewExpenseHandler(expenseService)
+	sharedExpenseHandler := handlers.NewSharedExpenseHandler(services.NewSharedExpenseService(ledgerService, notificationService))
 	var planner assistant.Planner
 	var transcriber assistant.Transcriber
 	if cfg.GroqAPIKey != "" {
@@ -164,6 +165,7 @@ func run() (runErr error) {
 		adminHandler.RegisterMemberPushRoutes(protected)
 		notificationHandler.RegisterAdminRoutes(protected)
 		expenseHandler.RegisterRoutes(protected)
+		sharedExpenseHandler.RegisterRoutes(protected)
 		assistantHandler.RegisterRoutes(protected)
 		handlers.NewGameHandler(services.NewGameService()).RegisterRoutes(protected)
 		{

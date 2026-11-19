@@ -1946,6 +1946,58 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /admin/expenses/preview:
+    post:
+      tags: [Settlement]
+      summary: Preview a shared expense such as a meal or coffee
+      description: Admin only. A shared expense is a bill that is not a session. The payer is a member or, when payer_user_id is null, the club bank. Returns each share and a fingerprint, without writes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SharedExpenseInput" }
+      responses:
+        "200":
+          description: Each member's share and net ledger movement
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SharedExpensePreview" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/LedgerUnprocessable" }
+
+  /admin/expenses:
+    post:
+      tags: [Settlement]
+      summary: Confirm the reviewed shared expense
+      description: >
+        Admin only. Send the canonical input from the preview and its fingerprint
+        as expected_preview. The server recalculates the shares inside the posting
+        transaction and rejects a changed expense with 409 preview_stale. Posts one
+        shared_expense transaction; a paying member who is also a participant gets
+        a single net entry. Correct a mistake by reversing the transaction.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/SharedExpenseInput"
+                - type: object
+                  required: [expected_preview]
+      responses:
+        "201":
+          description: Recorded transaction
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transaction" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/LedgerConflict" }
+        "422": { $ref: "#/components/responses/LedgerUnprocessable" }
+
   /admin/sessions/{id}/expense/preview:
     post:
       tags: [Settlement]
@@ -3639,6 +3691,7 @@ components:
             - import_assets
             - balance_correction
             - opening_balance
+            - shared_expense
             - reversal
         session_id: { type: string, format: uuid }
         reverses_transaction_id: { type: string, format: uuid }
@@ -3703,7 +3756,7 @@ components:
         description: { type: string, description: Original transaction title }
         category:
           type: string
-          enum: [topup, session, food, entertainment, shuttles, court_credit, transfer, withdrawal, reversal, opening_balance, other]
+          enum: [topup, session, food, coffee, entertainment, shuttles, court_credit, transfer, withdrawal, reversal, opening_balance, other]
         source: { type: string, enum: [splitwise], description: Present only for imported entries }
         member_name: { type: string }
         user_id: { type: string, format: uuid }
@@ -3815,6 +3868,46 @@ components:
               next_session_id: { type: string, format: uuid }
 
     # --- Settlement ---------------------------------------------------------
+
+    SharedExpenseInput:
+      type: object
+      additionalProperties: false
+      required: [description, occurred_on, total_cents, payer_user_id, split_method, participants]
+      properties:
+        description: { type: string, minLength: 1, maxLength: 200 }
+        occurred_on: { type: string, format: date, description: Sydney calendar date. Not in the future. }
+        total_cents: { type: integer, format: int64, minimum: 1, maximum: 1000000 }
+        payer_user_id: { type: string, format: uuid, nullable: true, description: The member who paid. Null means the club bank paid. }
+        split_method: { type: string, enum: [equal, exact, shares] }
+        participants:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required: [user_id]
+            properties:
+              user_id: { type: string, format: uuid }
+              amount_cents: { type: integer, format: int64, minimum: 1, description: Required for exact. Amounts must sum to total_cents. }
+              weight: { type: integer, minimum: 1, maximum: 100, description: Required for shares. }
+        expected_preview: { type: string, minLength: 64, maxLength: 64 }
+
+    SharedExpensePreview:
+      type: object
+      properties:
+        input: { $ref: "#/components/schemas/SharedExpenseInput" }
+        payer_name: { type: string, description: Display name of the paying member, or "Club bank" }
+        fingerprint: { type: string }
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              user_id: { type: string, format: uuid }
+              name: { type: string }
+              share_cents: { type: integer, format: int64, description: What this member owes. Zero for a payer who is not splitting. }
+              net_cents: { type: integer, format: int64, description: The single ledger movement for this member's account }
 
     ExpenseInput:
       type: object

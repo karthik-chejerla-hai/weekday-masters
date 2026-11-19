@@ -197,6 +197,21 @@ describe('Money', () => {
     expect(screen.queryByText('Record a top-up')).not.toBeInTheDocument();
   });
 
+  it('links an admin to the shared expense form', async () => {
+    mockAuth({ isAdmin: true });
+    renderPage();
+
+    expect(await screen.findByRole('link', { name: 'Record expense' })).toHaveAttribute('href', '/admin/expenses/new');
+  });
+
+  it('hides the shared expense link from members who are not admins', async () => {
+    mockAuth({ isAdmin: false });
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText('Karthik')).toBeInTheDocument());
+    expect(screen.queryByRole('link', { name: 'Record expense' })).not.toBeInTheDocument();
+  });
+
   it('offers the top-up form to an admin', async () => {
     mockAuth({ isAdmin: true });
     vi.mocked(api.getClub).mockResolvedValue({
