@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import Admin from './Admin';
 import { api } from '../services/api';
 
 vi.mock('../context/useAuth', () => ({ useAuth: () => ({ user: { id: 'admin' } }) }));
-vi.mock('../services/api', () => ({ api: { getClub: vi.fn(), listJoinRequests: vi.fn(), updateClub: vi.fn(), sendAnnouncement: vi.fn() } }));
+vi.mock('../services/api', () => ({ api: { getClub: vi.fn(), listJoinRequests: vi.fn(), updateClub: vi.fn(), sendAnnouncement: vi.fn(), approveJoinRequest: vi.fn(), rejectJoinRequest: vi.fn() } }));
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -16,8 +16,13 @@ beforeEach(() => {
   vi.mocked(api.sendAnnouncement).mockResolvedValue({ audience_count: 3, queued_count: 1, suppressed_count: 2 } as never);
 });
 
-function renderPage() {
-  return render(<MemoryRouter><Admin /></MemoryRouter>);
+function renderPage(openPanels = true) {
+  const result = render(<MemoryRouter><Admin /></MemoryRouter>);
+  if (openPanels) {
+    fireEvent.click(screen.getByText('Edit club settings'));
+    fireEvent.click(screen.getByText('Write an announcement'));
+  }
+  return result;
 }
 
 describe('Club display settings', () => {
@@ -136,5 +141,103 @@ describe('Deadline changes in club settings', () => {
     await waitFor(() => expect(api.updateClub).toHaveBeenCalledTimes(2));
     expect(vi.mocked(api.updateClub).mock.calls[0][0]).toHaveProperty('rsvp_deadline_hours', 48);
     expect(vi.mocked(api.updateClub).mock.calls[1][0]).not.toHaveProperty('rsvp_deadline_hours');
+  });
+});
+
+
+describe('Admin work priorities', () => {
+  it('starts with compact pending status and collapsed forms', async () => {
+    const user = userEvent.setup();
+    const { container } = renderPage(false);
+    expect(await screen.findByText('No pending join requests')).toBeVisible();
+    expect(screen.getByText('Save Club Settings')).not.toBeVisible();
+    expect(screen.getByLabelText('Title')).not.toBeVisible();
+    const headings = [...container.querySelectorAll('h2')].map(el => el.textContent);
+    expect(headings[0]).toContain('Join Requests');
+    expect(screen.getByRole('link', { name: 'Manage sessions' })).toHaveAttribute('href', '/admin/sessions');
+    await user.click(screen.getByText('Edit club settings'));
+    expect(screen.getByRole('button', { name: 'Save Club Settings' })).toBeVisible();
+    await user.click(screen.getByText('Write an announcement'));
+    expect(screen.getByRole('textbox', { name: 'Title' })).toBeVisible();
+  });
+  it('keeps approval and rejection available before routine controls', async () => {
+    vi.mocked(api.listJoinRequests).mockResolvedValue([
+      { id: 'alice', name: 'Alice Test', email: 'alice@example.invalid' },
+      { id: 'bob', name: 'Bob Test', email: 'bob@example.invalid' },
+    ] as never);
+    const user = userEvent.setup();
+    renderPage(false);
+    await user.click(await screen.findByRole('button', { name: 'Approve Alice' }));
+    await waitFor(() => expect(api.approveJoinRequest).toHaveBeenCalledWith('alice'));
+    expect(screen.queryByRole('button', { name: 'Approve Alice' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Reject Bob' }));
+    await waitFor(() => expect(api.rejectJoinRequest).toHaveBeenCalledWith('bob'));
+    expect(await screen.findByText('No pending join requests')).toBeVisible();
+  });
+});
+
+describe('Feedback after collapsing pending actions', () => {
+  it.each([false, true])('keeps a late club save result visible (failure=%s)', async (failure) => {
+    let finish!: () => void;
+    vi.mocked(api.updateClub).mockImplementation(() => new Promise((resolve, reject) => {
+      finish = () => failure ? reject(new Error('offline')) : resolve({} as never);
+    }));
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(screen.getByLabelText('Court number')).toHaveValue(8));
+    await user.click(screen.getByRole('button', { name: 'Save Club Settings' }));
+    await user.click(screen.getByText('Edit club settings'));
+    expect(screen.getByText('Saving club settings…')).toBeVisible();
+    finish();
+    const message = await screen.findByText(failure ? 'Failed to save club settings' : 'Club settings saved!');
+    expect(message).toBeVisible();
+  });
+
+  it.each([false, true])('keeps a late announcement result visible (failure=%s)', async (failure) => {
+    let finish!: () => void;
+    vi.mocked(api.sendAnnouncement).mockImplementation(() => new Promise((resolve, reject) => {
+      finish = () => failure ? reject(new Error('response lost')) : resolve({ audience_count: 3, queued_count: 1, suppressed_count: 2 } as never);
+    }));
+    const user = userEvent.setup();
+    renderPage();
+    await user.type(screen.getByLabelText('Title'), 'News');
+    await user.type(screen.getByLabelText('Message'), 'Club news');
+    await user.click(screen.getByRole('button', { name: 'Publish announcement' }));
+    await user.click(screen.getByText('Write an announcement'));
+    expect(screen.getByText('Publishing announcement…')).toBeVisible();
+    finish();
+    const message = await screen.findByText(failure ? /Retry without changing/ : /Announcement saved for 3 members/);
+    expect(message).toBeVisible();
+    expect(message).toHaveTextContent(failure ? 'Retry without changing' : 'Announcement saved for 3 members');
+  });
+});
+
+describe('Confirmed club summary', () => {
+  it('keeps saved values visible after collapsing unsaved edits or a failed save', async () => {
+    vi.mocked(api.updateClub).mockRejectedValueOnce(new Error('offline'));
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(screen.getByLabelText('Venue Name')).toHaveValue('BadmintonWorx Norwest'));
+    await user.clear(screen.getByLabelText('Venue Name'));
+    await user.type(screen.getByLabelText('Venue Name'), 'Unconfirmed venue');
+    await user.click(screen.getByText('Edit club settings'));
+    expect(screen.getByText('Rally · BadmintonWorx Norwest')).toBeVisible();
+    await user.click(screen.getByText('Edit club settings'));
+    await user.click(screen.getByRole('button', { name: 'Save Club Settings' }));
+    await screen.findByText('Failed to save club settings');
+    await user.click(screen.getByText('Edit club settings'));
+    expect(screen.getByText('Rally · BadmintonWorx Norwest')).toBeVisible();
+    expect(screen.getByLabelText('Venue Name')).toHaveValue('Unconfirmed venue');
+  });
+
+  it('updates the summary only after a successful save with the confirmed values', async () => {
+    vi.mocked(api.updateClub).mockResolvedValue({ name: 'Confirmed club', venue_name: 'Confirmed venue' } as never);
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(screen.getByLabelText('Court number')).toHaveValue(8));
+    await user.click(screen.getByRole('button', { name: 'Save Club Settings' }));
+    await screen.findByText('Club settings saved!');
+    await user.click(screen.getByText('Edit club settings'));
+    expect(screen.getByText('Confirmed club · Confirmed venue')).toBeVisible();
   });
 });
