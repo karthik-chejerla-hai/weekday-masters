@@ -22,6 +22,7 @@ const (
 	TxnReversal            TransactionKind = "reversal"
 	TxnSplitwiseImport     TransactionKind = "splitwise_import"
 	TxnImportAssets        TransactionKind = "import_assets"
+	TxnSharedExpense       TransactionKind = "shared_expense"
 )
 
 // Transaction is one recorded financial event.

@@ -653,8 +653,15 @@ func (s *LedgerService) reverseTransactionWithin(tx *gorm.DB, transactionID uuid
 	if description == "" {
 		description = "Reversal of " + string(original.Kind)
 	}
+	// Stop the original notices that have not gone out yet. Whatever has already
+	// been sent cannot be recalled, so a reversal notice is queued after posting.
+	if original.Kind == models.TxnSharedExpense {
+		if err := suppressReceiptsWithin(tx, sharedExpenseReceiptKey(original.ID)); err != nil {
+			return nil, err
+		}
+	}
 
-	return s.PostWithin(tx, PostInput{
+	reversal, err := s.PostWithin(tx, PostInput{
 		Kind:                  models.TxnReversal,
 		SessionID:             original.SessionID,
 		ReversesTransactionID: &original.ID,
@@ -663,6 +670,15 @@ func (s *LedgerService) reverseTransactionWithin(tx *gorm.DB, transactionID uuid
 		CreatedBy:             createdBy,
 		Movements:             movements,
 	})
+	if err != nil {
+		return nil, err
+	}
+	if original.Kind == models.TxnSharedExpense {
+		if err := s.queueSharedExpenseReversalWithin(tx, &original, reversal); err != nil {
+			return nil, err
+		}
+	}
+	return reversal, nil
 }
 
 // --- club position --------------------------------------------------------

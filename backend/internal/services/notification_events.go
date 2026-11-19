@@ -22,7 +22,7 @@ func NotificationDestination(data map[string]string) string {
 	switch data["type"] {
 	case "push_test":
 		return "/dashboard"
-	case "balance_low", "balance_negative":
+	case "balance_low", "balance_negative", "shared_expense":
 		return "/money"
 	}
 	if id, err := uuid.Parse(data["notification_id"]); err == nil {

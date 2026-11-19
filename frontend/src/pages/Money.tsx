@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
 import { api } from '../services/api';
 import BalancesList from '../components/money/BalancesList';
@@ -118,10 +118,17 @@ export default function Money() {
           }}>
             {(actions) => <TopupForm members={balances} {...actions} />}
           </FormDisclosure>}
+          {isAdmin && <div>
+            <Link className="btn-outline" to="/admin/expenses/new">Record expense</Link>
+            <p className="mt-2 text-sm text-slate-500">Split a meal, coffee or other bill that is not a session.</p>
+          </div>}
         </div>
       )}
 
-      {activeTab === 'ledger' && <LedgerBrowser userId={user?.id} revision={revision} />}
+      {activeTab === 'ledger' && <LedgerBrowser userId={user?.id} revision={revision} canReverse={isAdmin} onChanged={() => {
+        window.dispatchEvent(new Event('rally:balances-changed'));
+        void load();
+      }} />}
 
       {activeTab === 'analytics' && <SpendAnalytics />}
 

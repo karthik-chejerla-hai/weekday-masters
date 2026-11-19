@@ -5,6 +5,8 @@ import type {
   AssistantReply,
   ExpenseInput,
   ExpensePreview,
+  SharedExpenseInput,
+  SharedExpensePreview,
   User,
   Club,
   InviteMemberInput,
@@ -545,6 +547,16 @@ class ApiService {
 
   async confirmExpense(sessionId: string, input: ExpenseInput): Promise<{ id: string }> {
     const response = await this.client.post(`/admin/sessions/${sessionId}/expense`, input);
+    return response.data;
+  }
+
+  async previewSharedExpense(input: SharedExpenseInput): Promise<SharedExpensePreview> {
+    const response = await this.client.post<SharedExpensePreview>('/admin/expenses/preview', input);
+    return response.data;
+  }
+
+  async confirmSharedExpense(input: SharedExpenseInput): Promise<Transaction> {
+    const response = await this.client.post<Transaction>('/admin/expenses', input);
     return response.data;
   }
 

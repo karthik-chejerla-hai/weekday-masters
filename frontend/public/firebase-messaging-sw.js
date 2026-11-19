@@ -11,7 +11,7 @@ self.addEventListener('notificationclick', (event) => {
   const path = safePath ? data.destination_path
     : uuid.test(data.session_id || '') ? `/sessions/${data.session_id}${['session_charge', 'session_charge_reversed'].includes(data.type) ? `/settlement${uuid.test(data.settlement_id || '') ? `?settlement_id=${data.settlement_id}` : ''}` : ''}`
     : data.type === 'push_test' ? '/dashboard'
-    : ['balance_low', 'balance_negative'].includes(data.type) ? '/money'
+    : ['balance_low', 'balance_negative', 'shared_expense'].includes(data.type) ? '/money'
     : uuid.test(data.notification_id || '') ? `/notifications/${data.notification_id}` : '/notifications';
   const url = new URL(path, self.location.origin).href;
   event.waitUntil((async () => {

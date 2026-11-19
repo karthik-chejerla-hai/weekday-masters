@@ -99,8 +99,20 @@ func mustNotificationJSON(data map[string]string) string {
 // Pending original receipts are suppressed under the same transaction as the
 // reversing ledger entry. A sending attempt is uncertain: it cannot be recalled.
 func suppressSettlementReceiptsWithin(tx *gorm.DB, settlementID uuid.UUID) error {
+	return suppressReceiptsWithin(tx, "charge:"+settlementID.String()+":")
+}
+
+// sharedExpenseReceiptKey prefixes the outbox key of every notification one
+// shared expense queued, so its reversal can find the ones not yet sent.
+func sharedExpenseReceiptKey(transactionID uuid.UUID) string {
+	return "shared-expense:" + transactionID.String() + ":"
+}
+
+// suppressReceiptsWithin stops undelivered notifications whose event key starts
+// with keyPrefix. The prefix holds a UUID, so it carries no LIKE wildcard.
+func suppressReceiptsWithin(tx *gorm.DB, keyPrefix string) error {
 	var outboxes []models.NotificationOutbox
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("event_key LIKE ? AND state IN ?", "charge:"+settlementID.String()+":%", []models.DeliveryState{models.DeliveryPending, models.DeliveryClaimed}).Order("id").Find(&outboxes).Error; err != nil {
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("event_key LIKE ? AND state IN ?", keyPrefix+"%", []models.DeliveryState{models.DeliveryPending, models.DeliveryClaimed}).Order("id").Find(&outboxes).Error; err != nil {
 		return err
 	}
 	for _, outbox := range outboxes {
