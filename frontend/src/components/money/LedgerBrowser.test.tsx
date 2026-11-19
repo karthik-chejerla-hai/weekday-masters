@@ -5,7 +5,7 @@ import { api } from '../../services/api';
 import type { LedgerActivityView, LedgerEntryView } from '../../types';
 import LedgerBrowser from './LedgerBrowser';
 
-vi.mock('../../services/api', () => ({ api: { getLedgerActivity: vi.fn() } }));
+vi.mock('../../services/api', () => ({ api: { getLedgerActivity: vi.fn(), reverseTransaction: vi.fn() } }));
 const entry = (i: number, overrides: Partial<LedgerEntryView> = {}): LedgerActivityView => ({
   id: `e${i}`, occurred_at: '2026-09-22T15:00:00Z', entry: {
   id: `e${i}`, transaction_id: `t${i}`, occurred_at: '2026-09-22T15:00:00Z', kind: 'splitwise_import',
@@ -128,5 +128,42 @@ describe('Ledger browser', () => {
     expect(screen.getByRole('img', { name: 'Reversal' })).toBeInTheDocument();
     expect(screen.getByText('Reversed')).toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByText('Source: Splitwise')).toHaveLength(2));
+  });
+
+  it('marks every row of a reversed expense in place, keeps loaded pages and announces it', async () => {
+    const shared = (i: number) => entry(i, { transaction_id: 'shared', kind: 'shared_expense', category: 'food', source: undefined, description: 'Team dinner', member_name: `Member ${i}` });
+    mock.mockResolvedValueOnce({ items: [entry(1), shared(2)], total: 4 })
+      .mockResolvedValueOnce({ items: [shared(3), entry(4)], total: 4 })
+      .mockResolvedValue({ items: [entry(9)], total: 1 });
+    const reverse = vi.mocked(api.reverseTransaction).mockResolvedValue({ id: 'r1' } as never);
+    const onChanged = vi.fn();
+    const user = userEvent.setup();
+    render(<LedgerBrowser userId="u1" revision={0} canReverse onChanged={onChanged} />);
+    await screen.findByText('Game - 22/09 (1)');
+    await user.click(screen.getByRole('button', { name: 'Load older transactions' }));
+    await screen.findByText('Game - 22/09 (4)');
+    expect(screen.getAllByRole('button', { name: 'Reverse Team dinner' })).toHaveLength(2);
+
+    await user.click(screen.getAllByRole('button', { name: 'Reverse Team dinner' })[1]);
+    await user.click(screen.getByRole('button', { name: 'Reverse expense' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Reversed Team dinner. Member balances are updated.');
+    // Both rows of the expense, on both pages, without another fetch.
+    expect(screen.getAllByText('Reversed')).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: 'Reverse Team dinner' })).not.toBeInTheDocument();
+    expect(screen.getByText('Game - 22/09 (4)')).toBeInTheDocument();
+    expect(mock).toHaveBeenCalledTimes(2);
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    expect(reverse).toHaveBeenCalledWith('shared', 'Reversal of Team dinner');
+
+    await user.click(screen.getByRole('button', { name: 'Reload to see the reversal entry' }));
+    await screen.findByText('Game - 22/09 (9)');
+    expect(mock).toHaveBeenCalledTimes(3);
+  });
+
+  it('offers no reverse action unless the viewer can reverse', async () => {
+    mock.mockResolvedValue({ items: [entry(1, { kind: 'shared_expense', category: 'food', description: 'Team dinner' })], total: 1 });
+    renderBrowser();
+    await screen.findByText('Team dinner');
+    expect(screen.queryByRole('button', { name: /^Reverse/ })).not.toBeInTheDocument();
   });
 });

@@ -15,6 +15,7 @@ export default function LedgerBrowser({ userId, revision, canReverse = false, on
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [retry, setRetry] = useState(0);
+  const [reversedName, setReversedName] = useState('');
   const generation = useRef(0);
   const pagePending = useRef(false);
 
@@ -26,6 +27,7 @@ export default function LedgerBrowser({ userId, revision, canReverse = false, on
     setNextOffset(0);
     setLoading(true);
     setError(false);
+    setReversedName('');
     api.getLedgerActivity(mineOnly ? 'mine' : 'all', topupsOnly, PAGE_SIZE, 0)
       .then((page) => {
         if (request !== generation.current) return;
@@ -65,6 +67,15 @@ export default function LedgerBrowser({ userId, revision, canReverse = false, on
     }
   };
 
+  // Mark every row of the expense in place. Reloading would drop the older pages
+  // an admin loaded to find it, and with them the row they just acted on.
+  const markReversed = (transactionId: string, name: string) => {
+    setEntries((current) => current.map((activity) => activity.entry?.transaction_id === transactionId
+      ? { ...activity, entry: { ...activity.entry, reversed: true } } : activity));
+    setReversedName(name);
+    onChanged?.();
+  };
+
   return (
     <section className="space-y-4" aria-label="Ledger history">
       <div className="flex flex-wrap gap-x-6 gap-y-3 rounded-xl border border-slate-200 bg-white p-4">
@@ -75,7 +86,13 @@ export default function LedgerBrowser({ userId, revision, canReverse = false, on
         {mineOnly ? 'Your transactions' : 'All member transactions, including inactive members'}.
         {' '}Expand a game to see each member’s share and balance.
       </p>
-      {entries.length > 0 && <LedgerList entries={entries} showMember={!mineOnly} userId={userId} onReversed={canReverse ? () => { setRetry((value) => value + 1); onChanged?.(); } : undefined} />}
+      <div role="status" aria-live="polite">
+        {reversedName && <p className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+          <span>Reversed {reversedName}. Member balances are updated.</span>
+          <button type="button" className="font-semibold underline" onClick={() => setRetry((value) => value + 1)}>Reload to see the reversal entry</button>
+        </p>}
+      </div>
+      {entries.length > 0 && <LedgerList entries={entries} showMember={!mineOnly} userId={userId} onReversed={canReverse ? markReversed : undefined} />}
       {error && (
         <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           Could not load transactions. Your history is still saved.

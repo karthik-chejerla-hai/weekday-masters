@@ -19,6 +19,7 @@ import (
 	"github.com/weekday-masters/backend/internal/services/money"
 	"github.com/weekday-masters/backend/internal/utils"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -50,7 +51,7 @@ type SharedExpenseParticipant struct {
 // date, YYYY-MM-DD. RequestID identifies one submission: Confirm requires it and
 // answers a repeat of the same submission with the original transaction.
 type SharedExpenseInput struct {
-	RequestID       uuid.UUID                  `json:"request_id,omitempty"`
+	RequestID       *uuid.UUID                 `json:"request_id,omitempty"` // a pointer, so a preview does not echo a zero ID
 	Description     string                     `json:"description"`
 	OccurredOn      string                     `json:"occurred_on"`
 	TotalCents      int64                      `json:"total_cents"`
@@ -130,8 +131,12 @@ func (s *SharedExpenseService) Confirm(in SharedExpenseInput, actor *models.User
 	if err != nil {
 		return nil, err
 	}
+	var requestID uuid.UUID // the runner refuses the zero ID
+	if in.RequestID != nil {
+		requestID = *in.RequestID
+	}
 	result, err := runMoneyOperation(moneyOperationRequest{
-		RequestID: in.RequestID, ActorID: actor.ID, Action: models.MoneyOperationCreateSharedExpense,
+		RequestID: requestID, ActorID: actor.ID, Action: models.MoneyOperationCreateSharedExpense,
 		Proposed: proposed, ExpectedPreview: in.ExpectedPreview, MemberIDs: memberIDs,
 	}, func(tx *gorm.DB, operationID uuid.UUID, _ moneyOperationRequest) (moneyOperationResult, error) {
 		p, err := s.plan(tx, in, actor)
@@ -524,4 +529,36 @@ func (s *LedgerService) queueSharedExpenseReversalWithin(tx *gorm.DB, original, 
 		}
 	}
 	return nil
+}
+
+// lockSharedExpenseMembersForReversal refuses to reverse an expense when one of
+// its members is no longer approved. Reversing would hand a removed member a
+// balance, which removal exists to prevent, and the corrected expense could not
+// be recorded again because they cannot take a share. The rows are SHARE-locked
+// in id order, so a removal cannot slip in before the reversal posts.
+func lockSharedExpenseMembersForReversal(tx *gorm.DB, transactionID uuid.UUID) error {
+	var members []models.User
+	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+		Where(`id IN (SELECT a.user_id FROM ledger_entries e JOIN accounts a ON a.id = e.account_id
+			WHERE e.transaction_id = ? AND a.kind = 'player' AND a.user_id IS NOT NULL)`, transactionID).
+		Order("id").Find(&members).Error; err != nil {
+		return err
+	}
+	var blocked []string
+	for i := range members {
+		if members[i].MembershipStatus != models.MembershipApproved {
+			blocked = append(blocked, members[i].DisplayName())
+		}
+	}
+	if len(blocked) == 0 {
+		return nil
+	}
+	sort.Strings(blocked)
+	verb := "is"
+	if len(blocked) > 1 {
+		verb = "are"
+	}
+	return newLedgerError(CodeReversalNotAllowed, 422, fmt.Sprintf(
+		"%s %s no longer in the club, and reversing this expense would change their balance. Reinstate them on Manage members, then reverse it.",
+		strings.Join(blocked, ", "), verb))
 }

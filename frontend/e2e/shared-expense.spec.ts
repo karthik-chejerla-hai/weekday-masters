@@ -37,6 +37,8 @@ test('a member has no shared expense action and cannot open the form', async ({ 
   await expect(page.getByText(/Alex/).first()).toBeVisible();
   await expect(page.getByRole('link', { name: 'Record expense' })).toHaveCount(0);
   await page.goto('/admin/expenses/new');
+  // Wait for the guard to redirect; before that, an absent heading proves nothing.
+  await expect(page).not.toHaveURL(/\/admin\/expenses/);
   await expect(page.getByRole('heading', { name: 'Record shared expense' })).toHaveCount(0);
 });
 
@@ -150,19 +152,25 @@ test.describe('Admin shared expense', () => {
     await page.getByRole('button', { name: 'Reverse Dinner after Friday badminton' }).click();
     const question = page.getByRole('group', { name: 'Reverse Dinner after Friday badminton?' });
     await expect(question).toContainText('every member who shared it');
+    await expect(question).toBeFocused();
     await snap(page, testInfo.project.name, '8-ledger-reverse-question');
 
     // Cancelling writes nothing; the fixture would fail the test on an unexpected request.
     await question.getByRole('button', { name: 'Cancel' }).click();
     expect(writes).toEqual([]);
+    await expect(page.getByRole('button', { name: 'Reverse Dinner after Friday badminton' })).toBeFocused();
 
     await page.getByRole('button', { name: 'Reverse Dinner after Friday badminton' }).click();
     await page.getByRole('button', { name: 'Reverse expense' }).click();
-    await expect(page.getByText('Reversal of Dinner after Friday badminton')).toBeVisible();
+    // The row is marked in place and the change is announced; nothing is reloaded.
+    await expect(page.getByRole('status').filter({ hasText: 'Reversed Dinner after Friday badminton' })).toBeVisible();
     await expect(page.getByText('Reversed', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: /^Reverse / })).toHaveCount(0);
     expect(writes).toEqual([{ description: 'Reversal of Dinner after Friday badminton' }]);
     await snap(page, testInfo.project.name, '9-ledger-reversed');
+
+    await page.getByRole('button', { name: 'Reload to see the reversal entry' }).click();
+    await expect(page.getByText('Reversal of Dinner after Friday badminton')).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   });
 

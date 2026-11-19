@@ -637,6 +637,11 @@ func (s *LedgerService) reverseTransactionWithin(tx *gorm.DB, transactionID uuid
 	if alreadyReversed > 0 {
 		return nil, ErrTransactionAlreadyReversed()
 	}
+	if original.Kind == models.TxnSharedExpense {
+		if err := lockSharedExpenseMembersForReversal(tx, original.ID); err != nil {
+			return nil, err
+		}
+	}
 
 	movements := make([]Movement, 0, len(original.Entries))
 	for _, entry := range original.Entries {
