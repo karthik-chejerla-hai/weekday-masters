@@ -3,6 +3,7 @@ import { formatInTimeZone } from 'date-fns-tz';
 import { formatCents } from './format';
 import ShuttleIcon from './ShuttleIcon';
 import LedgerGameRow from './LedgerGameRow';
+import ReverseExpense from './ReverseExpense';
 import type { LedgerActivityView } from '../../types';
 
 const CATEGORIES = {
@@ -20,7 +21,8 @@ const CATEGORIES = {
   other: { label: 'Other transaction', Icon: ReceiptText, style: 'bg-slate-100 text-slate-600' },
 };
 
-export default function LedgerList({ entries, showMember = false, userId }: { entries: LedgerActivityView[]; showMember?: boolean; userId?: string }) {
+/** `onReversed` is passed only for an admin: it turns on the reverse action for shared expenses. */
+export default function LedgerList({ entries, showMember = false, userId, onReversed }: { entries: LedgerActivityView[]; showMember?: boolean; userId?: string; onReversed?: () => void }) {
   return (
     <ul aria-label="Transactions" className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">
       {entries.map((activity) => {
@@ -52,6 +54,7 @@ export default function LedgerList({ entries, showMember = false, userId }: { en
                 </span>}
                 {entry.reversed && <span className="rounded-md bg-slate-100 px-2 py-0.5 text-slate-600">Reversed</span>}
               </div>
+              {onReversed && entry.kind === 'shared_expense' && !entry.reversed && <ReverseExpense entry={entry} onReversed={onReversed} />}
             </div>
           </li>
         );

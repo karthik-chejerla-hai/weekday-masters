@@ -12,7 +12,7 @@ import (
 // same rows and per-account balances, without duplicating asset/surplus legs.
 type LedgerEntryView struct {
 	AccountID         uuid.UUID              `json:"-"`
-	TransactionID     uuid.UUID              `json:"-"`
+	TransactionID     uuid.UUID              `json:"transaction_id"`
 	CreatedAt         time.Time              `json:"-"`
 	ID                uuid.UUID              `json:"id"`
 	OccurredAt        time.Time              `json:"occurred_at"`

@@ -213,7 +213,8 @@ were) in the club.
 **Money screens:** `/money` has Balances, My ledger and (admin) Club assets tabs; `/sessions`
 splits Upcoming from History; `/admin/sessions/:id/settle` is the settlement form, which
 re-previews on every change so the figures on screen are the figures that will be posted.
-`/admin/expenses/new` records a shared expense and is reached from the Balances tab. A
+`/admin/expenses/new` records a shared expense and is reached from the Balances tab. In the ledger an
+admin can reverse a shared expense from its row; no other kind has that action. A
 balance chip sits in the header on every screen.
 
 **Routing pattern:** `App.tsx` defines routes wrapped in `ProtectedRoute` which checks `isAuthenticated`, `isApproved`, and `isAdmin` from `AuthContext`. Unapproved users are redirected to `/pending`.

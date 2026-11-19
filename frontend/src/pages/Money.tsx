@@ -125,7 +125,10 @@ export default function Money() {
         </div>
       )}
 
-      {activeTab === 'ledger' && <LedgerBrowser userId={user?.id} revision={revision} />}
+      {activeTab === 'ledger' && <LedgerBrowser userId={user?.id} revision={revision} canReverse={isAdmin} onChanged={() => {
+        window.dispatchEvent(new Event('rally:balances-changed'));
+        void load();
+      }} />}
 
       {activeTab === 'analytics' && <SpendAnalytics />}
 

@@ -31,7 +31,7 @@ const balances: PlayerBalance[] = [
 
 const entries: LedgerEntryView[] = [
   {
-    id: 'e1',
+    id: 'e1', transaction_id: 't1',
     occurred_at: '2026-08-25T21:15:00+10:00',
     kind: 'session_settlement', category: 'session', member_name: 'Karthik', inactive: false,
     description: 'Tuesday session',
@@ -40,7 +40,7 @@ const entries: LedgerEntryView[] = [
     reversed: false,
   },
   {
-    id: 'e2',
+    id: 'e2', transaction_id: 't2',
     occurred_at: '2026-08-19T09:02:00+10:00',
     kind: 'player_topup', category: 'topup', member_name: 'Karthik', inactive: false,
     description: 'Bank transfer',

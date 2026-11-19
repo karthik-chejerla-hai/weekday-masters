@@ -6,7 +6,7 @@ import LedgerList from './LedgerList';
 
 const PAGE_SIZE = 50;
 
-export default function LedgerBrowser({ userId, revision }: { userId?: string; revision: number }) {
+export default function LedgerBrowser({ userId, revision, canReverse = false, onChanged }: { userId?: string; revision: number; canReverse?: boolean; onChanged?: () => void }) {
   const [mineOnly, setMineOnly] = useState(true);
   const [topupsOnly, setTopupsOnly] = useState(false);
   const [entries, setEntries] = useState<LedgerActivityView[]>([]);
@@ -75,7 +75,7 @@ export default function LedgerBrowser({ userId, revision }: { userId?: string; r
         {mineOnly ? 'Your transactions' : 'All member transactions, including inactive members'}.
         {' '}Expand a game to see each member’s share and balance.
       </p>
-      {entries.length > 0 && <LedgerList entries={entries} showMember={!mineOnly} userId={userId} />}
+      {entries.length > 0 && <LedgerList entries={entries} showMember={!mineOnly} userId={userId} onReversed={canReverse ? () => { setRetry((value) => value + 1); onChanged?.(); } : undefined} />}
       {error && (
         <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           Could not load transactions. Your history is still saved.

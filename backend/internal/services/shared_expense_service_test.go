@@ -1,6 +1,7 @@
 package services
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -682,5 +683,48 @@ func TestSharedExpenseReversalNotifiesMembers(t *testing.T) {
 		if !strings.HasPrefix(n.Body, want) || WithNotificationNavigation(n).DestinationPath != "/money" {
 			t.Fatalf("reversal notice for %s: %q", n.UserID, n.Body)
 		}
+	}
+}
+
+// The ledger must hand an admin what the reverse route needs, for any row of
+// an expense however old, and then show every row of it as reversed.
+func TestSharedExpenseLedgerRowCanBeReversed(t *testing.T) {
+	f := newSharedExpenseFixture(t)
+	m := f.members
+	txn := f.confirm(t, equalExpense(&m[0].ID, 8000, m...))
+
+	mine, _, err := f.ledger.MyEntries(m[2].ID, 50, 0)
+	if err != nil || len(mine) != 1 {
+		t.Fatalf("entries: %d %v", len(mine), err)
+	}
+	encoded, err := json.Marshal(mine[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var row struct {
+		TransactionID uuid.UUID `json:"transaction_id"`
+	}
+	if err := json.Unmarshal(encoded, &row); err != nil || row.TransactionID != txn.ID {
+		t.Fatalf("ledger row names transaction %s, want %s (%v)", row.TransactionID, txn.ID, err)
+	}
+
+	if _, err := f.ledger.ReverseTransaction(row.TransactionID, "Reversal of Dinner", f.admin.ID); err != nil {
+		t.Fatal(err)
+	}
+	all, _, err := f.ledger.Entries(LedgerHistoryFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	originals := 0
+	for _, entry := range all {
+		if entry.TransactionID == txn.ID {
+			originals++
+			if !entry.Reversed {
+				t.Fatalf("%s's row is not marked reversed", entry.MemberName)
+			}
+		}
+	}
+	if originals != 4 {
+		t.Fatalf("%d rows for the expense", originals)
 	}
 }

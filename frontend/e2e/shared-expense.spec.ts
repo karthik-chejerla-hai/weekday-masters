@@ -21,7 +21,7 @@ const preview = {
 };
 const row = (id: string, category: string, description: string, amount: number, balance: number) => ({
   id, occurred_at: '2026-10-07T01:00:00Z',
-  entry: { id, occurred_at: '2026-10-07T01:00:00Z', kind: 'shared_expense', description, category,
+  entry: { id, transaction_id: `transaction-${id}`, occurred_at: '2026-10-07T01:00:00Z', kind: 'shared_expense', description, category,
     member_name: 'Alex', user_id: 'member-1', inactive: false, amount_cents: amount, balance_after_cents: balance, reversed: false },
 });
 
@@ -128,5 +128,51 @@ test.describe('Admin shared expense', () => {
     await expect(page.getByRole('img', { name: 'Food and drink' })).toBeVisible();
     await expect(page.getByRole('img', { name: 'Other transaction' })).toBeVisible();
     await snap(page, testInfo.project.name, '7-ledger-icons');
+  });
+
+  test('reverses an older expense from the ledger after asking', async ({ page }, testInfo) => {
+    const writes: unknown[] = [];
+    let reversed = false;
+    const dinner = row('e2', 'food', 'Dinner after Friday badminton', -2800, 2200);
+    await page.route('**/api/accounts/activity?*', route => json(route, reversed
+      ? { total: 2, items: [
+        { id: 'e9', occurred_at: '2026-10-07T01:00:00Z', entry: { ...dinner.entry, id: 'e9', transaction_id: 'transaction-e9', kind: 'reversal', category: 'reversal', description: 'Reversal of Dinner after Friday badminton', amount_cents: 2800, balance_after_cents: 5000 } },
+        { ...dinner, entry: { ...dinner.entry, reversed: true } },
+      ] }
+      : { total: 1, items: [dinner] }));
+    await page.route('**/api/admin/transactions/transaction-e2/reverse', route => {
+      writes.push(route.request().postDataJSON());
+      reversed = true;
+      return json(route, { id: 'transaction-e9', kind: 'reversal' }, 201);
+    });
+
+    await page.goto('/money?tab=ledger');
+    await page.getByRole('button', { name: 'Reverse Dinner after Friday badminton' }).click();
+    const question = page.getByRole('group', { name: 'Reverse Dinner after Friday badminton?' });
+    await expect(question).toContainText('every member who shared it');
+    await snap(page, testInfo.project.name, '8-ledger-reverse-question');
+
+    // Cancelling writes nothing; the fixture would fail the test on an unexpected request.
+    await question.getByRole('button', { name: 'Cancel' }).click();
+    expect(writes).toEqual([]);
+
+    await page.getByRole('button', { name: 'Reverse Dinner after Friday badminton' }).click();
+    await page.getByRole('button', { name: 'Reverse expense' }).click();
+    await expect(page.getByText('Reversal of Dinner after Friday badminton')).toBeVisible();
+    await expect(page.getByText('Reversed', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Reverse / })).toHaveCount(0);
+    expect(writes).toEqual([{ description: 'Reversal of Dinner after Friday badminton' }]);
+    await snap(page, testInfo.project.name, '9-ledger-reversed');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+
+  test.describe('as a member', () => {
+    test.use({ identity: 'member' });
+    test('sees shared expenses in the ledger without a reverse action', async ({ page }) => {
+    await page.route('**/api/accounts/activity?*', route => json(route, { total: 1, items: [row('e2', 'food', 'Dinner after Friday badminton', -2800, 2200)] }));
+    await page.goto('/money?tab=ledger');
+    await expect(page.getByText('Dinner after Friday badminton')).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Reverse / })).toHaveCount(0);
+    });
   });
 });

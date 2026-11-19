@@ -72,7 +72,12 @@ The ledger history query already derives a `category` for every row, and `Ledger
 
 An admin corrects a shared expense by reversing its transaction with the existing reversal path and recording a new one. There is no edit in place.
 
-The reversal path existed only as an API (`POST /api/admin/transactions/:id/reverse`); no screen offered it for a general transaction. The confirmation screen therefore carries a "Reverse this expense" action for the expense just recorded. Reversing an older shared expense still needs the API, because ledger rows do not expose their transaction ID. A reversal suppresses any push or email of the original expense that has not been sent yet. The original notice stays in each member's notification history, where it cannot be withdrawn, so the reversal also sends every affected member a "Shared expense reversed" notice with their balance.
+The reversal path existed only as an API (`POST /api/admin/transactions/:id/reverse`); no screen offered it for a general transaction. Two screens now do, for shared expenses only:
+
+- the confirmation screen carries a "Reverse this expense" action for the expense just recorded;
+- in the ledger, an admin sees a "Reverse" action on every shared expense row that has not been reversed, however old. It asks first, because it undoes the whole expense for every member and notifies them. Ledger rows carry their `transaction_id` for this.
+
+Other transaction kinds get no reverse action in the ledger. Top-ups, withdrawals, settlements and asset purchases have their own correction rules (spec 014 FR-025), and a general undo button would bypass them. A reversal suppresses any push or email of the original expense that has not been sent yet. The original notice stays in each member's notification history, where it cannot be withdrawn, so the reversal also sends every affected member a "Shared expense reversed" notice with their balance.
 
 ## Notifications
 
@@ -90,7 +95,7 @@ Browser tests (`frontend/e2e/shared-expense.spec.ts`) cover the admin flow on de
 - **Storage.** 014 adds `shared_expense_versions` and `shared_expense_allocations`. This change stores only the ledger transaction, so paid and owed amounts are not kept separately and a zero-net member has no row.
 - **Payers.** 014 FR-003 allows several member payers. This change allows one.
 - **Category.** 014 FR-002 stores a Food/Other category. This change derives the icon from the description.
-- **Correction.** 014 FR-010 to FR-012 require an in-place correction and a reviewed reversal with a reason. This change offers only an immediate reversal without a reason.
+- **Correction.** 014 FR-010 to FR-012 require an in-place correction and a reviewed reversal with a reason. This change offers a confirmed reversal without a typed reason, and no in-place correction.
 - **History.** 014 FR-020 and FR-021 group an expense's rows and add a Shared expenses filter. This change shows ordinary ledger rows.
 - **Split methods.** This change adds weighted shares, which 014 does not have.
 - **Member view.** 014 FR-001 lets every approved member read an expense breakdown. Here a member sees only their own ledger row.

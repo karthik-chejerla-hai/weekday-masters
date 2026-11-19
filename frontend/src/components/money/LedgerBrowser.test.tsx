@@ -8,7 +8,7 @@ import LedgerBrowser from './LedgerBrowser';
 vi.mock('../../services/api', () => ({ api: { getLedgerActivity: vi.fn() } }));
 const entry = (i: number, overrides: Partial<LedgerEntryView> = {}): LedgerActivityView => ({
   id: `e${i}`, occurred_at: '2026-09-22T15:00:00Z', entry: {
-  id: `e${i}`, occurred_at: '2026-09-22T15:00:00Z', kind: 'splitwise_import',
+  id: `e${i}`, transaction_id: `t${i}`, occurred_at: '2026-09-22T15:00:00Z', kind: 'splitwise_import',
   description: `Game - 22/09 (${i})`, category: 'session', source: 'splitwise',
   member_name: 'Karthik', user_id: 'u1', inactive: false, amount_cents: -1300,
   balance_after_cents: 7755, reversed: false, ...overrides,

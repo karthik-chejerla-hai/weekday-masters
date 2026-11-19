@@ -282,6 +282,7 @@ export interface AssetPurchase extends Transaction {
 
 export interface LedgerEntryView {
   id: string;
+  transaction_id: string; // shared by every member's row of one transaction
   occurred_at: string;
   kind: TransactionKind;
   description: string;

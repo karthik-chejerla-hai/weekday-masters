@@ -3754,6 +3754,7 @@ components:
       type: object
       properties:
         id: { type: string, format: uuid }
+        transaction_id: { type: string, format: uuid, description: The transaction this entry belongs to. Every member's row of one shared expense carries the same value. An admin passes it to the reverse route. }
         occurred_at: { type: string, format: date-time }
         kind: { type: string }
         description: { type: string, description: Original transaction title }
