@@ -93,7 +93,7 @@ func TestFinancialWritesWaitForImportBeforeRowLocks(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			in.ExpectedPreview, in.RequestID = preview.Fingerprint, uuid.New()
+			in.ExpectedPreview, in.RequestID = preview.Fingerprint, newRequestID()
 			return func() error { _, err := f.service.Confirm(in, &f.admin); return err }
 		}},
 		{"reviewed_operation_runner", func(t *testing.T) func() error {

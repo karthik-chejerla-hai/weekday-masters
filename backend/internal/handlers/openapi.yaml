@@ -1736,6 +1736,9 @@ paths:
         original and its reversal stay visible. Approved admins only. Session charges
         use the same atomic reversal as the settlement endpoint: ledger effects and
         settlement status commit together. Reversal transactions cannot be reversed.
+        Reversing a shared expense also stops its notifications that are not sent
+        yet and sends each member a reversal notice. It is refused with 422
+        reversal_not_allowed while one of its members is no longer approved.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }

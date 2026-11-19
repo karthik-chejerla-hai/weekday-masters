@@ -22,7 +22,7 @@ const CATEGORIES = {
 };
 
 /** `onReversed` is passed only for an admin: it turns on the reverse action for shared expenses. */
-export default function LedgerList({ entries, showMember = false, userId, onReversed }: { entries: LedgerActivityView[]; showMember?: boolean; userId?: string; onReversed?: () => void }) {
+export default function LedgerList({ entries, showMember = false, userId, onReversed }: { entries: LedgerActivityView[]; showMember?: boolean; userId?: string; onReversed?: (transactionId: string, name: string) => void }) {
   return (
     <ul aria-label="Transactions" className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">
       {entries.map((activity) => {

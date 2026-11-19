@@ -40,7 +40,8 @@ export default function Money() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  // Balances and club position only. The ledger keeps the pages it has loaded.
+  const refresh = useCallback(async () => {
     setError(null);
     setPositionError(false);
     const [balanceList, clubPosition] = await Promise.allSettled([
@@ -55,9 +56,14 @@ export default function Money() {
     } else {
       setPositionError(true);
     }
-    setRevision((current) => current + 1);
     setIsLoading(false);
   }, []);
+
+  // Everything, including a fresh first page of the ledger.
+  const load = useCallback(async () => {
+    await refresh();
+    setRevision((current) => current + 1);
+  }, [refresh]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -126,8 +132,9 @@ export default function Money() {
       )}
 
       {activeTab === 'ledger' && <LedgerBrowser userId={user?.id} revision={revision} canReverse={isAdmin} onChanged={() => {
+        // The ledger marks the reversed rows itself, so it is not reloaded here.
         window.dispatchEvent(new Event('rally:balances-changed'));
-        void load();
+        void refresh();
       }} />}
 
       {activeTab === 'analytics' && <SpendAnalytics />}

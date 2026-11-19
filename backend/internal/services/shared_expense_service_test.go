@@ -36,6 +36,8 @@ func newSharedExpenseFixture(t *testing.T) *sharedExpenseFixture {
 	}
 }
 
+func newRequestID() *uuid.UUID { id := uuid.New(); return &id }
+
 func today() string { return utils.NowInSydney().Format("2006-01-02") }
 
 func equalExpense(payer *uuid.UUID, total int64, members ...models.User) SharedExpenseInput {
@@ -53,7 +55,7 @@ func (f *sharedExpenseFixture) confirm(t *testing.T, in SharedExpenseInput) *mod
 		t.Fatalf("preview: %v", err)
 	}
 	in.ExpectedPreview = preview.Fingerprint
-	in.RequestID = uuid.New()
+	in.RequestID = newRequestID()
 	txn, err := f.service.Confirm(in, &f.admin)
 	if err != nil {
 		t.Fatalf("confirm: %v", err)
@@ -289,7 +291,7 @@ func TestSharedExpenseRefusals(t *testing.T) {
 			}
 			// Confirm must refuse on its own validation, not merely because the
 			// made-up fingerprint fails to match.
-			in.ExpectedPreview, in.RequestID = strings.Repeat("0", 64), uuid.New()
+			in.ExpectedPreview, in.RequestID = strings.Repeat("0", 64), newRequestID()
 			_, err := f.service.Confirm(in, &f.admin)
 			if ledgerErr, ok := AsLedgerError(err); !ok || ledgerErr.Code == "preview_stale" {
 				t.Fatalf("confirm did not validate: %v", err)
@@ -314,7 +316,7 @@ func TestSharedExpenseIsAdminOnly(t *testing.T) {
 		if !ok || (ledgerErr.Status != 401 && ledgerErr.Status != 403) {
 			t.Fatalf("preview: %v", err)
 		}
-		in.ExpectedPreview, in.RequestID = strings.Repeat("0", 64), uuid.New()
+		in.ExpectedPreview, in.RequestID = strings.Repeat("0", 64), newRequestID()
 		if _, err = f.service.Confirm(in, actor); err == nil {
 			t.Fatal("confirm accepted")
 		}
@@ -390,7 +392,7 @@ func TestSharedExpenseConfirmNeedsMatchingPreview(t *testing.T) {
 		t.Fatalf("missing fingerprint: %v", err)
 	}
 	preview, _ := f.service.Preview(in, &f.admin)
-	in.ExpectedPreview, in.RequestID = preview.Fingerprint, uuid.New()
+	in.ExpectedPreview, in.RequestID = preview.Fingerprint, newRequestID()
 	in.TotalCents = 8400
 	_, err = f.service.Confirm(in, &f.admin)
 	if ledgerErr, ok := AsLedgerError(err); !ok || ledgerErr.Code != "preview_stale" || ledgerErr.Status != 409 {
@@ -405,7 +407,7 @@ func TestSharedExpenseRefusesMemberRemovedAfterPreview(t *testing.T) {
 	f := newSharedExpenseFixture(t)
 	in := equalExpense(nil, 8000, f.members...)
 	preview, _ := f.service.Preview(in, &f.admin)
-	in.ExpectedPreview, in.RequestID = preview.Fingerprint, uuid.New()
+	in.ExpectedPreview, in.RequestID = preview.Fingerprint, newRequestID()
 	database.DB.Model(&f.members[1]).Update("membership_status", models.MembershipRemoved)
 	before := transactionCount(t)
 	if _, err := f.service.Confirm(in, &f.admin); err == nil {
@@ -515,7 +517,7 @@ func TestSharedExpenseConfirmIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	in.ExpectedPreview, in.RequestID = preview.Fingerprint, uuid.New()
+	in.ExpectedPreview, in.RequestID = preview.Fingerprint, newRequestID()
 	before := transactionCount(t)
 
 	first, err := f.service.Confirm(in, &f.admin)
@@ -549,7 +551,7 @@ func TestSharedExpenseConfirmIsIdempotent(t *testing.T) {
 	}
 
 	// Without a request ID nothing can be made safe to retry.
-	in.RequestID = uuid.Nil
+	in.RequestID = nil
 	_, err = f.service.Confirm(in, &f.admin)
 	if ledgerErr, ok := AsLedgerError(err); !ok || ledgerErr.Code != "invalid_input" {
 		t.Fatalf("missing request ID: %v", err)
@@ -568,7 +570,7 @@ func TestSharedExpenseConcurrentConfirmation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	in.ExpectedPreview, in.RequestID = preview.Fingerprint, uuid.New()
+	in.ExpectedPreview, in.RequestID = preview.Fingerprint, newRequestID()
 	before := transactionCount(t)
 
 	const attempts = 8
@@ -726,5 +728,56 @@ func TestSharedExpenseLedgerRowCanBeReversed(t *testing.T) {
 	}
 	if originals != 4 {
 		t.Fatalf("%d rows for the expense", originals)
+	}
+}
+
+// Reversing must not hand a removed member a balance: removal requires zero.
+func TestSharedExpenseReversalRefusedForRemovedMember(t *testing.T) {
+	f := newSharedExpenseFixture(t)
+	m := f.members
+	txn := f.confirm(t, equalExpense(&m[0].ID, 8000, m...))
+	// B settles up and leaves the club.
+	if _, err := f.ledger.RecordTopup(CashInput{UserID: m[1].ID, AmountCents: 2000, CreatedBy: f.admin.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.DB.Model(&m[1]).Update("membership_status", models.MembershipRemoved).Error; err != nil {
+		t.Fatal(err)
+	}
+	before := transactionCount(t)
+
+	_, err := f.ledger.ReverseTransaction(txn.ID, "", f.admin.ID)
+	ledgerErr, ok := AsLedgerError(err)
+	if !ok || ledgerErr.Code != CodeReversalNotAllowed || !strings.Contains(ledgerErr.Message, m[1].DisplayName()) {
+		t.Fatalf("reversal with a removed member: %v", err)
+	}
+	if transactionCount(t) != before || f.balance(t, m[1]) != 0 {
+		t.Fatal("the refused reversal moved money")
+	}
+	var notices int64
+	database.DB.Model(&models.Notification{}).Where("title = ?", "Shared expense reversed").Count(&notices)
+	if notices != 0 {
+		t.Fatalf("the refused reversal queued %d notices", notices)
+	}
+
+	// Once reinstated, the reversal goes through.
+	if err := database.DB.Model(&m[1]).Update("membership_status", models.MembershipApproved).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.ledger.ReverseTransaction(txn.ID, "", f.admin.ID); err != nil {
+		t.Fatalf("reversal after reinstating: %v", err)
+	}
+}
+
+// A preview must not echo a request ID: a client that sends the previewed input
+// back unchanged would otherwise submit the zero ID.
+func TestSharedExpensePreviewOmitsRequestID(t *testing.T) {
+	f := newSharedExpenseFixture(t)
+	preview, err := f.service.Preview(equalExpense(nil, 8000, f.members...), &f.admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(preview)
+	if err != nil || strings.Contains(string(encoded), "request_id") {
+		t.Fatalf("preview carries a request ID: %s (%v)", encoded, err)
 	}
 }

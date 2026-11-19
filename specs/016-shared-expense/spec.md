@@ -77,7 +77,9 @@ The reversal path existed only as an API (`POST /api/admin/transactions/:id/reve
 - the confirmation screen carries a "Reverse this expense" action for the expense just recorded;
 - in the ledger, an admin sees a "Reverse" action on every shared expense row that has not been reversed, however old. It asks first, because it undoes the whole expense for every member and notifies them. Ledger rows carry their `transaction_id` for this.
 
-Other transaction kinds get no reverse action in the ledger. Top-ups, withdrawals, settlements and asset purchases have their own correction rules (spec 014 FR-025), and a general undo button would bypass them. A reversal suppresses any push or email of the original expense that has not been sent yet. The original notice stays in each member's notification history, where it cannot be withdrawn, so the reversal also sends every affected member a "Shared expense reversed" notice with their balance.
+Other transaction kinds get no reverse action in the ledger. Top-ups, withdrawals, settlements and asset purchases have their own correction rules (spec 014 FR-025), and a general undo button in the ledger would bypass them. The reverse route itself still accepts those kinds from an admin, as it did before this change; only the screens are limited.
+
+A shared expense cannot be reversed while one of its members is no longer approved. The reversal would give a removed member a balance, which removal requires to be zero, and the corrected expense could not be recorded again because they cannot take a share. The refusal names the member; the admin reinstates them first. The members' rows are locked for the reversal, so a removal cannot slip in between the check and the posting. A reversal suppresses any push or email of the original expense that has not been sent yet. The original notice stays in each member's notification history, where it cannot be withdrawn, so the reversal also sends every affected member a "Shared expense reversed" notice with their balance.
 
 ## Notifications
 
@@ -98,7 +100,7 @@ Browser tests (`frontend/e2e/shared-expense.spec.ts`) cover the admin flow on de
 - **Correction.** 014 FR-010 to FR-012 require an in-place correction and a reviewed reversal with a reason. This change offers a confirmed reversal without a typed reason, and no in-place correction.
 - **History.** 014 FR-020 and FR-021 group an expense's rows and add a Shared expenses filter. This change shows ordinary ledger rows.
 - **Split methods.** This change adds weighted shares, which 014 does not have.
-- **Member view.** 014 FR-001 lets every approved member read an expense breakdown. Here a member sees only their own ledger row.
+- **Member view.** 014 FR-001 lets every approved member read an expense breakdown. Here there is no breakdown view. A member's own ledger shows their row, and the all-members ledger, which every approved member can open for every transaction kind, shows each member's row. Rows carry `transaction_id`, so the rows of one expense can be matched.
 - **Review.** 014 FR-006 shows Paid, Share, Change and Current to New balance for each member, and states that recording moves no money. The preview here shows shares and the payer's credit only. Resulting debt is not shown (FR-016), and the fingerprint binds the shares, not the resulting balances (FR-018).
 - **History detail.** 014 FR-019 keeps actor, reason and recording time with links between records. Here history shows the ledger rows and a Reversed flag.
 - **Reversal date.** 014 FR-022 dates the inverse at the original occurrence. The existing reversal path used here dates it now, so a backdated expense that is reversed stays in the running balances between the two dates.

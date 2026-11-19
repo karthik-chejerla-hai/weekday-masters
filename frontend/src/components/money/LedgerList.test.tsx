@@ -48,11 +48,14 @@ describe('LedgerList reversal', () => {
     const onReversed = vi.fn();
     render(<LedgerList entries={rows} onReversed={onReversed} />);
     await user.click(screen.getByRole('button', { name: 'Reverse Coffee after training' }));
-    expect(screen.getByRole('group', { name: 'Reverse Coffee after training?' })).toHaveTextContent('every member who shared it');
+    const question = screen.getByRole('group', { name: 'Reverse Coffee after training?' });
+    expect(question).toHaveTextContent('every member who shared it');
+    // Focus follows the swap, so a keyboard or screen-reader user is not sent to the top of the page.
+    expect(question).toHaveFocus();
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(api.reverseTransaction).not.toHaveBeenCalled();
     expect(onReversed).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Reverse Coffee after training' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reverse Coffee after training' })).toHaveFocus();
   });
 
   it('reverses the whole transaction once and reports it', async () => {
@@ -66,6 +69,7 @@ describe('LedgerList reversal', () => {
     expect(screen.getByRole('button', { name: 'Reversing…' })).toBeDisabled();
     finish({ id: 'r1' });
     await vi.waitFor(() => expect(onReversed).toHaveBeenCalledTimes(1));
+    expect(onReversed).toHaveBeenCalledWith('txn-a', 'Coffee after training');
     expect(api.reverseTransaction).toHaveBeenCalledTimes(1);
     expect(api.reverseTransaction).toHaveBeenCalledWith('txn-a', 'Reversal of Coffee after training');
   });
