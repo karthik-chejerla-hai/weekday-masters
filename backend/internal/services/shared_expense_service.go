@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -31,6 +32,9 @@ const (
 	maxSharedExpenseWeight      = 100
 	maxSharedExpenseDescription = 200
 	maxSharedExpenseMembers     = 100
+	// A backdated entry re-orders every later running balance of its members,
+	// so a mistyped year must not land before the opening balances.
+	maxSharedExpenseAgeDays = 365
 
 	clubBankPayerName = "Club bank"
 )
@@ -43,8 +47,10 @@ type SharedExpenseParticipant struct {
 
 // SharedExpenseInput is one non-session bill, such as a meal or a coffee.
 // PayerUserID nil means the club bank paid. OccurredOn is a Sydney calendar
-// date, YYYY-MM-DD.
+// date, YYYY-MM-DD. RequestID identifies one submission: Confirm requires it and
+// answers a repeat of the same submission with the original transaction.
 type SharedExpenseInput struct {
+	RequestID       uuid.UUID                  `json:"request_id,omitempty"`
 	Description     string                     `json:"description"`
 	OccurredOn      string                     `json:"occurred_on"`
 	TotalCents      int64                      `json:"total_cents"`
@@ -98,9 +104,13 @@ func (s *SharedExpenseService) Preview(in SharedExpenseInput, actor *models.User
 	return &SharedExpensePreview{Input: p.input, PayerName: p.payerName, Lines: p.lines, Fingerprint: p.fingerprint}, nil
 }
 
-// Confirm posts the expense the admin reviewed. The plan is rebuilt inside the
-// posting transaction, so a member removed since the preview is refused and the
-// figures written are exactly the figures the fingerprint covers.
+// Confirm posts the expense the admin reviewed, through the reviewed-operation
+// runner. The runner takes the financial table lock, reserves the request ID,
+// and SHARE-locks every member involved, so a retry of an accepted submission
+// returns the original transaction instead of charging twice, and a member
+// cannot be removed between the membership check and the posting. The plan is
+// rebuilt inside that transaction: the figures written are exactly the figures
+// the fingerprint covers.
 func (s *SharedExpenseService) Confirm(in SharedExpenseInput, actor *models.User) (*models.Transaction, error) {
 	if err := requireExpenseAdmin(actor); err != nil {
 		return nil, err
@@ -108,59 +118,109 @@ func (s *SharedExpenseService) Confirm(in SharedExpenseInput, actor *models.User
 	if len(in.ExpectedPreview) != 64 {
 		return nil, newLedgerError("preview_required", 409, "Review an expense preview before confirming.")
 	}
-	var txn *models.Transaction
-	err := database.DB.Transaction(func(tx *gorm.DB) error {
-		// Before any row lock, like every other financial orchestration.
-		if err := lockFinancialTransactions(tx); err != nil {
-			return err
-		}
+	if len(in.Participants) > maxSharedExpenseMembers {
+		return nil, ErrNotSettleable("Choose between 1 and 100 members to split with.")
+	}
+	// Checked here as well as in plan: the runner stores the submission as jsonb
+	// before plan runs, and jsonb cannot hold a NUL.
+	if _, err := sharedExpenseDescription(in.Description); err != nil {
+		return nil, err
+	}
+	proposed, memberIDs, err := sharedExpenseSubmission(in)
+	if err != nil {
+		return nil, err
+	}
+	result, err := runMoneyOperation(moneyOperationRequest{
+		RequestID: in.RequestID, ActorID: actor.ID, Action: models.MoneyOperationCreateSharedExpense,
+		Proposed: proposed, ExpectedPreview: in.ExpectedPreview, MemberIDs: memberIDs,
+	}, func(tx *gorm.DB, operationID uuid.UUID, _ moneyOperationRequest) (moneyOperationResult, error) {
 		p, err := s.plan(tx, in, actor)
 		if err != nil {
-			return err
+			return moneyOperationResult{}, err
 		}
 		if p.fingerprint != in.ExpectedPreview {
-			return newLedgerError("preview_stale", 409, "The expense changed since the preview. Review it again.")
+			return moneyOperationResult{}, newLedgerError("preview_stale", 409, "The expense changed since the preview. Review it again.")
 		}
 		movements, err := s.movements(tx, p)
 		if err != nil {
-			return err
+			return moneyOperationResult{}, err
 		}
-		txn, err = s.ledger.PostWithin(tx, PostInput{
-			Kind:        models.TxnSharedExpense,
-			Description: p.input.Description,
-			OccurredAt:  p.occurredAt,
-			CreatedBy:   actor.ID,
-			Movements:   movements,
+		step := int16(0)
+		txn, err := s.ledger.PostWithin(tx, PostInput{
+			Kind:             models.TxnSharedExpense,
+			MoneyOperationID: &operationID,
+			OperationStep:    &step,
+			Description:      p.input.Description,
+			OccurredAt:       p.occurredAt,
+			CreatedBy:        actor.ID,
+			Movements:        movements,
 		})
 		if err != nil {
-			return err
+			return moneyOperationResult{}, err
 		}
-		return s.queueWithin(tx, txn, p)
+		if err := s.queueWithin(tx, txn, p); err != nil {
+			return moneyOperationResult{}, err
+		}
+		body, err := json.Marshal(txn)
+		if err != nil {
+			return moneyOperationResult{}, err
+		}
+		return moneyOperationResult{Status: 201, Body: body}, nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return txn, nil
+	var txn models.Transaction
+	if err := json.Unmarshal(result.Body, &txn); err != nil {
+		return nil, err
+	}
+	return &txn, nil
+}
+
+// sharedExpenseSubmission gives the runner the contents that one request ID is
+// bound to, in a form that does not depend on the order the form sent, and the
+// members to lock. It validates nothing: plan does that under the locks.
+func sharedExpenseSubmission(in SharedExpenseInput) (json.RawMessage, []uuid.UUID, error) {
+	participants := append([]SharedExpenseParticipant(nil), in.Participants...)
+	sort.SliceStable(participants, func(i, j int) bool { return participants[i].UserID.String() < participants[j].UserID.String() })
+	memberIDs := make([]uuid.UUID, 0, len(participants)+1)
+	for _, p := range participants {
+		memberIDs = append(memberIDs, p.UserID)
+	}
+	if in.PayerUserID != nil {
+		memberIDs = append(memberIDs, *in.PayerUserID)
+	}
+	proposed, err := json.Marshal(SharedExpenseInput{
+		Description: strings.TrimSpace(in.Description), OccurredOn: in.OccurredOn, TotalCents: in.TotalCents,
+		PayerUserID: in.PayerUserID, SplitMethod: in.SplitMethod, Participants: participants,
+	})
+	return proposed, memberIDs, err
 }
 
 func (s *SharedExpenseService) plan(db *gorm.DB, in SharedExpenseInput, actor *models.User) (*sharedExpensePlan, error) {
 	if err := requireExpenseAdmin(actor); err != nil {
 		return nil, err
 	}
-	description := strings.TrimSpace(in.Description)
-	if description == "" || utf8.RuneCountInString(description) > maxSharedExpenseDescription {
-		return nil, ErrNotSettleable("Enter a description of up to 200 characters.")
+	description, err := sharedExpenseDescription(in.Description)
+	if err != nil {
+		return nil, err
 	}
 	if in.TotalCents <= 0 || in.TotalCents > maxSharedExpenseCents {
 		return nil, ErrNotSettleable("Enter a total between $0.01 and $10,000.")
 	}
 	now := utils.NowInSydney()
-	day, err := time.ParseInLocation("2006-01-02", in.OccurredOn, now.Location())
+	var day time.Time
+	day, err = time.ParseInLocation("2006-01-02", in.OccurredOn, now.Location())
 	if err != nil {
 		return nil, ErrNotSettleable("Enter the date of the expense.")
 	}
 	if day.After(now) {
 		return nil, ErrNotSettleable("The expense date cannot be in the future.")
+	}
+	// Midnight to midnight: the limit must not move with the time of day.
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	if day.Before(today.AddDate(0, 0, -maxSharedExpenseAgeDays)) {
+		return nil, ErrNotSettleable("The expense date cannot be more than a year ago.")
 	}
 	occurredAt := day.Add(12 * time.Hour)
 	if day.Format("2006-01-02") == now.Format("2006-01-02") {
@@ -244,6 +304,20 @@ func (s *SharedExpenseService) plan(db *gorm.DB, in SharedExpenseInput, actor *m
 		input: canonical, occurredAt: occurredAt, payerName: payerName, lines: lines,
 		fingerprint: sharedExpenseFingerprint(canonical, lines),
 	}, nil
+}
+
+// sharedExpenseDescription trims a description and refuses one that is empty,
+// too long, or holds a control character. A NUL would preview cleanly and then
+// fail to save, because jsonb cannot store it.
+func sharedExpenseDescription(raw string) (string, error) {
+	description := strings.TrimSpace(raw)
+	if description == "" || utf8.RuneCountInString(description) > maxSharedExpenseDescription {
+		return "", ErrNotSettleable("Enter a description of up to 200 characters.")
+	}
+	if !utf8.ValidString(description) || strings.ContainsFunc(description, unicode.IsControl) {
+		return "", ErrNotSettleable("The description contains characters that cannot be saved.")
+	}
+	return description, nil
 }
 
 // sharedExpenseShares returns what each participant owes. Every share is
@@ -387,7 +461,64 @@ func (s *SharedExpenseService) queueWithin(tx *gorm.DB, txn *models.Transaction,
 				"destination_path":    "/money",
 			}),
 		}
-		key := fmt.Sprintf("shared-expense:%s:%s", txn.ID, line.UserID)
+		key := sharedExpenseReceiptKey(txn.ID) + line.UserID.String()
+		if _, err := queue.QueueNotificationWithin(tx, &notification, key, now, now.Add(24*time.Hour)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// queueSharedExpenseReversalWithin tells each member that a shared expense was
+// undone. The original notice may already be in their history, where it cannot
+// be withdrawn, so without this they would still read of a charge that no
+// longer exists.
+func (s *LedgerService) queueSharedExpenseReversalWithin(tx *gorm.DB, original, reversal *models.Transaction) error {
+	queue := s.notifier
+	if queue == nil {
+		queue = &NotificationService{disabled: true}
+	}
+	type effect struct {
+		UserID      uuid.UUID
+		AmountCents int64
+	}
+	var effects []effect
+	if err := tx.Raw(`SELECT a.user_id, SUM(e.amount_cents) AS amount_cents
+		FROM ledger_entries e JOIN accounts a ON a.id = e.account_id
+		WHERE e.transaction_id = ? AND a.kind = 'player' AND a.user_id IS NOT NULL
+		GROUP BY a.user_id ORDER BY a.user_id`, original.ID).Scan(&effects).Error; err != nil {
+		return err
+	}
+	for _, e := range effects {
+		if e.AmountCents == 0 {
+			continue
+		}
+		balance, err := balanceWithin(tx, e.UserID)
+		if err != nil {
+			return err
+		}
+		now := time.Now().UTC()
+		body := fmt.Sprintf("The %s charge for %s was reversed. Balance after this correction: %s.", formatCents(-e.AmountCents), original.Description, formatCents(balance))
+		if e.AmountCents > 0 {
+			body = fmt.Sprintf("The %s credit for paying %s was reversed. Balance after this correction: %s.", formatCents(e.AmountCents), original.Description, formatCents(balance))
+		}
+		if warning := BalanceWarning(balance); warning != "" {
+			body += " " + warning
+		}
+		kind := models.NotificationSharedExpense
+		notification := models.Notification{
+			UserID: e.UserID, NotificationType: kind, Title: "Shared expense reversed", Body: body,
+			Data: mustNotificationJSON(map[string]string{
+				"type": string(kind), "source": "shared_expense_reversal", "transaction_id": original.ID.String(),
+				"reversal_transaction_id": reversal.ID.String(),
+				"amount_cents":            strconv.FormatInt(-e.AmountCents, 10),
+				"balance_after_cents":     strconv.FormatInt(balance, 10),
+				"balance_band":            BalanceNotificationBand(balance),
+				"checked_at":              now.Format(time.RFC3339Nano),
+				"destination_path":        "/money",
+			}),
+		}
+		key := fmt.Sprintf("shared-expense-reversal:%s:%s", original.ID, e.UserID)
 		if _, err := queue.QueueNotificationWithin(tx, &notification, key, now, now.Add(24*time.Hour)); err != nil {
 			return err
 		}

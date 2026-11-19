@@ -539,6 +539,7 @@ export interface SharedExpenseParticipant {
 
 /** A non-session bill, such as a meal or a coffee, split between members. */
 export interface SharedExpenseInput {
+  request_id?: string; // required to confirm: one per reviewed bill, reused on retry
   description: string;
   occurred_on: string; // YYYY-MM-DD, Sydney
   total_cents: number;

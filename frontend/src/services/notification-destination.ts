@@ -14,7 +14,7 @@ export function notificationDestination(data: Record<string, string> = {}): stri
     return `/sessions/${data.session_id}${split ? '/settlement' : ''}${settlement}`;
   }
   if (data.type === 'push_test') return '/dashboard';
-  if (['balance_low', 'balance_negative'].includes(data.type)) return '/money';
+  if (['balance_low', 'balance_negative', 'shared_expense'].includes(data.type)) return '/money';
   if (uuid.test(data.notification_id || '')) return `/notifications/${data.notification_id}`;
   return '/notifications';
 }

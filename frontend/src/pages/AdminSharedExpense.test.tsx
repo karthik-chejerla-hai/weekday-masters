@@ -51,6 +51,101 @@ describe('Shared expense form', () => {
     expect(screen.getByRole('checkbox', { name: 'Priya' })).not.toBeChecked();
   });
 
+  it('unticks a payer chosen by mistake, but keeps one the admin ticked', async () => {
+    const user = await show();
+    await user.selectOptions(screen.getByLabelText('Paid by'), 'u1');
+    await user.selectOptions(screen.getByLabelText('Paid by'), 'u2');
+    expect(screen.getByRole('checkbox', { name: 'Priya' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Marcus' })).toBeChecked();
+
+    // Tom was ticked by hand before being made the payer, so a later change keeps him.
+    await user.click(screen.getByRole('checkbox', { name: 'Tom' }));
+    await user.selectOptions(screen.getByLabelText('Paid by'), 'u3');
+    await user.selectOptions(screen.getByLabelText('Paid by'), 'bank');
+    expect(screen.getByRole('checkbox', { name: 'Tom' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Marcus' })).not.toBeChecked();
+  });
+
+  it('retries a failed save with the same request ID and starts a new one after an edit', async () => {
+    const user = await show();
+    await fill(user);
+    await user.click(screen.getByRole('checkbox', { name: 'Marcus' }));
+    await user.click(screen.getByRole('button', { name: 'Preview expense' }));
+    await screen.findByRole('region', { name: 'Expense preview' });
+
+    // The response is lost: the server may or may not have recorded the expense.
+    vi.mocked(api.confirmSharedExpense).mockRejectedValueOnce(new Error('Network Error'));
+    await user.click(screen.getByRole('button', { name: 'Confirm expense' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('confirm again');
+    expect(screen.getByRole('region', { name: 'Expense preview' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Confirm expense' }));
+    await screen.findByText('Expense recorded');
+    const [first, second] = vi.mocked(api.confirmSharedExpense).mock.calls.map(([input]) => input.request_id);
+    expect(first).toBeTruthy();
+    expect(second).toBe(first);
+  });
+
+  it('keeps the request ID through an Edit that changes nothing', async () => {
+    const user = await show();
+    await fill(user);
+    await user.click(screen.getByRole('checkbox', { name: 'Marcus' }));
+    await user.click(screen.getByRole('button', { name: 'Preview expense' }));
+    await screen.findByRole('region', { name: 'Expense preview' });
+    vi.mocked(api.confirmSharedExpense).mockRejectedValueOnce(new Error('Network Error'));
+    await user.click(screen.getByRole('button', { name: 'Confirm expense' }));
+    await screen.findByRole('alert');
+
+    // The admin reopens the form to check it, then previews the same bill again.
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    await user.type(screen.getByLabelText('Description'), 'x{Backspace}');
+    await user.click(screen.getByRole('button', { name: 'Preview expense' }));
+    await screen.findByRole('region', { name: 'Expense preview' });
+    await user.click(screen.getByRole('button', { name: 'Confirm expense' }));
+    await screen.findByText('Expense recorded');
+    const [first, second] = vi.mocked(api.confirmSharedExpense).mock.calls.map(([input]) => input.request_id);
+    expect(first).toBeTruthy();
+    expect(second).toBe(first);
+  });
+
+  it('uses a new request ID once the bill is edited', async () => {
+    const user = await show();
+    await fill(user);
+    await user.click(screen.getByRole('checkbox', { name: 'Marcus' }));
+    await user.click(screen.getByRole('button', { name: 'Preview expense' }));
+    await screen.findByRole('region', { name: 'Expense preview' });
+    vi.mocked(api.confirmSharedExpense).mockRejectedValueOnce({ response: { data: { code: 'preview_stale', message: 'The expense changed since the preview. Review it again.' } } });
+    await user.click(screen.getByRole('button', { name: 'Confirm expense' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Review it again');
+    expect(screen.queryByRole('region', { name: 'Expense preview' })).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Description'), ' again');
+    vi.mocked(api.previewSharedExpense).mockResolvedValueOnce({ ...preview, input: { ...preview.input, description: 'Team dinner again' }, fingerprint: 'e'.repeat(64) });
+    await user.click(screen.getByRole('button', { name: 'Preview expense' }));
+    await screen.findByRole('region', { name: 'Expense preview' });
+    await user.click(screen.getByRole('button', { name: 'Confirm expense' }));
+    await screen.findByText('Expense recorded');
+    const [first, second] = vi.mocked(api.confirmSharedExpense).mock.calls.map(([input]) => input.request_id);
+    expect(second).not.toBe(first);
+  });
+
+  it('locks the form while saving, so an edit cannot hide the result', async () => {
+    const user = await show();
+    await fill(user);
+    await user.click(screen.getByRole('checkbox', { name: 'Marcus' }));
+    await user.click(screen.getByRole('button', { name: 'Preview expense' }));
+    await screen.findByRole('region', { name: 'Expense preview' });
+
+    let finish: (value: { id: string }) => void = () => {};
+    vi.mocked(api.confirmSharedExpense).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }) as never);
+    await user.click(screen.getByRole('button', { name: 'Confirm expense' }));
+    expect(screen.getByLabelText('Description')).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: 'Tom' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Saving…' }));
+    finish({ id: 't1' });
+    await screen.findByText('Expense recorded');
+    expect(api.confirmSharedExpense).toHaveBeenCalledTimes(1);
+  });
+
   it('previews an equal split paid by a member, then confirms the reviewed figures', async () => {
     const user = await show();
     await fill(user);
@@ -70,7 +165,7 @@ describe('Shared expense form', () => {
 
     await user.click(screen.getByRole('button', { name: 'Confirm expense' }));
     await screen.findByText('Expense recorded');
-    expect(api.confirmSharedExpense).toHaveBeenCalledWith({ ...preview.input, expected_preview: preview.fingerprint });
+    expect(api.confirmSharedExpense).toHaveBeenCalledWith({ ...preview.input, request_id: expect.stringMatching(/^[0-9a-f-]{36}$/), expected_preview: preview.fingerprint });
 
     // A mistake is undone with a reversing transaction, never an edit.
     await user.click(screen.getByRole('button', { name: 'Reverse this expense' }));

@@ -6,6 +6,7 @@ it('routes receipts, legacy reminders, balances and exact announcements', () => 
  expect(notificationDestination({ type: 'session_charge', session_id: id })).toBe(`/sessions/${id}/settlement`);
  expect(notificationDestination({ type: 'rsvp_deadline', session_id: id })).toBe(`/sessions/${id}`);
  expect(notificationDestination({ type: 'balance_negative' })).toBe('/money');
+ expect(notificationDestination({ type: 'shared_expense' })).toBe('/money');
  expect(historyDestination({ id, notification_type: 'admin_announcement', data: '{}' })).toBe(`/notifications/${id}`);
  expect(historyDestination({ id, notification_type: 'admin_announcement', data: 'null' })).toBe(`/notifications/${id}`);
  expect(notificationDestination({ destination_path: '//evil.test', session_id: id })).toBe(`/sessions/${id}`);

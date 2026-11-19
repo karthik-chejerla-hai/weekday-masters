@@ -88,7 +88,7 @@ test.describe('Admin shared expense', () => {
     await expect(page.getByText('Expense reversed')).toBeVisible();
     expect(writes).toEqual([
       ['preview', input],
-      ['confirm', { ...input, expected_preview: preview.fingerprint }],
+      ['confirm', { ...input, request_id: expect.stringMatching(/^[0-9a-f-]{36}$/), expected_preview: preview.fingerprint }],
       ['reverse', { description: 'Reversal of Dinner after Friday badminton' }],
     ]);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

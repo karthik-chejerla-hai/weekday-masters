@@ -86,6 +86,16 @@ func TestFinancialWritesWaitForImportBeforeRowLocks(t *testing.T) {
 				return err
 			}
 		}},
+		{"shared_expense", func(t *testing.T) func() error {
+			f := newSharedExpenseFixture(t)
+			in := equalExpense(&f.members[0].ID, 8000, f.members...)
+			preview, err := f.service.Preview(in, &f.admin)
+			if err != nil {
+				t.Fatal(err)
+			}
+			in.ExpectedPreview, in.RequestID = preview.Fingerprint, uuid.New()
+			return func() error { _, err := f.service.Confirm(in, &f.admin); return err }
+		}},
 		{"reviewed_operation_runner", func(t *testing.T) func() error {
 			request, ledger, player, bank := moneyProtocolFixture(t)
 			return func() error {

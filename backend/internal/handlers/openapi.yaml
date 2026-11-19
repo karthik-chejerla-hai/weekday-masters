@@ -1972,11 +1972,14 @@ paths:
       tags: [Settlement]
       summary: Confirm the reviewed shared expense
       description: >
-        Admin only. Send the canonical input from the preview and its fingerprint
-        as expected_preview. The server recalculates the shares inside the posting
-        transaction and rejects a changed expense with 409 preview_stale. Posts one
-        shared_expense transaction; a paying member who is also a participant gets
-        a single net entry. Correct a mistake by reversing the transaction.
+        Admin only. Send the canonical input from the preview, its fingerprint as
+        expected_preview, and a request_id chosen by the client. The server
+        recalculates the shares inside the posting transaction and rejects a changed
+        expense with 409 preview_stale. Posts one shared_expense transaction; a
+        paying member who is also a participant gets a single net entry. Repeating
+        a request_id with the same contents returns the original transaction and
+        posts nothing; reusing it for different contents returns 409
+        request_conflict. Correct a mistake by reversing the transaction.
       requestBody:
         required: true
         content:
@@ -1985,7 +1988,7 @@ paths:
               allOf:
                 - $ref: "#/components/schemas/SharedExpenseInput"
                 - type: object
-                  required: [expected_preview]
+                  required: [request_id, expected_preview]
       responses:
         "201":
           description: Recorded transaction
@@ -3326,7 +3329,7 @@ components:
           format: uuid
         notification_type:
           type: string
-          enum: [rsvp_reminder, session_reminder, rsvp_deadline, waitlist_update, admin_announcement, balance_low, balance_negative, session_charge, session_charge_reversed]
+          enum: [rsvp_reminder, session_reminder, rsvp_deadline, waitlist_update, admin_announcement, balance_low, balance_negative, session_charge, session_charge_reversed, shared_expense]
         title:
           type: string
         body:
@@ -3874,8 +3877,9 @@ components:
       additionalProperties: false
       required: [description, occurred_on, total_cents, payer_user_id, split_method, participants]
       properties:
+        request_id: { type: string, format: uuid, description: Required to confirm and ignored by preview. One per reviewed bill. Reuse it to retry the same bill safely. }
         description: { type: string, minLength: 1, maxLength: 200 }
-        occurred_on: { type: string, format: date, description: Sydney calendar date. Not in the future. }
+        occurred_on: { type: string, format: date, description: Sydney calendar date. Not in the future and not more than 365 days ago. }
         total_cents: { type: integer, format: int64, minimum: 1, maximum: 1000000 }
         payer_user_id: { type: string, format: uuid, nullable: true, description: The member who paid. Null means the club bank paid. }
         split_method: { type: string, enum: [equal, exact, shares] }

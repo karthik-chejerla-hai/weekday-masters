@@ -3,6 +3,8 @@ package handlers
 import (
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/weekday-masters/backend/internal/models"
 	"github.com/weekday-masters/backend/internal/services"
 	"github.com/weekday-masters/backend/internal/utils"
@@ -56,10 +58,18 @@ func TestSharedExpenseHTTPPreviewConfirm(t *testing.T) {
 	}
 
 	body["expected_preview"] = preview.Fingerprint
-	var txn models.Transaction
+	// A reviewed expense still needs a submission ID to be safe to retry.
+	h.as(admin).post("/api/admin/expenses", body).expect(400)
+	body["request_id"] = uuid.New()
+	var txn, retried models.Transaction
 	h.as(admin).post("/api/admin/expenses", body).expect(201).decode(&txn)
 	if txn.Kind != models.TxnSharedExpense {
 		t.Fatalf("kind %q", txn.Kind)
+	}
+	// The same submission again returns the same transaction and charges nobody twice.
+	h.as(admin).post("/api/admin/expenses", body).expect(201).decode(&retried)
+	if retried.ID != txn.ID {
+		t.Fatalf("retry posted a second transaction: %s then %s", txn.ID, retried.ID)
 	}
 	for user, want := range map[*models.User]int64{a: 6000, b: -3000, c: -3000} {
 		if got, err := ledger.BalanceOfUser(user.ID); err != nil || got != want {

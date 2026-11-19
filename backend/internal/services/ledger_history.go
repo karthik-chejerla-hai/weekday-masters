@@ -30,7 +30,12 @@ type LedgerEntryView struct {
 }
 
 // Source facts distinguish deposits from member-funded expenses and transfers.
-// A shared expense has no stored category: its description picks coffee, food or other.
+// A shared expense has no stored category: whole words in its description pick
+// coffee, food or other. The word edges are ASCII classes, as in the Splitwise
+// rule below, because \m and \M follow the database locale and would not treat
+// "é" as a letter everywhere; "cafÉ" is listed because lower() has the same
+// limit. The patterns hold no question mark, which the query builder would read
+// as a bind placeholder.
 // Ambiguous titles remain "other" instead of guessing from a positive amount.
 const ledgerHistorySQL = `WITH history AS (
 	SELECT e.id, e.account_id, e.transaction_id, e.created_at, t.occurred_at, t.kind, t.description,
@@ -49,8 +54,8 @@ const ledgerHistorySQL = `WITH history AS (
 	         WHEN t.kind = 'opening_balance' THEN 'opening_balance'
 	         WHEN t.kind = 'shared_expense' THEN
 	           CASE
-	             WHEN lower(t.description) ~ '(coffee|cafe|café|espresso|latte|cappuccino|flat white)' THEN 'coffee'
-	             WHEN lower(t.description) ~ '(meal|dinner|lunch|breakfast|brunch|supper|restaurant|pizza|food)' THEN 'food'
+	             WHEN lower(t.description) ~ '(^|[^a-z])(coffee|coffees|cafe|cafes|café|cafés|cafÉ|cafÉs|espresso|latte|lattes|cappuccino|flat white)([^a-z]|$)' THEN 'coffee'
+	             WHEN lower(t.description) ~ '(^|[^a-z])(meal|meals|dinner|dinners|lunch|lunches|breakfast|brunch|supper|restaurant|pizza|food)([^a-z]|$)' THEN 'food'
 	             ELSE 'other'
 	           END
 	         WHEN r.id IS NOT NULL THEN
