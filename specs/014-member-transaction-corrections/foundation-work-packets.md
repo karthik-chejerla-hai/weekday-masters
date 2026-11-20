@@ -2,7 +2,8 @@
 
 Refined 2026-11-02 against main `be5507e` (#104–#109). This is planning only.
 T007 is implemented in [PR #110](https://github.com/karthik-chejerla-hai/weekday-masters/pull/110)
-and must merge before code work on these packets begins. No packet below is complete.
+and merged before code work on these packets began. F001 is implemented and locally
+validated; its PR must merge before F002 begins. F002–F014 remain pending.
 
 T008–T014 remain stable tracking milestones for historical requirement references.
 F001–F014 are the smaller execution units. They are not added to the 60-milestone
@@ -61,7 +62,7 @@ numbers. This planning PR contains no application implementation.
 
 ## Execution checklist and dependencies
 
-- [ ] F001 Prevent profile refreshes from restoring stale role/status in backend/internal/services/user_service.go and user_service_test.go.
+- [x] F001 Prevent profile refreshes from restoring stale role/status in backend/internal/services/user_service.go and user_service_test.go.
 - [ ] F002 Serialize last-admin and membership transitions in backend/internal/services/user_service.go and user_service_test.go.
 - [ ] F003 Freeze the target member before normal RSVP creation/update in backend/internal/services/rsvp_service.go and rsvp_service_test.go.
 - [ ] F004 Extract caller-transaction RSVP deletion/promotion effects in backend/internal/services/rsvp_service.go and rsvp_service_test.go.
@@ -94,6 +95,8 @@ obligation has shipped and passed its checks. Do not count a packet twice.
 
 <a id="f001"></a>
 ## F001 — Profile field ownership
+
+Implementation and PostgreSQL regression evidence: [f001-profile-field-ownership.md](f001-profile-field-ownership.md).
 
 **Outcome:** cosmetic/profile writes cannot overwrite a newer role or membership
 status. **Depends:** merged #110. **Owner:** Luna implementation is reasonable;

@@ -101,7 +101,29 @@ func (s *UserService) RegisterUser(profile *Auth0Profile) (*models.User, bool, e
 		user.MembershipStatus = models.MembershipApproved
 	}
 
-	if err := database.DB.Create(&user).Error; err != nil {
+	// The verified ADMIN_EMAIL bootstrap bypasses the ordinary approval path,
+	// so it must create the same chargeable membership before returning. Keep
+	// both rows atomic: a failed account create must not strand an approved
+	// admin whose next login is refused by the profile missing-account guard.
+	err = database.DB.Transaction(func(tx *gorm.DB) error {
+		if user.IsApproved() {
+			if err := lockFinancialTransactions(tx); err != nil {
+				return err
+			}
+		}
+		if err := tx.Create(&user).Error; err != nil {
+			return err
+		}
+		if user.IsApproved() {
+			// This user is new in this transaction; no existing account can need
+			// adopting or repairing. Other membership paths remain unchanged.
+			return tx.Create(&models.Account{
+				Kind: models.AccountKindPlayer, UserID: &user.ID, Name: user.DisplayName(),
+			}).Error
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, false, err
 	}
 
@@ -179,19 +201,16 @@ func (s *UserService) FindByAuth0ID(auth0ID string) (*models.User, error) {
 // SyncDisplayFields refreshes the cosmetic profile fields on an already-loaded user.
 // Email, role and membership status are deliberately not touchable here.
 func (s *UserService) SyncDisplayFields(user *models.User, name, profilePicture string) (*models.User, error) {
-	if name != "" {
-		user.Name = name
-	}
-	if profilePicture != "" {
-		user.ProfilePicture = profilePicture
-	}
-	user.UpdatedAt = time.Now()
-
-	if err := database.DB.Save(user).Error; err != nil {
-		return nil, err
-	}
-
-	return user, nil
+	return s.updateProfileFields(user.ID, func(tx *gorm.DB, current *models.User) (map[string]interface{}, error) {
+		fields := map[string]interface{}{}
+		if name != "" {
+			fields["name"] = name
+		}
+		if profilePicture != "" {
+			fields["profile_picture"] = profilePicture
+		}
+		return fields, nil
+	})
 }
 
 // GetUserByID retrieves a user by ID
@@ -222,35 +241,20 @@ const MaxNicknameLength = 100
 // choose it; an admin can still correct it. Clearing it is allowed and falls
 // back to their first name — see models.User.DisplayName.
 func (s *UserService) UpdateProfile(userID uuid.UUID, input UpdateProfileInput) (*models.User, error) {
-	user, err := s.getMember(userID)
-	if err != nil {
-		return nil, err
-	}
-
-	if input.PhoneNumber != nil {
-		user.PhoneNumber = strings.TrimSpace(*input.PhoneNumber)
-	}
-	if input.Nickname != nil {
-		nickname := strings.TrimSpace(*input.Nickname)
-		if len([]rune(nickname)) > MaxNicknameLength {
-			return nil, fmt.Errorf("a nickname can be at most %d characters", MaxNicknameLength)
+	return s.updateProfileFields(userID, func(tx *gorm.DB, current *models.User) (map[string]interface{}, error) {
+		fields := map[string]interface{}{}
+		if input.PhoneNumber != nil {
+			fields["phone_number"] = strings.TrimSpace(*input.PhoneNumber)
 		}
-		user.Nickname = nickname
-	}
-
-	user.UpdatedAt = time.Now()
-	if err := database.DB.Save(user).Error; err != nil {
-		return nil, err
-	}
-
-	// Same reason the admin edit does it: the ledger names accounts, and a
-	// nickname that stopped at the user row would leave two names for one
-	// person on the balances screen.
-	if err := syncAccountName(user); err != nil {
-		return nil, err
-	}
-
-	return user, nil
+		if input.Nickname != nil {
+			nickname := strings.TrimSpace(*input.Nickname)
+			if len([]rune(nickname)) > MaxNicknameLength {
+				return nil, fmt.Errorf("a nickname can be at most %d characters", MaxNicknameLength)
+			}
+			fields["nickname"] = nickname
+		}
+		return fields, nil
+	})
 }
 
 // ListApprovedMembers returns all approved club members
@@ -432,68 +436,103 @@ type UpdateMemberInput struct {
 // not ours: changing it here would not change how they sign in, and would
 // silently move them in or out of the ADMIN_EMAIL auto-promotion rule.
 func (s *UserService) UpdateMemberDetails(userID uuid.UUID, input UpdateMemberInput) (*models.User, error) {
-	user, err := s.getMember(userID)
+	return s.updateProfileFields(userID, func(tx *gorm.DB, current *models.User) (map[string]interface{}, error) {
+		fields := map[string]interface{}{}
+		if input.Name != nil {
+			name := strings.TrimSpace(*input.Name)
+			if name == "" {
+				return nil, errors.New("name cannot be empty")
+			}
+			fields["name"] = name
+		}
+		if input.Nickname != nil {
+			fields["nickname"] = strings.TrimSpace(*input.Nickname)
+		}
+		if input.PhoneNumber != nil {
+			fields["phone_number"] = strings.TrimSpace(*input.PhoneNumber)
+		}
+		if input.IsPlayer != nil {
+			fields["is_player"] = *input.IsPlayer
+		}
+		if input.Email != nil {
+			email := NormalizeEmail(*input.Email)
+			if email != current.Email {
+				if current.HasSignedIn() {
+					return nil, errors.New("email is managed by the member's sign-in provider and cannot be changed here")
+				}
+				if err := validateEmail(email); err != nil {
+					return nil, err
+				}
+				var clash models.User
+				err := tx.Where("LOWER(email) = ? AND id <> ?", email, current.ID).First(&clash).Error
+				if err == nil {
+					return nil, fmt.Errorf("%s is already %s", email, describeMembership(&clash))
+				}
+				if !errors.Is(err, gorm.ErrRecordNotFound) {
+					return nil, err
+				}
+				fields["email"] = email
+			}
+		}
+		// F002 will serialize the last-admin predicate across all role/status paths.
+		// Preserve the current guard here, but never copy a role from a stale row.
+		if input.Role != nil && *input.Role != current.Role {
+			if err := s.guardLastAdmin(current, *input.Role); err != nil {
+				return nil, err
+			}
+			fields["role"] = *input.Role
+		}
+		return fields, nil
+	})
+}
+
+// updateProfileFields owns the transaction for profile writes. The callback may
+// validate against the locked member and return only fields this request owns;
+// it must not write or acquire additional user/session locks.
+func (s *UserService) updateProfileFields(userID uuid.UUID, fieldsFor func(*gorm.DB, *models.User) (map[string]interface{}, error)) (*models.User, error) {
+	var user models.User
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockFinancialTransactions(tx); err != nil {
+			return err
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "NO KEY UPDATE"}).First(&user, "id = ?", userID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrMemberNotFound
+			}
+			return err
+		}
+		fields, err := fieldsFor(tx, &user)
+		if err != nil {
+			return err
+		}
+
+		// Updating unique email upgrades the user tuple lock even after NO KEY
+		// UPDATE. Lock the account first so a pre-F005 settlement holding it can
+		// finish ChargeLine's KEY SHARE foreign-key check while we wait here.
+		var account models.Account
+		err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("user_id = ? AND kind = ?", user.ID, models.AccountKindPlayer).First(&account).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			if user.IsApproved() {
+				return errors.New("member has no player account — repair their membership account before editing")
+			}
+		} else if err != nil {
+			return err
+		}
+
+		fields["updated_at"] = time.Now()
+		if err := tx.Model(&models.User{}).Where("id = ?", user.ID).Updates(fields).Error; err != nil {
+			return err
+		}
+		if err := tx.First(&user, "id = ?", user.ID).Error; err != nil {
+			return err
+		}
+		return syncAccountName(tx, &user)
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	if input.Name != nil {
-		name := strings.TrimSpace(*input.Name)
-		if name == "" {
-			return nil, errors.New("name cannot be empty")
-		}
-		user.Name = name
-	}
-	if input.Nickname != nil {
-		user.Nickname = strings.TrimSpace(*input.Nickname)
-	}
-	if input.PhoneNumber != nil {
-		user.PhoneNumber = strings.TrimSpace(*input.PhoneNumber)
-	}
-	if input.IsPlayer != nil {
-		user.IsPlayer = *input.IsPlayer
-	}
-
-	if input.Email != nil {
-		email := NormalizeEmail(*input.Email)
-		if email != user.Email {
-			if user.HasSignedIn() {
-				return nil, errors.New("email is managed by the member's sign-in provider and cannot be changed here")
-			}
-			if err := validateEmail(email); err != nil {
-				return nil, err
-			}
-			clash, err := s.FindByEmail(email)
-			if err != nil {
-				return nil, err
-			}
-			if clash != nil {
-				return nil, fmt.Errorf("%s is already %s", email, describeMembership(clash))
-			}
-			user.Email = email
-		}
-	}
-
-	if input.Role != nil && *input.Role != user.Role {
-		if err := s.guardLastAdmin(user, *input.Role); err != nil {
-			return nil, err
-		}
-		user.Role = *input.Role
-	}
-
-	user.UpdatedAt = time.Now()
-	if err := database.DB.Save(user).Error; err != nil {
-		return nil, err
-	}
-
-	// The ledger names accounts, and a nickname change that did not reach the
-	// balances list would leave two different names for the same person on
-	// screen at once.
-	if err := syncAccountName(user); err != nil {
-		return nil, err
-	}
-
-	return user, nil
+	return &user, nil
 }
 
 // RemoveMember takes a member out of the club.
@@ -659,9 +698,9 @@ func (s *UserService) cancelUpcomingRSVPs(userID uuid.UUID) error {
 
 // syncAccountName keeps the ledger's copy of a member's name in step with the
 // name they are displayed under everywhere else.
-func syncAccountName(user *models.User) error {
-	return database.DB.Model(&models.Account{}).
-		Where("user_id = ?", user.ID).
+func syncAccountName(tx *gorm.DB, user *models.User) error {
+	return tx.Model(&models.Account{}).
+		Where("user_id = ? AND kind = ?", user.ID, models.AccountKindPlayer).
 		Update("name", user.DisplayName()).Error
 }
 
