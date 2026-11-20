@@ -8,7 +8,7 @@ import { expenseFixture } from './fixtures';
 import { useAuth } from '../../context/useAuth';
 vi.mock('../../services/api', () => ({ api: { assistantStatus: vi.fn(), askAssistant: vi.fn(), confirmExpense: vi.fn(), listMembers: vi.fn(), createGame: vi.fn() } }));
 vi.mock('../../context/useAuth', () => ({ useAuth: vi.fn() }));
-vi.mock('./VoiceRecorder', () => ({ default: ({ onTranscript }: { onTranscript: (text: string) => void }) => <button onClick={() => onTranscript('Three hours and eight shuttles')}>Mock recording</button> }));
+vi.mock('./VoiceRecorder', () => ({ default: ({ onTranscript }: { onTranscript: (text: string) => void }) => <button type="button" onClick={() => onTranscript('Three hours and eight shuttles')}>Mock recording</button> }));
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.assistantStatus).mockResolvedValue({ enabled: true });
