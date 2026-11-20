@@ -70,3 +70,6 @@ infrastructure/terraform.tfvars
 
 # Keep implementation plans outside the repository.
 /specs/**/plan.md
+
+# Generated local-only voice study assets.
+/frontend/public/prototype-voice-assets/

@@ -74,3 +74,12 @@
     @apply mt-1 max-w-2xl text-sm leading-6 text-slate-600;
   }
 }
+
+/* Throwaway voice study controls; the prototype route is dev-only. */
+.voice-study-controls { color: #334155; font: 12px/1.4 system-ui, sans-serif; }
+.voice-study-variants, .voice-study-stage { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.voice-study-variants button, .voice-study-stage button { min-height:36px; min-width:36px; display:inline-flex; align-items:center; justify-content:center; gap:4px; }
+.voice-study-stage { border-top:1px solid #cbd5e1; padding-top:4px; margin-top:4px; }
+.voice-study-stage select { background:white; border:1px solid #94a3b8; border-radius:6px; padding:5px; margin-left:4px; }
+.voice-study-floating { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); width:320px; max-width:calc(100% - 24px); background:#f1f5f9; padding:8px 12px; border:1px solid #94a3b8; border-radius:12px; box-shadow:0 5px 25px #0f172a26; z-index:30; }
+@media(max-width:640px) { .voice-study-floating { bottom:84px; } }
