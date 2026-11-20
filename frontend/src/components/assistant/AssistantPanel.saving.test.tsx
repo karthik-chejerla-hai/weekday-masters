@@ -12,7 +12,7 @@ vi.mock('../../context/useAuth', () => ({ useAuth: () => ({ isAdmin: false }) })
 vi.mock('./VoiceRecorder', () => ({
   default: ({ onTranscript, disabled }: { onTranscript: (text: string) => void; disabled: boolean }) => {
     voice.onTranscript = onTranscript;
-    return <button disabled={disabled}>Mock recording</button>;
+    return <button type="button" disabled={disabled}>Mock recording</button>;
   },
 }));
 
