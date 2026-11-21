@@ -115,7 +115,7 @@ func newHarness(t *testing.T) *harness {
 		api.GET("/sessions/:id/settlement", settlementHandler.GetSessionSettlement)
 	}
 
-	admin := r.Group("/api/admin")
+	admin := r.Group("/api/admin", middleware.RequireApproved(), middleware.RequireAdmin())
 	{
 		admin.GET("/join-requests", adminHandler.ListJoinRequests)
 		admin.POST("/join-requests/:id/approve", adminHandler.ApproveJoinRequest)

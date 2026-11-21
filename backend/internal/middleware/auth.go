@@ -282,6 +282,15 @@ func RequireAdmin() gin.HandlerFunc {
 			return
 		}
 
+		// Role and membership status are independent columns, so an admin role
+		// alone is not enough: a pending or removed "admin" must not reach any
+		// admin route, whichever group it was registered on.
+		if !u.IsApproved() {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Membership not approved"})
+			c.Abort()
+			return
+		}
+
 		if !u.IsAdmin() {
 			c.JSON(http.StatusForbidden, gin.H{"error": "Admin access required"})
 			c.Abort()
