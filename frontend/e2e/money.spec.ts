@@ -75,7 +75,11 @@ test.describe('Admin top-ups', () => {
     await expect(page.getByRole('status')).toContainText('Top-up recorded.');
     await expect(page.getByRole('main')).toContainText('$62.34');
     await expect(page.getByRole('banner')).toContainText('$62.34');
-    expect(writes).toEqual(Array(2).fill({ user_id: member.id, amount_cents: 1234, description: 'Test bank transfer' }));
+    // The retry carries the request ID of the failed attempt, so a reply lost
+    // after the write cannot record the receipt twice.
+    expect(writes).toHaveLength(2);
+    expect(writes[1]).toEqual(writes[0]);
+    expect(writes[0]).toEqual({ request_id: expect.stringMatching(/^[0-9a-f-]{36}$/), user_id: member.id, amount_cents: 1234, description: 'Test bank transfer' });
     await page.reload();
     await expect(page.getByRole('main')).toContainText('$62.34');
   });
