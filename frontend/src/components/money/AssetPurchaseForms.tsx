@@ -4,6 +4,7 @@ import { parseDollarsToCents } from './format';
 import PositionPanel from './PositionPanel';
 import BalanceCorrectionForm from './BalanceCorrectionForm';
 import FormActionRow from './FormActionRow';
+import { useSubmissionId } from '../../hooks/useSubmissionId';
 import type { ClubPosition } from '../../types';
 
 const actions = ['Record court credit purchase', 'Record shuttle purchase', 'Audit bank balance'];
@@ -60,6 +61,9 @@ function CourtCreditForm({ onRecorded, onSavingChange, onCancel }: { onRecorded:
   const [amount, setAmount] = useState('100.00');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Held for this form's lifetime. The form unmounts when a purchase is recorded
+  // or cancelled, so the next purchase starts with a new ID.
+  const submission = useSubmissionId();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,7 +74,8 @@ function CourtCreditForm({ onRecorded, onSavingChange, onCancel }: { onRecorded:
     onSavingChange(true);
     setError(null);
     try {
-      await api.recordCourtCredit(cents, 'Venue account top-up');
+      await api.recordCourtCredit(cents, 'Venue account top-up', undefined, submission.idFor([cents]));
+      submission.reset();
       onRecorded();
     } catch {
       setError('Could not record that top-up.');
@@ -110,6 +115,7 @@ function ShuttlePurchaseForm({ onRecorded, onSavingChange, onCancel }: { onRecor
   const [amount, setAmount] = useState('50.00');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const submission = useSubmissionId();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -121,7 +127,8 @@ function ShuttlePurchaseForm({ onRecorded, onSavingChange, onCancel }: { onRecor
     onSavingChange(true);
     setError(null);
     try {
-      await api.recordShuttlePurchase(count, cents, 'Shuttle purchase');
+      await api.recordShuttlePurchase(count, cents, 'Shuttle purchase', undefined, submission.idFor([count, cents]));
+      submission.reset();
       onRecorded();
     } catch {
       setError('Could not record that purchase.');

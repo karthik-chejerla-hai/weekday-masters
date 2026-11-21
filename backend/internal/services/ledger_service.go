@@ -341,7 +341,11 @@ func (s *LedgerService) BalanceOfKind(tx *gorm.DB, kind models.AccountKind) (int
 // --- recording money ------------------------------------------------------
 
 // CashInput describes money moving between the club's bank and a member.
+//
+// RequestID is the submission key (see postCreate). Every HTTP create supplies
+// one; only in-process callers that cannot be retried by a client leave it nil.
 type CashInput struct {
+	RequestID   uuid.UUID
 	UserID      uuid.UUID
 	AmountCents int64
 	OccurredAt  time.Time
@@ -354,16 +358,16 @@ type CashInput struct {
 // The cash arrives in the bank and the member gains credit of the same amount:
 // the club now holds their money and owes them the value of it.
 func (s *LedgerService) RecordTopup(in CashInput) (*models.Transaction, error) {
-	return s.recordCash(in, models.TxnPlayerTopup, 1)
+	return s.recordCash(in, models.TxnPlayerTopup, models.MoneyOperationRecordTopup, 1)
 }
 
 // RecordWithdrawal records the club paying a member back — settling up with
 // someone who is leaving, or refunding an overpayment.
 func (s *LedgerService) RecordWithdrawal(in CashInput) (*models.Transaction, error) {
-	return s.recordCash(in, models.TxnWithdrawal, -1)
+	return s.recordCash(in, models.TxnWithdrawal, models.MoneyOperationRecordWithdrawal, -1)
 }
 
-func (s *LedgerService) recordCash(in CashInput, kind models.TransactionKind, sign int64) (*models.Transaction, error) {
+func (s *LedgerService) recordCash(in CashInput, kind models.TransactionKind, action models.MoneyOperationAction, sign int64) (*models.Transaction, error) {
 	if in.AmountCents <= 0 {
 		return nil, errors.New("ledger: amount must be greater than zero")
 	}
@@ -378,7 +382,17 @@ func (s *LedgerService) recordCash(in CashInput, kind models.TransactionKind, si
 	}
 
 	amount := sign * in.AmountCents
-	return s.Post(PostInput{
+	return s.postCreate(keyedCreate{
+		RequestID: in.RequestID,
+		Action:    action,
+		Contents: map[string]any{
+			"user_id":      in.UserID,
+			"amount_cents": in.AmountCents,
+			"occurred_at":  submittedInstant(in.OccurredAt),
+			"description":  in.Description,
+		},
+		MemberIDs: []uuid.UUID{in.UserID},
+	}, PostInput{
 		Kind:        kind,
 		Description: in.Description,
 		OccurredAt:  in.OccurredAt,
@@ -391,8 +405,10 @@ func (s *LedgerService) recordCash(in CashInput, kind models.TransactionKind, si
 }
 
 // AssetPurchaseInput describes the club converting cash into something it will
-// consume later — credit at the venue, or shuttles.
+// consume later — credit at the venue, or shuttles. RequestID is the submission
+// key, as on CashInput.
 type AssetPurchaseInput struct {
+	RequestID   uuid.UUID
 	AmountCents int64
 	Units       int // shuttles only
 	OccurredAt  time.Time
@@ -419,7 +435,17 @@ func (s *LedgerService) RecordCourtCreditPurchase(in AssetPurchaseInput) (*model
 		return nil, err
 	}
 
-	return s.Post(PostInput{
+	return s.postCreate(keyedCreate{
+		RequestID: in.RequestID,
+		Action:    models.MoneyOperationRecordCourtCreditPurchase,
+		// Units are ignored for court credit, so they are not part of what the key
+		// is bound to either.
+		Contents: map[string]any{
+			"amount_cents": in.AmountCents,
+			"occurred_at":  submittedInstant(in.OccurredAt),
+			"description":  in.Description,
+		},
+	}, PostInput{
 		Kind:        models.TxnCourtCreditPurchase,
 		Description: in.Description,
 		OccurredAt:  in.OccurredAt,
@@ -453,7 +479,16 @@ func (s *LedgerService) RecordShuttlePurchase(in AssetPurchaseInput) (*models.Tr
 	}
 
 	units := in.Units
-	return s.Post(PostInput{
+	return s.postCreate(keyedCreate{
+		RequestID: in.RequestID,
+		Action:    models.MoneyOperationRecordShuttlePurchase,
+		Contents: map[string]any{
+			"amount_cents": in.AmountCents,
+			"units":        in.Units,
+			"occurred_at":  submittedInstant(in.OccurredAt),
+			"description":  in.Description,
+		},
+	}, PostInput{
 		Kind:        models.TxnShuttlePurchase,
 		Description: in.Description,
 		OccurredAt:  in.OccurredAt,
@@ -615,6 +650,12 @@ func (s *LedgerService) ReverseTransaction(transactionID uuid.UUID, description 
 // -> original transaction -> affected accounts in ID order. Settle shares the
 // session-first order; asset purchase correction also locks its original before accounts.
 func (s *LedgerService) reverseTransactionWithin(tx *gorm.DB, transactionID uuid.UUID, description string, createdBy uuid.UUID) (*models.Transaction, error) {
+	// The row lock is what makes the already-reversed check below sound. Two
+	// concurrent reversals of one transaction queue here; the second resumes only
+	// after the first commits, so its count sees that reversal and it is refused
+	// the same way a sequential retry is. Without the lock both would pass the
+	// count and the loser would fail on the unique index instead, as a raw
+	// database error. TestConcurrentTransactionReversalsPostExactlyOne holds this.
 	var original models.Transaction
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Preload("Entries").First(&original, "id = ?", transactionID).Error; err != nil {
 		return nil, err

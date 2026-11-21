@@ -408,8 +408,14 @@ class ApiService {
     return { items: response.data.items ?? [], total: response.data.total ?? 0 };
   }
 
-  async recordTopup(userId: string, amountCents: number, description?: string, occurredAt?: string): Promise<Transaction> {
+  // The four money creates below require a `request_id`. A form passes the ID it
+  // holds for the current submission (see hooks/useSubmissionId) so that a retry
+  // after a lost reply returns the original transaction. A caller that passes
+  // none gets a fresh ID per call, which the server accepts but which gives that
+  // caller no protection against its own retries.
+  async recordTopup(userId: string, amountCents: number, description?: string, occurredAt?: string, requestId?: string): Promise<Transaction> {
     const response = await this.client.post<Transaction>('/admin/transactions/topup', {
+      request_id: requestId ?? crypto.randomUUID(),
       user_id: userId,
       amount_cents: amountCents,
       description,
@@ -418,8 +424,9 @@ class ApiService {
     return response.data;
   }
 
-  async recordWithdrawal(userId: string, amountCents: number, description?: string, occurredAt?: string): Promise<Transaction> {
+  async recordWithdrawal(userId: string, amountCents: number, description?: string, occurredAt?: string, requestId?: string): Promise<Transaction> {
     const response = await this.client.post<Transaction>('/admin/transactions/withdrawal', {
+      request_id: requestId ?? crypto.randomUUID(),
       user_id: userId,
       amount_cents: amountCents,
       description,
@@ -428,8 +435,9 @@ class ApiService {
     return response.data;
   }
 
-  async recordCourtCredit(amountCents: number, description?: string, occurredAt?: string): Promise<Transaction> {
+  async recordCourtCredit(amountCents: number, description?: string, occurredAt?: string, requestId?: string): Promise<Transaction> {
     const response = await this.client.post<Transaction>('/admin/transactions/court-credit', {
+      request_id: requestId ?? crypto.randomUUID(),
       amount_cents: amountCents,
       description,
       occurred_at: occurredAt,
@@ -460,8 +468,9 @@ class ApiService {
     return response.data;
   }
 
-  async recordShuttlePurchase(units: number, amountCents: number, description?: string, occurredAt?: string): Promise<Transaction> {
+  async recordShuttlePurchase(units: number, amountCents: number, description?: string, occurredAt?: string, requestId?: string): Promise<Transaction> {
     const response = await this.client.post<Transaction>('/admin/transactions/shuttle-purchase', {
+      request_id: requestId ?? crypto.randomUUID(),
       units,
       amount_cents: amountCents,
       description,

@@ -15,8 +15,12 @@ func applyMemberMoneyConstraints(db *gorm.DB) error {
 		{"money_operations", "fk_money_operations_target_transaction", `FOREIGN KEY (target_transaction_id) REFERENCES transactions(id) ON DELETE NO ACTION DEFERRABLE INITIALLY DEFERRED`},
 		{"transactions", "fk_transactions_money_operation", `FOREIGN KEY (money_operation_id) REFERENCES money_operations(id) ON DELETE RESTRICT`},
 		{"money_operations", "money_operations_valid_id", `CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid)`},
-		{"money_operations", "money_operations_action_target", `CHECK (
-			(action = 'create_shared_expense' AND target_transaction_id IS NULL)
+		// _v2 admits the keyed create actions. A CHECK cannot be altered in place and
+		// the loop below only adds what is missing, so the widened rule has a new name
+		// and the original is dropped once it exists.
+		{"money_operations", "money_operations_action_target_v2", `CHECK (
+			(action IN ('create_shared_expense', 'record_topup', 'record_withdrawal',
+				'record_court_credit_purchase', 'record_shuttle_purchase') AND target_transaction_id IS NULL)
 			OR (action IN ('correct_topup', 'reverse_transaction', 'correct_shared_expense', 'correct_settlement') AND target_transaction_id IS NOT NULL))`},
 		{"money_operations", "money_operations_payload", `CHECK (payload_hash ~ '^[0-9a-f]{64}$' AND jsonb_typeof(canonical_payload) = 'object')`},
 		{"money_operations", "money_operations_response", `CHECK (
@@ -39,6 +43,7 @@ func applyMemberMoneyConstraints(db *gorm.DB) error {
 		}
 	}
 	statements := []string{
+		`ALTER TABLE money_operations DROP CONSTRAINT IF EXISTS money_operations_action_target`,
 		`ALTER SEQUENCE money_operations_sequence OWNED BY money_operations.sequence`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_money_operations_sequence ON money_operations (sequence)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_money_operation_step ON transactions (money_operation_id, operation_step)`,

@@ -255,3 +255,56 @@ func TestSessionReversalAndResettlementAreSerialized(t *testing.T) {
 	}
 	assertBalanced(t)
 }
+
+// Two admins (or one double-click) reversing the same transaction at once: the
+// original row lock makes the second wait, and its already-reversed check then
+// sees the first reversal. Exactly one inverse is posted; every other request
+// gets the same refusal a sequential retry would.
+func TestConcurrentTransactionReversalsPostExactlyOne(t *testing.T) {
+	ls, user, _ := newLedger(t)
+	original, err := ls.RecordTopup(CashInput{UserID: user.ID, AmountCents: 5000, CreatedBy: user.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const attempts = 8
+	start := make(chan struct{})
+	errs := make([]error, attempts)
+	var wg sync.WaitGroup
+	for i := 0; i < attempts; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			_, errs[i] = ls.ReverseTransaction(original.ID, "wrong member", user.ID)
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	succeeded := 0
+	for _, err := range errs {
+		if err == nil {
+			succeeded++
+			continue
+		}
+		if e, ok := AsLedgerError(err); !ok || e.Code != CodeTransactionAlreadyReverse || e.Status != 409 {
+			t.Errorf("a losing reversal got %v, want transaction_already_reversed", err)
+		}
+	}
+	if succeeded != 1 {
+		t.Errorf("%d reversals succeeded, want exactly 1", succeeded)
+	}
+	var reversals int64
+	if err := database.DB.Model(&models.Transaction{}).
+		Where("reverses_transaction_id = ?", original.ID).Count(&reversals).Error; err != nil {
+		t.Fatal(err)
+	}
+	if reversals != 1 {
+		t.Errorf("%d reversal transactions, want 1", reversals)
+	}
+	if balance, err := ls.BalanceOfUser(user.ID); err != nil || balance != 0 {
+		t.Errorf("balance after reversal = %d / %v, want 0", balance, err)
+	}
+	assertBalanced(t)
+}

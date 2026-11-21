@@ -207,9 +207,13 @@ test.describe('Admin asset actions', () => {
       await expect(opener).toBeFocused();
       await expect(page.getByRole('status')).toContainText('recorded.');
       await expect.poll(() => reads).toBeGreaterThan(before);
-      expect(writes).toEqual(Array(2).fill(kind === 'court-credit'
-        ? { amount_cents: 2550, description: 'Venue account top-up' }
-        : { amount_cents: 2550, units: 12, description: 'Shuttle purchase' }));
+      // The retry carries the request ID of the failed attempt.
+      expect(writes).toHaveLength(2);
+      expect(writes[1]).toEqual(writes[0]);
+      const request_id = expect.stringMatching(/^[0-9a-f-]{36}$/);
+      expect(writes[0]).toEqual(kind === 'court-credit'
+        ? { request_id, amount_cents: 2550, description: 'Venue account top-up' }
+        : { request_id, amount_cents: 2550, units: 12, description: 'Shuttle purchase' });
     });
   }
 });

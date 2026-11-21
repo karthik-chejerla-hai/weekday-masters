@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api } from '../../services/api';
 import { parseDollarsToCents } from './format';
+import { useSubmissionId } from '../../hooks/useSubmissionId';
 import type { PlayerBalance } from '../../types';
 
 interface TopupFormProps {
@@ -22,6 +23,7 @@ export default function TopupForm({ members, onRecorded, onSavingChange }: Topup
   const [description, setDescription] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const submission = useSubmissionId();
 
   const amountCents = parseDollarsToCents(amount);
   const canSubmit = userId !== '' && Number.isFinite(amountCents) && amountCents > 0 && !isSaving;
@@ -34,7 +36,11 @@ export default function TopupForm({ members, onRecorded, onSavingChange }: Topup
     onSavingChange?.(true);
     setError(null);
     try {
-      await api.recordTopup(userId, amountCents, description || 'Bank transfer');
+      const note = description || 'Bank transfer';
+      // The same ID goes out again if this fails and the admin presses the button
+      // a second time, so a reply lost after the write cannot double the receipt.
+      await api.recordTopup(userId, amountCents, note, undefined, submission.idFor([userId, amountCents, note]));
+      submission.reset();
       setUserId('');
       setAmount('');
       setDescription('');
