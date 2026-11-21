@@ -1,7 +1,7 @@
 name: Infra Retention
 
 # Preview cleanup takes a merged PR's preview out of service: the Neon branch is
-# deleted, the Cloud Run tag removed, the Hosting channel deleted. Two things it
+# deleted, the PR's Cloud Run service deleted, the Hosting channel deleted. Two things it
 # does not touch accumulate quietly behind it, and this is where they are dealt
 # with.
 #
@@ -11,10 +11,10 @@ name: Infra Retention
 #   Production images use plain commit-SHA tags; a separate sweep retains only
 #   the five newest production builds without counting preview-only images.
 #
-#   Cloud Run revisions. `--remove-tags` takes the pr-N URL out of service but
-#   leaves the revision behind, untagged and serving nothing. They are free, but
-#   a service is capped at 1000 of them and previews were the only thing
-#   creating them at any rate.
+#   Cloud Run revisions of the production service. Every release leaves the
+#   revision it replaced behind, and previews used to be tagged revisions of
+#   that service too (each PR now has a service of its own, deleted whole on
+#   close). They are free, but a service is capped at 1000 of them.
 #
 # The registry half is a server-side cleanup policy, so it keeps working whether
 # or not this workflow ever runs again; the sweep steps only exist to clear what

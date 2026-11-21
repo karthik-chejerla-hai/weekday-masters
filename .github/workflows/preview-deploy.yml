@@ -12,7 +12,14 @@ env:
   GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   GCP_REGION: australia-southeast1
   ARTIFACT_REGISTRY_REPO: rally-club-api-registry
+  # The production service. Previews use it only as the image name in Artifact
+  # Registry; they never deploy to it.
   BACKEND_SERVICE_NAME: rally-club-api
+  # Each PR gets a Cloud Run service of its own. Previews used to be tagged,
+  # no-traffic revisions of the production service, which made every preview a
+  # candidate for production traffic: one could become the service's latest
+  # ready revision in the middle of a release. A separate service cannot.
+  PREVIEW_SERVICE_NAME: rally-club-api-pr-${{ github.event.pull_request.number }}
   FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
 
 jobs:
@@ -106,26 +113,36 @@ jobs:
           docker push $IMAGE
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
 
-      - name: Deploy to Cloud Run (no traffic, tagged revision)
+      - name: Deploy to the PR's own Cloud Run service
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          PR_NUMBER=${{ github.event.pull_request.number }}
-          # Previews and the production deploy all write to the same service, so
-          # overlapping runs lose an optimistic-concurrency race. See the script.
+          # The name is the only thing keeping this deploy off production, so it
+          # is checked rather than assumed.
+          if [[ ! "$PREVIEW_SERVICE_NAME" =~ ^rally-club-api-pr-[0-9]+$ || "$PREVIEW_SERVICE_NAME" == "$BACKEND_SERVICE_NAME" ]]; then
+            echo "::error::Refusing to deploy a preview to '${PREVIEW_SERVICE_NAME}'"
+            exit 1
+          fi
+
+          # The service is created on the PR's first push and updated on later
+          # ones. It serves its own latest revision, which is safe here: only
+          # this PR's runs ever write to it. No inherited production settings
+          # exist to scrub, so the --remove-* flags the shared service needed
+          # are gone. The retry stays for a cancelled run that is still
+          # mid-write when its replacement arrives.
           .github/scripts/gcloud-retry-on-conflict.sh \
-            gcloud run deploy ${{ env.BACKEND_SERVICE_NAME }} \
+            gcloud run deploy "$PREVIEW_SERVICE_NAME" \
             --project ${{ env.GCP_PROJECT_ID }} \
             --image ${{ env.IMAGE }} \
             --region ${{ env.GCP_REGION }} \
             --platform managed \
-            --no-traffic \
-            --tag pr-${PR_NUMBER} \
+            --cpu-throttling \
+            --min-instances 0 \
             --allow-unauthenticated \
+            --update-labels="rally-preview=true,pr-number=${PR_NUMBER}" \
             --update-env-vars="GIN_MODE=release" \
             --update-env-vars="OTEL_ENABLED=false" \
-            --remove-env-vars="SESSION_REMINDER_HOURS_24,SESSION_REMINDER_HOURS_12,DEADLINE_REMINDER_HOURS,OTEL_SERVICE_NAME,OTEL_RESOURCE_ATTRIBUTES,OTEL_EXPORTER_OTLP_ENDPOINT,OTEL_EXPORTER_OTLP_TIMEOUT,OTEL_METRIC_EXPORT_INTERVAL" \
-            --remove-secrets="OTEL_EXPORTER_OTLP_HEADERS" \
             --update-env-vars="NOTIFICATIONS_DISABLED=true" \
             --update-env-vars="NOTIFICATION_WORKER_ENABLED=${{ vars.NOTIFICATION_WORKER_ENABLED || 'false' }}" \
             --update-env-vars="NOTIFICATIONS_DISABLED_ALLOW_EMAIL=${{ secrets.ADMIN_EMAIL }}" \
@@ -161,15 +178,13 @@ jobs:
 
       - name: Verify preview backend URL resolves
         run: |
-          PR_NUMBER=${{ github.event.pull_request.number }}
-          URL=$(gcloud run services describe ${{ env.BACKEND_SERVICE_NAME }} \
+          URL=$(gcloud run services describe "$PREVIEW_SERVICE_NAME" \
             --project ${{ env.GCP_PROJECT_ID }} \
             --region ${{ env.GCP_REGION }} \
-            --format=json | jq -r --arg tag "pr-${PR_NUMBER}" \
-              '.status.traffic[] | select(.tag == $tag) | .url')
+            --format='value(status.url)')
 
-          if [ -z "$URL" ]; then
-            echo "::error::Could not resolve the tagged preview URL for pr-${PR_NUMBER}"
+          if [[ "$URL" != https://* ]]; then
+            echo "::error::Could not resolve the preview URL for ${PREVIEW_SERVICE_NAME}"
             exit 1
           fi
 
@@ -232,20 +247,18 @@ jobs:
           VITE_FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
           VITE_FIREBASE_VAPID_KEY: ${{ secrets.FIREBASE_VAPID_KEY }}
         run: |
-          # Resolve the tagged revision URL here rather than reading it from a job
+          # Resolve the PR service's URL here rather than reading it from a job
           # output — see the same fix in deploy.yml (785f14c).
-          PR_NUMBER=${{ github.event.pull_request.number }}
-          BACKEND_URL=$(gcloud run services describe ${{ env.BACKEND_SERVICE_NAME }} \
+          BACKEND_URL=$(gcloud run services describe "$PREVIEW_SERVICE_NAME" \
             --project ${{ env.GCP_PROJECT_ID }} \
             --region ${{ env.GCP_REGION }} \
-            --format=json | jq -r --arg tag "pr-${PR_NUMBER}" \
-              '.status.traffic[] | select(.tag == $tag) | .url')
+            --format='value(status.url)')
 
           # Fail loudly: an empty value silently falls back to a relative "/api",
           # which Firebase's SPA rewrite answers with index.html, so every API call
           # returns HTML and login breaks with no obvious cause.
-          if [ -z "$BACKEND_URL" ]; then
-            echo "::error::Preview backend URL is empty for pr-${PR_NUMBER}; refusing to build a frontend that cannot reach its API"
+          if [[ "$BACKEND_URL" != https://* ]]; then
+            echo "::error::Preview backend URL is empty for ${PREVIEW_SERVICE_NAME}; refusing to build a frontend that cannot reach its API"
             exit 1
           fi
 

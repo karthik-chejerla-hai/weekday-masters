@@ -25,6 +25,39 @@ runs the migration binary from that image before deploying the same digest to
 Cloud Run. The backend deployment job does not compile source or push images.
 The frontend build and Firebase deployment still run after backend deployment.
 
+### How a release reaches production traffic
+
+A release never asks Cloud Run for its "latest" revision. `--to-latest` routes to
+whichever revision is the latest ready one when the command lands, and any other
+write to the service can change that between two steps of a release. `deploy.yml`
+therefore names the revision itself and routes to that name only:
+
+1. **Name.** The revision is `rally-club-api-r<sha7>-<run id>-<run attempt>`. The
+   name belongs to one job attempt, so no other writer can produce it.
+2. **Deploy with `--no-traffic`.** The revision is created with
+   `--revision-suffix`. Production keeps serving the previous revision.
+3. **Verify.** The workflow describes that revision by name. It must belong to
+   `rally-club-api`, be ready, and run the image digest that the build job
+   published. If a check fails, the job stops and no traffic moves.
+4. **Route.** `gcloud run services update-traffic --to-revisions <revision>=100`.
+   A retry after a concurrent-update conflict repeats the same command with the
+   same revision name.
+5. **Confirm.** The workflow reads the service back. The only traffic target with
+   a share must be that revision, pinned by name, at 100%.
+
+Do not use `--to-latest` on the production service, in a workflow or by hand. To
+roll back, route to a named earlier revision:
+
+```bash
+gcloud run revisions list --service rally-club-api --region australia-southeast1
+gcloud run services update-traffic rally-club-api \
+  --region australia-southeast1 --to-revisions <revision>=100
+```
+
+If a deployment fails after step 2, the unrouted revision stays on the service
+and serves nothing. Use **Re-run failed jobs**; the new attempt gets a new
+revision name.
+
 For a manual production run, dispatch **CI & Test Coverage** on `main`. It runs
 the checks before building and deploying. Dispatches on other branches run only
 the checks. `deploy.yml` has no independent push or manual trigger.
@@ -49,17 +82,28 @@ so it is effectively instant and carries production-shaped data, and migrations
 run against it before the preview backend is deployed — a PR that adds tables
 gets them.
 
+Each pull request also gets its own Cloud Run service, `rally-club-api-pr-<n>`,
+created on the first push and updated on later ones. Previews were previously
+tagged, no-traffic revisions of the production service. A preview could then
+become the latest ready revision of `rally-club-api` in the middle of a release
+and receive production traffic while connected to a copied database. A preview
+is now never a revision of the production service. The preview service is a new
+service, so it does not inherit settings from production: everything it needs is
+set by the deploy step in `preview-deploy.yml`.
+
 Previews previously pointed straight at the production `DATABASE_URL` with no
 migration step, which meant a schema-changing PR deployed a backend querying
 columns that did not exist, and every preview wrote to real data.
 
 ### What closing a PR tears down
 
-`preview-cleanup.yml` deletes the Neon branch, removes the Cloud Run revision
-tag, and deletes the Firebase Hosting preview channel. Its last step then
-re-checks the tag and the channel and fails if either survives: every step
+`preview-cleanup.yml` deletes the Neon branch, deletes the PR's Cloud Run
+service, and deletes the Firebase Hosting preview channel. Its last step then
+re-checks the service and the channel and fails if either survives: every step
 before it tolerates "already gone", so without that check the job would report
-success whether or not anything was actually removed. That is how the missing
+success whether or not anything was actually removed. For a PR whose preview was
+deployed before previews had their own services, it also removes the old `pr-N`
+tag from the production service. That is how the missing
 Hosting step went unnoticed — merged PRs kept serving a public preview until the
 7-day `expires` on the deploy caught up with them.
 
@@ -76,20 +120,27 @@ PR-close time:
   not count toward that five. Cloud Run imports an image when it creates an
   immutable revision, so deleting the registry copy does not interrupt a deployed
   revision; an older commit can be rebuilt if it ever needs to be redeployed.
-- **Cloud Run revisions.** `--remove-tags` takes the `pr-N` URL out of service
-  but leaves the revision behind, untagged and serving no traffic. The same
+- **Cloud Run revisions of the production service.** Every release leaves the
+  revision it replaced behind, serving no traffic, and previews deployed before
+  each PR had its own service left untagged revisions there too. The same
   workflow prunes them, keeping the 20 newest and only ever considering a
   revision that serves no traffic **and** carries no tag — the live revision, the
-  rollback target and any open PR's preview each fail at least one of those.
+  rollback target and any remaining tagged preview each fail at least one of
+  those. Revisions of a per-PR service are deleted with the service.
 
 `infra-retention.yml` runs weekly and can be dispatched manually; a manual run
 defaults to a dry run, a scheduled one acts. It ends by checking the production
 backend still answers on `/health`, which is the thing that would matter if one
 of those guards were ever wrong.
 
-Run the workflow manually (`workflow_dispatch`) to sweep up preview channels for
-PRs that are already closed. It defaults to a dry run; set `dry_run` to false to
-actually delete.
+Run `preview-cleanup.yml` manually (`workflow_dispatch`) to sweep up preview
+channels and per-PR Cloud Run services for PRs that are already closed. It
+defaults to a dry run; set `dry_run` to false to actually delete. A service is
+deleted only when GitHub reports its PR as closed or merged.
+
+Closing a PR also cancels a preview deploy that is still running for it: both
+workflows share one concurrency group per PR, so a late deploy cannot recreate
+what the teardown removed.
 
 Required repository configuration:
 
