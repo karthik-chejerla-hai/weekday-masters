@@ -76,6 +76,7 @@ jobs:
           fi
           IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REGISTRY_REPO}/${BACKEND_SERVICE_NAME}@${IMAGE_DIGEST}"
           echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+          echo "IMAGE_DIGEST=$IMAGE_DIGEST" >> "$GITHUB_ENV"
 
       # Run the migration binary from the exact image deployed below.
       - name: Run database migrations
@@ -97,18 +98,43 @@ jobs:
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
         run: bash .github/scripts/notification-worker.sh deploy
 
-      - name: Deploy to Cloud Run
+      # The release names its own revision instead of asking Cloud Run which one
+      # is "latest" afterwards. "Latest" is a property of the service, not of
+      # this run: any other writer (an overlapping release, a manual deploy, and
+      # formerly every PR preview) can move it between two of our steps. A name
+      # built from the commit, the run and the attempt belongs to this job alone,
+      # so every later step, and every retry of one, refers to the same revision.
+      - name: Name the production revision
+        run: |
+          REVISION_SUFFIX="r${GITHUB_SHA::7}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          REVISION="${BACKEND_SERVICE_NAME}-${REVISION_SUFFIX}"
+          if [[ ! "$REVISION" =~ ^[a-z][a-z0-9-]{0,61}[a-z0-9]$ ]]; then
+            echo "::error::Derived revision name '${REVISION}' is not a valid Cloud Run revision name"
+            exit 1
+          fi
+          echo "REVISION_SUFFIX=$REVISION_SUFFIX" >> "$GITHUB_ENV"
+          echo "REVISION=$REVISION" >> "$GITHUB_ENV"
+          echo "Production revision for this release: $REVISION"
+
+      # --no-traffic: creating the revision and serving from it are separate
+      # steps, with a verification between them. Production keeps serving the
+      # previous revision until "Route traffic" below names this one.
+      - name: Deploy to Cloud Run (no traffic)
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
-          # A preview deploy on an open PR writes to this same service, so this
-          # can lose an optimistic-concurrency race. See the script.
+          # Overlapping writes to the service (another release, a legacy tag
+          # cleanup) lose an optimistic-concurrency race. See the script. A
+          # rejected write creates no revision, so a retry reuses the same
+          # --revision-suffix and still produces exactly $REVISION.
           .github/scripts/gcloud-retry-on-conflict.sh \
             gcloud run deploy ${{ env.BACKEND_SERVICE_NAME }} \
             --project ${{ env.GCP_PROJECT_ID }} \
             --image "$IMAGE" \
             --region ${{ env.GCP_REGION }} \
             --platform managed \
+            --no-traffic \
+            --revision-suffix "$REVISION_SUFFIX" \
             --cpu-throttling \
             --min 0 \
             --min-instances 0 \
@@ -132,13 +158,77 @@ jobs:
             --update-env-vars="SENDGRID_FROM_EMAIL=${{ secrets.SENDGRID_FROM_EMAIL }}" \
             --update-env-vars="SENDGRID_FROM_NAME=Rally"
 
-      - name: Route traffic to latest revision
+      # Nothing is routed on trust. Before any traffic moves, the named revision
+      # must exist, belong to the production service, be ready, and run the
+      # exact image digest the build job published. A failure here leaves
+      # production on the previous revision.
+      - name: Verify the revision runs the published image
+        run: |
+          revision_json=$(gcloud run revisions describe "$REVISION" \
+            --project "$GCP_PROJECT_ID" \
+            --region "$GCP_REGION" \
+            --format=json)
+
+          owner=$(jq -r '.metadata.labels["serving.knative.dev/service"] // ""' <<<"$revision_json")
+          spec_image=$(jq -r '.spec.containers[0].image // ""' <<<"$revision_json")
+          resolved_image=$(jq -r '.status.imageDigest // ""' <<<"$revision_json")
+          ready=$(jq -r '[.status.conditions[]? | select(.type == "Ready") | .status][0] // ""' <<<"$revision_json")
+
+          failed=0
+          if [[ "$owner" != "$BACKEND_SERVICE_NAME" ]]; then
+            echo "::error::Revision ${REVISION} belongs to service '${owner}', not ${BACKEND_SERVICE_NAME}"
+            failed=1
+          fi
+          if [[ "$spec_image" != "$IMAGE" ]]; then
+            echo "::error::Revision ${REVISION} was not created from the image this workflow deployed"
+            failed=1
+          fi
+          # status.imageDigest is what Cloud Run actually resolved and runs.
+          if [[ "$resolved_image" != *@* || "${resolved_image##*@}" != "$IMAGE_DIGEST" ]]; then
+            echo "::error::Revision ${REVISION} runs digest '${resolved_image##*@}', expected ${IMAGE_DIGEST}"
+            failed=1
+          fi
+          if [[ "$ready" != "True" ]]; then
+            echo "::error::Revision ${REVISION} is not ready (Ready=${ready:-unknown})"
+            failed=1
+          fi
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::Refusing to route production traffic; the previous revision keeps serving."
+            exit 1
+          fi
+          echo "Verified ${REVISION} runs ${IMAGE_DIGEST}"
+
+      # Never --to-latest: that routes to whichever revision is latest when the
+      # command lands, not to the one this run deployed and verified. The
+      # revision is named, so each retry after a conflict routes to the same one.
+      - name: Route traffic to the verified revision
         run: |
           .github/scripts/gcloud-retry-on-conflict.sh \
-            gcloud run services update-traffic ${{ env.BACKEND_SERVICE_NAME }} \
-            --project ${{ env.GCP_PROJECT_ID }} \
-            --region ${{ env.GCP_REGION }} \
-            --to-latest
+            gcloud run services update-traffic "$BACKEND_SERVICE_NAME" \
+            --project "$GCP_PROJECT_ID" \
+            --region "$GCP_REGION" \
+            --to-revisions "${REVISION}=100"
+
+      - name: Confirm production serves only the verified revision
+        run: |
+          # Every traffic target with a share must be this revision, pinned by
+          # name. A "latest revision" target would reopen the race on the next
+          # write to the service, so it fails the release even at 100%.
+          if ! gcloud run services describe "$BACKEND_SERVICE_NAME" \
+                 --project "$GCP_PROJECT_ID" \
+                 --region "$GCP_REGION" \
+                 --format=json \
+               | jq -e --arg revision "$REVISION" '
+                   [.spec.traffic[]? | select((.percent // 0) > 0)]
+                   | length == 1
+                     and .[0].percent == 100
+                     and .[0].revisionName == $revision
+                     and (.[0].latestRevision // false) == false
+                 ' > /dev/null; then
+            echo "::error::Production traffic is not pinned 100% to ${REVISION}"
+            exit 1
+          fi
+          echo "Production traffic is pinned 100% to ${REVISION}"
 
       - name: Get Backend URL
         id: backend-url

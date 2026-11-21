@@ -1,11 +1,15 @@
 name: Preview Cleanup
 
 # A merged PR used to leave its Hosting preview channel serving. The backend
-# half was torn down correctly — Neon branch deleted, Cloud Run tag removed —
-# but nothing deleted the channel, so the preview site stayed public until the
-# 7-day `expires` on the deploy caught up with it. Both halves are handled here
-# now, and the job verifies its own work rather than reporting success either
-# way (see "Verify" below).
+# half was torn down correctly, but nothing deleted the channel, so the preview
+# site stayed public until the 7-day `expires` on the deploy caught up with it.
+# Both halves are handled here now, and the job verifies its own work rather
+# than reporting success either way (see "Verify" below).
+#
+# The backend half is the Neon branch and the PR's own Cloud Run service
+# (rally-club-api-pr-<n>). Previews opened before each PR had its own service
+# were tagged revisions of the production service; that tag is still removed
+# here when one is found.
 
 on:
   pull_request:
@@ -19,10 +23,21 @@ on:
         type: boolean
         default: true
 
+# Shares the group preview-deploy.yml uses for the same PR, so closing a PR
+# cancels a preview deploy that is still running instead of racing it: a deploy
+# that finished after this teardown would recreate the service and the Neon
+# branch with nothing left to remove them. Manual sweeps get a group of their
+# own and never cancel each other.
+concurrency:
+  group: preview-${{ github.event.pull_request.number || format('sweep-{0}', github.run_id) }}
+  cancel-in-progress: true
+
 env:
   GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   GCP_REGION: australia-southeast1
   BACKEND_SERVICE_NAME: rally-club-api
+  # Meaningful on pull_request only; the sweep jobs do not use it.
+  PREVIEW_SERVICE_NAME: rally-club-api-pr-${{ github.event.pull_request.number }}
 
 jobs:
   # ============================================
@@ -61,15 +76,62 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v3
 
-      # Removing the tag is what takes the pr-N URL out of service. It does not
-      # delete the revision, which stays as an untagged, no-traffic revision.
-      - name: Remove Cloud Run revision tag
+      # Deleting the service takes the preview URL out of service and removes
+      # every revision with it. Only NOT_FOUND counts as "already gone"; a
+      # permission or network failure must not read as success.
+      - name: Delete the PR's Cloud Run service
+        id: service-cleanup
         continue-on-error: true
         run: |
-          gcloud run services update-traffic ${{ env.BACKEND_SERVICE_NAME }} \
-            --project ${{ env.GCP_PROJECT_ID }} \
-            --region ${{ env.GCP_REGION }} \
-            --remove-tags pr-${{ github.event.pull_request.number }}
+          # This step deletes a service, so the name is checked first: it must
+          # be a per-PR name and can never be the production service.
+          if [[ ! "$PREVIEW_SERVICE_NAME" =~ ^rally-club-api-pr-[0-9]+$ || "$PREVIEW_SERVICE_NAME" == "$BACKEND_SERVICE_NAME" ]]; then
+            echo "::error::Refusing to delete '${PREVIEW_SERVICE_NAME}': not a per-PR preview service name"
+            exit 1
+          fi
+
+          diagnostic=$(mktemp)
+          if gcloud run services describe "$PREVIEW_SERVICE_NAME" \
+               --project "$GCP_PROJECT_ID" \
+               --region "$GCP_REGION" > /dev/null 2>"$diagnostic"; then
+            echo "Deleting Cloud Run service: $PREVIEW_SERVICE_NAME"
+            gcloud run services delete "$PREVIEW_SERVICE_NAME" \
+              --project "$GCP_PROJECT_ID" \
+              --region "$GCP_REGION" \
+              --quiet
+          elif grep -q 'NOT_FOUND' "$diagnostic"; then
+            echo "Cloud Run service $PREVIEW_SERVICE_NAME does not exist; nothing to delete."
+          else
+            cat "$diagnostic" >&2
+            exit 1
+          fi
+
+      # Transitional. A PR whose preview was deployed before previews moved to
+      # their own services still holds a pr-N tag on the production service.
+      # The tag is removed only when it is present, so closing any other PR
+      # makes no write to production at all. Removing a tag changes no traffic
+      # share. Delete this step once no such PR remains open.
+      - name: Remove a legacy revision tag from the production service
+        continue-on-error: true
+        env:
+          PR_TAG: pr-${{ github.event.pull_request.number }}
+        run: |
+          # Read first, on its own: through a pipeline a failed describe would
+          # look the same as "no such tag".
+          service_json=$(gcloud run services describe "$BACKEND_SERVICE_NAME" \
+            --project "$GCP_PROJECT_ID" \
+            --region "$GCP_REGION" --format=json)
+
+          if jq -e --arg tag "$PR_TAG" \
+               '.spec.traffic[]? | select(.tag == $tag)' <<<"$service_json" > /dev/null; then
+            .github/scripts/gcloud-retry-on-conflict.sh \
+              gcloud run services update-traffic "$BACKEND_SERVICE_NAME" \
+              --project "$GCP_PROJECT_ID" \
+              --region "$GCP_REGION" \
+              --remove-tags "$PR_TAG"
+          else
+            echo "No legacy tag ${PR_TAG} on ${BACKEND_SERVICE_NAME}."
+          fi
 
       - name: Delete the private preview scheduler and worker
         id: worker-cleanup
@@ -79,6 +141,46 @@ jobs:
           NOTIFICATION_WORKER_SERVICE: rally-notifications-pr-${{ github.event.pull_request.number }}
           NOTIFICATION_SCHEDULER_EMAIL: ${{ vars.NOTIFICATION_SCHEDULER_EMAIL }}
         run: bash .github/scripts/notification-worker.sh cleanup
+
+      # Checked here, while the backend identity is still active: it is the one
+      # that deploys and deletes these services, so it can certainly read them.
+      # The final "Verify" step runs as the frontend identity and only reads
+      # this step's outcome.
+      - name: Verify the Cloud Run preview is gone
+        id: cloud-run-verify
+        continue-on-error: true
+        env:
+          PR_TAG: pr-${{ github.event.pull_request.number }}
+        run: |
+          failed=0
+
+          # The service must be positively absent: describe has to fail, and
+          # with NOT_FOUND. Any other failure proves nothing about the service.
+          diagnostic=$(mktemp)
+          if gcloud run services describe "$PREVIEW_SERVICE_NAME" \
+               --project "$GCP_PROJECT_ID" \
+               --region "$GCP_REGION" > /dev/null 2>"$diagnostic"; then
+            echo "::error::Cloud Run service ${PREVIEW_SERVICE_NAME} still exists"
+            failed=1
+          elif ! grep -q 'NOT_FOUND' "$diagnostic"; then
+            echo "::error::Could not confirm Cloud Run service ${PREVIEW_SERVICE_NAME} is gone"
+            cat "$diagnostic" >&2
+            failed=1
+          fi
+
+          # Legacy previews only: the pr-N tag on the production service.
+          if ! service_json=$(gcloud run services describe "$BACKEND_SERVICE_NAME" \
+                 --project "$GCP_PROJECT_ID" \
+                 --region "$GCP_REGION" --format=json); then
+            echo "::error::Could not read ${BACKEND_SERVICE_NAME} to check for a legacy ${PR_TAG} tag"
+            failed=1
+          elif jq -e --arg tag "$PR_TAG" \
+                 '.spec.traffic[]? | select(.tag == $tag)' <<<"$service_json" > /dev/null; then
+            echo "::error::Legacy Cloud Run tag ${PR_TAG} is still attached to ${BACKEND_SERVICE_NAME}"
+            failed=1
+          fi
+
+          exit $failed
 
       # A second identity: Hosting is deployed by the frontend service account,
       # so it is the one that may delete what it created.
@@ -130,12 +232,15 @@ jobs:
             failed=1
           fi
 
-          if gcloud run services describe ${{ env.BACKEND_SERVICE_NAME }} \
-               --project ${{ env.GCP_PROJECT_ID }} \
-               --region ${{ env.GCP_REGION }} --format=json \
-             | jq -e --arg tag "pr-${PR_NUMBER}" \
-                 '.spec.traffic[]? | select(.tag == $tag)' > /dev/null; then
-            echo "::error::Cloud Run tag pr-${PR_NUMBER} is still attached"
+          if [[ '${{ steps.service-cleanup.outcome }}' == 'failure' ]]; then
+            echo '::error::Cloud Run preview service cleanup failed; the rest of the teardown has still been attempted.'
+            failed=1
+          fi
+
+          # Anything but "success" fails: a step that was skipped or cancelled
+          # verified nothing.
+          if [[ '${{ steps.cloud-run-verify.outcome }}' != 'success' ]]; then
+            echo "::error::The Cloud Run preview for PR #${PR_NUMBER} was not confirmed gone; see the 'Verify the Cloud Run preview is gone' step."
             failed=1
           fi
 
@@ -218,3 +323,74 @@ jobs:
           done
 
           echo "${swept} channel(s) matched." >> "$GITHUB_STEP_SUMMARY"
+
+  # ============================================
+  # SWEEP UP PREVIEW SERVICES FOR PRS THAT ARE ALREADY CLOSED
+  # ============================================
+  # A separate job, not more steps in the one above: the services belong to the
+  # backend identity and the channels to the frontend one, and neither sweep
+  # should be skipped because the other failed.
+  sweep-services:
+    name: Sweep Closed-PR Preview Services
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
+
+    steps:
+      - name: Authenticate to Google Cloud (backend)
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.BACKEND_SA_EMAIL }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Delete Cloud Run preview services for closed PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          services=$(gcloud run services list \
+            --project "$GCP_PROJECT_ID" \
+            --region "$GCP_REGION" \
+            --format='value(metadata.name)')
+
+          swept=0
+          for service in $services; do
+            # Only per-PR preview names are ever candidates. The production
+            # service and the notification workers do not match.
+            if [[ ! "$service" =~ ^rally-club-api-pr-([0-9]+)$ ]]; then
+              continue
+            fi
+            pr="${BASH_REMATCH[1]}"
+
+            # Delete on positive evidence only. If the PR's state cannot be
+            # read, the service stays.
+            if ! state=$(gh pr view "$pr" --json state -q .state); then
+              echo "::warning::Keeping ${service}: could not read the state of PR #${pr}"
+              continue
+            fi
+            if [[ "$state" != "CLOSED" && "$state" != "MERGED" ]]; then
+              echo "Keeping ${service}: PR #${pr} is ${state}"
+              continue
+            fi
+
+            swept=$((swept + 1))
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "[dry run] would delete ${service} (PR #${pr} is ${state})"
+            else
+              echo "Deleting ${service} (PR #${pr} is ${state})"
+              gcloud run services delete "$service" \
+                --project "$GCP_PROJECT_ID" \
+                --region "$GCP_REGION" \
+                --quiet
+            fi
+          done
+
+          echo "${swept} preview service(s) matched." >> "$GITHUB_STEP_SUMMARY"

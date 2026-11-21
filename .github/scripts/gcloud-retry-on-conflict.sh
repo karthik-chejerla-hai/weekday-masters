@@ -2,9 +2,12 @@
 # Runs a gcloud command, retrying when Cloud Run rejects it because something
 # else updated the service first.
 #
-# Every preview deploys a tagged revision of the SAME Cloud Run service, and so
-# does the production deploy on main. Cloud Run guards the service with
-# optimistic concurrency, so two overlapping deploys make the slower one fail:
+# Cloud Run guards a service with optimistic concurrency, so two overlapping
+# writes to the same service make the slower one fail. This first bit us when
+# every PR preview was a tagged revision of the production service. Each PR now
+# has a service of its own, but overlap is still possible: two releases on
+# main, a release and a legacy tag cleanup, or a cancelled preview run that is
+# still mid-write when its replacement starts.
 #
 #   ERROR: (gcloud.run.deploy) ABORTED: Conflict for resource 'rally-club-api':
 #   version '1787464187027721' was specified but current version is '1787464187827232'
