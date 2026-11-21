@@ -98,7 +98,7 @@ func TestSettleWorkedExample(t *testing.T) {
 		{UserID: f.admin.ID, GuestName: "Sanjay", InBase: true, InExtra: true},
 	}
 
-	_, preview, err := f.settlement.Settle(SettleInput{
+	_, preview, err := settleReviewed(f.settlement, SettleInput{
 		SessionID:  f.session.ID,
 		ExtraHours: ptrFloat(1),
 		Lines:      lines,
@@ -159,7 +159,7 @@ func TestSettleEarlyLeaverDoesNotSubsidiseTheExtraHour(t *testing.T) {
 	stayed := f.member(t, "stayed")
 	wentHome := f.member(t, "wenthome")
 
-	_, preview, err := f.settlement.Settle(SettleInput{
+	_, preview, err := settleReviewed(f.settlement, SettleInput{
 		SessionID:  f.session.ID,
 		ExtraHours: ptrFloat(1),
 		Lines: []LineInput{
@@ -221,7 +221,7 @@ func TestSettleCompedPlayerIsAbsorbedByTheClub(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, preview, err := f.settlement.Settle(SettleInput{
+	_, preview, err := settleReviewed(f.settlement, SettleInput{
 		SessionID: f.session.ID,
 		Lines: []LineInput{
 			{UserID: a.ID, InBase: true},
@@ -267,7 +267,7 @@ func TestSettleGuestChargesTheHost(t *testing.T) {
 	host := f.member(t, "host")
 	other := f.member(t, "other")
 
-	_, preview, err := f.settlement.Settle(SettleInput{
+	_, preview, err := settleReviewed(f.settlement, SettleInput{
 		SessionID: f.session.ID,
 		Lines: []LineInput{
 			{UserID: host.ID, InBase: true},
@@ -314,7 +314,7 @@ func TestSettleRefusesWhenStockIsShort(t *testing.T) {
 	f := newSettlementFixture(t, 3, 1250)
 	player := f.member(t, "player")
 
-	_, _, err := f.settlement.Settle(SettleInput{
+	_, _, err := settleReviewed(f.settlement, SettleInput{
 		SessionID: f.session.ID,
 		Lines:     []LineInput{{UserID: player.ID, InBase: true}},
 		SettledBy: f.admin.ID,
@@ -340,7 +340,7 @@ func TestSettleRefusesWhenStockIsShort(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := f.settlement.Settle(SettleInput{
+	if _, _, err := settleReviewed(f.settlement, SettleInput{
 		SessionID: f.session.ID,
 		Lines:     []LineInput{{UserID: player.ID, InBase: true}},
 		SettledBy: f.admin.ID,
@@ -361,12 +361,12 @@ func TestSettleRefusesASecondSettlement(t *testing.T) {
 		Lines:     []LineInput{{UserID: player.ID, InBase: true}},
 		SettledBy: f.admin.ID,
 	}
-	settlement, _, err := f.settlement.Settle(in)
+	settlement, _, err := settleReviewed(f.settlement, in)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, _, err = f.settlement.Settle(in)
+	_, _, err = settleReviewed(f.settlement, in)
 	var ledgerErr *LedgerError
 	if !errors.As(err, &ledgerErr) || ledgerErr.Code != CodeSessionAlreadySettled {
 		t.Fatalf("got %v, want %s", err, CodeSessionAlreadySettled)
@@ -383,7 +383,7 @@ func TestSettleRefusesASecondSettlement(t *testing.T) {
 	}
 
 	other := f.member(t, "other")
-	if _, _, err := f.settlement.Settle(SettleInput{
+	if _, _, err := settleReviewed(f.settlement, SettleInput{
 		SessionID: f.session.ID,
 		Lines: []LineInput{
 			{UserID: player.ID, InBase: true},
@@ -402,7 +402,7 @@ func TestReverseSettlementRestoresStock(t *testing.T) {
 	f := newSettlementFixture(t, 24, 10000)
 	player := f.member(t, "player")
 
-	settlement, _, err := f.settlement.Settle(SettleInput{
+	settlement, _, err := settleReviewed(f.settlement, SettleInput{
 		SessionID: f.session.ID,
 		Lines:     []LineInput{{UserID: player.ID, InBase: true}},
 		SettledBy: f.admin.ID,
@@ -427,7 +427,7 @@ func TestSettlementSnapshotsRates(t *testing.T) {
 	f := newSettlementFixture(t, 24, 10000)
 	player := f.member(t, "player")
 
-	settlement, _, err := f.settlement.Settle(SettleInput{
+	settlement, _, err := settleReviewed(f.settlement, SettleInput{
 		SessionID: f.session.ID,
 		Lines:     []LineInput{{UserID: player.ID, InBase: true}},
 		SettledBy: f.admin.ID,
@@ -462,7 +462,7 @@ func TestSettleWithNobodyChargedFallsToSurplus(t *testing.T) {
 	f := newSettlementFixture(t, 24, 10000)
 	player := f.member(t, "player")
 
-	_, preview, err := f.settlement.Settle(SettleInput{
+	_, preview, err := settleReviewed(f.settlement, SettleInput{
 		SessionID: f.session.ID,
 		Lines:     []LineInput{{UserID: player.ID, InBase: true, Comped: true}},
 		SettledBy: f.admin.ID,
@@ -495,7 +495,7 @@ func TestSettleDoesNotTouchTheBank(t *testing.T) {
 	}
 	bankBefore, _ := f.ledger.BalanceOfKind(nil, models.AccountKindBank)
 
-	if _, _, err := f.settlement.Settle(SettleInput{
+	if _, _, err := settleReviewed(f.settlement, SettleInput{
 		SessionID: f.session.ID,
 		Lines:     []LineInput{{UserID: player.ID, InBase: true}},
 		SettledBy: f.admin.ID,
@@ -566,7 +566,7 @@ func TestSettleIsSafeUnderConcurrency(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			_, _, err := f.settlement.Settle(SettleInput{
+			_, _, err := settleReviewed(f.settlement, SettleInput{
 				SessionID: f.session.ID,
 				Lines:     []LineInput{{UserID: player.ID, InBase: true}},
 				SettledBy: f.admin.ID,
@@ -613,7 +613,7 @@ func TestSettleRefusesACancelledSession(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, _, err := f.settlement.Settle(SettleInput{
+	_, _, err := settleReviewed(f.settlement, SettleInput{
 		SessionID: f.session.ID,
 		Lines:     []LineInput{{UserID: player.ID, InBase: true}},
 		SettledBy: f.admin.ID,
@@ -635,7 +635,7 @@ func TestSettleSplitIsExactAtEveryHeadcount(t *testing.T) {
 			lines = append(lines, LineInput{UserID: f.member(t, "p").ID, InBase: true, InExtra: true})
 		}
 
-		_, preview, err := f.settlement.Settle(SettleInput{
+		_, preview, err := settleReviewed(f.settlement, SettleInput{
 			SessionID:  f.session.ID,
 			ExtraHours: ptrFloat(1),
 			Lines:      lines,
@@ -713,7 +713,7 @@ func TestSettleNotifiesPlayersWhoDroppedBelowTheLine(t *testing.T) {
 		}
 	}
 
-	if _, _, err := f.settlement.Settle(SettleInput{
+	if _, _, err := settleReviewed(f.settlement, SettleInput{
 		SessionID: f.session.ID,
 		Lines: []LineInput{
 			{UserID: low.ID, InBase: true},
@@ -751,7 +751,7 @@ func TestSettleDoesNotNotifyMembersWhoDidNotPlay(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, _, err := f.settlement.Settle(SettleInput{
+	if _, _, err := settleReviewed(f.settlement, SettleInput{
 		SessionID: f.session.ID,
 		Lines:     []LineInput{{UserID: played.ID, InBase: true}},
 		SettledBy: f.admin.ID,
@@ -774,7 +774,7 @@ func TestSettleNotifiesAHostOnlyOnce(t *testing.T) {
 
 	host := f.member(t, "host")
 
-	if _, _, err := f.settlement.Settle(SettleInput{
+	if _, _, err := settleReviewed(f.settlement, SettleInput{
 		SessionID: f.session.ID,
 		Lines: []LineInput{
 			{UserID: host.ID, InBase: true},
@@ -798,7 +798,7 @@ func TestSettleIncludesAZeroCostReceiptForACompedPlayer(t *testing.T) {
 	comped := f.member(t, "comped")
 	paying := f.member(t, "paying")
 
-	if _, _, err := f.settlement.Settle(SettleInput{
+	if _, _, err := settleReviewed(f.settlement, SettleInput{
 		SessionID: f.session.ID,
 		Lines: []LineInput{
 			{UserID: comped.ID, InBase: true, Comped: true},
@@ -820,7 +820,7 @@ func TestSettleWorksWithoutANotifier(t *testing.T) {
 	f := newSettlementFixture(t, 24, 10000)
 	player := f.member(t, "player")
 
-	if _, _, err := f.settlement.Settle(SettleInput{
+	if _, _, err := settleReviewed(f.settlement, SettleInput{
 		SessionID: f.session.ID,
 		Lines:     []LineInput{{UserID: player.ID, InBase: true}},
 		SettledBy: f.admin.ID,

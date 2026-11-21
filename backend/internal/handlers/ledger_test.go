@@ -294,7 +294,7 @@ func TestPersonalSpendOnlyReturnsSignedInMembersCharges(t *testing.T) {
 	h := newHarness(t)
 	admin, player := makeAdmin(t), makePlayer(t)
 	session := pastSession(t, h, admin)
-	h.as(admin).post(fmt.Sprintf("/api/admin/sessions/%s/settle", session.ID), map[string]any{
+	h.settleReviewed(admin, session.ID, map[string]any{
 		"lines": []map[string]any{{"user_id": player.ID.String(), "in_base": true}},
 	}).expect(http.StatusCreated)
 	var spend services.PersonalSpend

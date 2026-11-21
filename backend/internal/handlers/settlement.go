@@ -1,6 +1,9 @@
 package handlers
 
 import (
+	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -23,7 +26,11 @@ func NewSettlementHandler(settlementService *services.SettlementService) *Settle
 // common case is submitting only the participant list and letting club settings
 // fill in the rest, and an admin setting the extra hours to zero explicitly is a
 // different statement from omitting them.
+//
+// ExpectedPreview is the fingerprint of the preview the admin reviewed. Preview
+// ignores it; settle requires it, so the amount posted is the amount approved.
 type settlementRequest struct {
+	ExpectedPreview string   `json:"expected_preview"`
 	BaseHours       *float64 `json:"base_hours"`
 	BaseRateCents   *int64   `json:"base_rate_cents"`
 	ExtraHours      *float64 `json:"extra_hours"`
@@ -38,6 +45,52 @@ type settlementRequest struct {
 	} `json:"lines"`
 }
 
+// errEmptyBody marks a request that carried no JSON at all, as distinct from one
+// that carried JSON which could not be read.
+var errEmptyBody = errors.New("request body is empty")
+
+// decodeJSONBody reads exactly one JSON value from the request into dst.
+//
+// It exists because the money routes must not act on input they could not read.
+// A decode error that is ignored leaves dst at its zero value, and a zero-valued
+// settlement request is a valid one: it settles the session on club defaults.
+// So a mistyped field, broken JSON, or a second value after the first is an
+// error here, never a default.
+//
+// An absent body (nothing, or only whitespace) is reported as errEmptyBody so
+// each route can decide explicitly whether "no body" is acceptable.
+func decodeJSONBody(c *gin.Context, dst any) error {
+	if c.Request.Body == nil {
+		return errEmptyBody
+	}
+	dec := json.NewDecoder(c.Request.Body)
+	if err := dec.Decode(dst); err != nil {
+		if errors.Is(err, io.EOF) {
+			return errEmptyBody
+		}
+		return err
+	}
+	// Anything after the first value means the client sent something other than
+	// the one document this route understands.
+	if err := dec.Decode(&json.RawMessage{}); !errors.Is(err, io.EOF) {
+		return errors.New("request body must hold a single JSON value")
+	}
+	return nil
+}
+
+// decodeOptionalJSONBody is decodeJSONBody for routes where every field is
+// optional: no body leaves dst untouched, but a body that is present must parse.
+func decodeOptionalJSONBody(c *gin.Context, dst any) error {
+	if err := decodeJSONBody(c, dst); err != nil && !errors.Is(err, errEmptyBody) {
+		return err
+	}
+	return nil
+}
+
+func respondInvalidBody(c *gin.Context) {
+	c.JSON(http.StatusBadRequest, gin.H{"code": "bad_request", "message": "Invalid request body"})
+}
+
 func (r settlementRequest) toInput(sessionID, settledBy uuid.UUID) (services.SettleInput, error) {
 	in := services.SettleInput{
 		SessionID:       sessionID,
@@ -46,6 +99,7 @@ func (r settlementRequest) toInput(sessionID, settledBy uuid.UUID) (services.Set
 		ExtraHours:      r.ExtraHours,
 		ExtraRateCents:  r.ExtraRateCents,
 		ShuttlesPerHour: r.ShuttlesPerHour,
+		ExpectedPreview: r.ExpectedPreview,
 		SettledBy:       settledBy,
 	}
 
@@ -92,8 +146,12 @@ func (h *SettlementHandler) PreviewSettlement(c *gin.Context) {
 	}
 
 	var req settlementRequest
-	// A bare GET-style preview with no body is valid: it returns the default.
-	_ = c.ShouldBindJSON(&req)
+	// A preview with no body is valid: it returns the default. A body that is
+	// present but unreadable is not "no body", and must not be costed as one.
+	if err := decodeOptionalJSONBody(c, &req); err != nil {
+		respondInvalidBody(c)
+		return
+	}
 
 	input, err := req.toInput(sessionID, admin.ID)
 	if err != nil {
@@ -123,8 +181,20 @@ func (h *SettlementHandler) SettleSession(c *gin.Context) {
 		return
 	}
 
+	// Nothing may post from a request that could not be read in full, and an
+	// empty body is not a settlement: it carries no reviewed preview.
 	var req settlementRequest
-	_ = c.ShouldBindJSON(&req)
+	if err := decodeJSONBody(c, &req); err != nil {
+		respondInvalidBody(c)
+		return
+	}
+	if len(req.ExpectedPreview) != services.PreviewFingerprintLength {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    "bad_request",
+			"message": "expected_preview is required: review a settlement preview before settling.",
+		})
+		return
+	}
 
 	input, err := req.toInput(sessionID, admin.ID)
 	if err != nil {
@@ -161,8 +231,12 @@ func (h *SettlementHandler) ReverseSettlement(c *gin.Context) {
 		return
 	}
 
+	// The description is optional, so no body is fine; a broken one is not.
 	var req reverseRequest
-	_ = c.ShouldBindJSON(&req)
+	if err := decodeOptionalJSONBody(c, &req); err != nil {
+		respondInvalidBody(c)
+		return
+	}
 
 	txn, err := h.settlementService.ReverseSettlement(settlementID, req.Description, admin.ID)
 	if err != nil {

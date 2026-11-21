@@ -62,7 +62,7 @@ func TestExpenseAndAssistantKeepNativeSettlementReversals(t *testing.T) {
 	var liveID, reversedID uuid.UUID
 	for _, reverse := range []bool{false, true} {
 		session := historicalSchedule(t, alice.ID, "2024-04-03", "20:00")
-		record, _, err := settlement.Settle(SettleInput{
+		record, _, err := settleReviewed(settlement, SettleInput{
 			SessionID: session.ID, SettledBy: alice.ID,
 			Lines: []LineInput{{UserID: alice.ID, InBase: true}},
 		})

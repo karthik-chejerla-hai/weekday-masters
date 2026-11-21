@@ -410,7 +410,7 @@ func TestSettlementChargesIncludeBalanceWarningAndRouteToOriginalSplit(t *testin
 				t.Fatal(err)
 			}
 			f.settlement.WithNotifier(notifier)
-			if _, _, err := f.settlement.Settle(SettleInput{SessionID: f.session.ID, Lines: []LineInput{{UserID: player.ID, InBase: true}}, SettledBy: f.admin.ID}); err != nil {
+			if _, _, err := settleReviewed(f.settlement, SettleInput{SessionID: f.session.ID, Lines: []LineInput{{UserID: player.ID, InBase: true}}, SettledBy: f.admin.ID}); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := notifier.ProcessNotificationWork(context.Background(), 10); err != nil {

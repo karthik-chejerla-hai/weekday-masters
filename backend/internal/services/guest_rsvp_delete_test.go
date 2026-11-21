@@ -100,7 +100,7 @@ func TestDeleteGuestRSVPGuardsHistoryAndSessionScope(t *testing.T) {
 					t.Fatal(err)
 				}
 				if state != "started" {
-					settled, _, err := f.settlement.Settle(SettleInput{SessionID: session.ID, SettledBy: f.admin.ID})
+					settled, _, err := settleReviewed(f.settlement, SettleInput{SessionID: session.ID, SettledBy: f.admin.ID})
 					if err != nil {
 						t.Fatal(err)
 					}

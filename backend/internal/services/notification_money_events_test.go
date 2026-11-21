@@ -50,7 +50,7 @@ func TestSessionChargeReceiptAggregatesHostedGuestBandsAndZeroCost(t *testing.T)
 	host := f.member(t, "host")
 	comped := f.member(t, "comped")
 	extra := 1.0
-	record, preview, err := f.settlement.Settle(SettleInput{SessionID: f.session.ID, SettledBy: f.admin.ID, ExtraHours: &extra, Lines: []LineInput{{UserID: host.ID, InBase: true, InExtra: true}, {UserID: host.ID, GuestName: "Guest", InBase: true}, {UserID: comped.ID, InBase: true, InExtra: true, Comped: true}}})
+	record, preview, err := settleReviewed(f.settlement, SettleInput{SessionID: f.session.ID, SettledBy: f.admin.ID, ExtraHours: &extra, Lines: []LineInput{{UserID: host.ID, InBase: true, InExtra: true}, {UserID: host.ID, GuestName: "Guest", InBase: true}, {UserID: comped.ID, InBase: true, InExtra: true, Comped: true}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestSessionReceiptFailureRollsBackSettlementAndLedger(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer database.DB.Callback().Create().Remove(callback)
-	if _, _, err := f.settlement.Settle(SettleInput{SessionID: f.session.ID, SettledBy: f.admin.ID, Lines: []LineInput{{UserID: player.ID, InBase: true}}}); err == nil {
+	if _, _, err := settleReviewed(f.settlement, SettleInput{SessionID: f.session.ID, SettledBy: f.admin.ID, Lines: []LineInput{{UserID: player.ID, InBase: true}}}); err == nil {
 		t.Fatal("settlement committed without receipt intent")
 	}
 	var count int64
@@ -129,7 +129,7 @@ func TestReversalCorrectionAtomicAndOriginalSplitHistorical(t *testing.T) {
 			addDeliveryDevice(t, player, "receipt-device")
 			f.settlement.WithNotifier(ns)
 			input := SettleInput{SessionID: f.session.ID, SettledBy: f.admin.ID, Lines: []LineInput{{UserID: player.ID, InBase: true}}}
-			record, _, err := f.settlement.Settle(input)
+			record, _, err := settleReviewed(f.settlement, input)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -169,7 +169,7 @@ func TestReversalCorrectionAtomicAndOriginalSplitHistorical(t *testing.T) {
 			if receiptFor(t, record.ID, player.ID, models.NotificationSessionCharge).Data != snapshot {
 				t.Fatal("original receipt mutated")
 			}
-			second, _, err := f.settlement.Settle(input)
+			second, _, err := settleReviewed(f.settlement, input)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -191,7 +191,7 @@ func TestReversalCorrectionAtomicAndOriginalSplitHistorical(t *testing.T) {
 func TestReversalNotificationFailureRollsBackReversalStateAndMoney(t *testing.T) {
 	f := newSettlementFixture(t, 24, 10000)
 	player := f.member(t, "player")
-	record, _, err := f.settlement.Settle(SettleInput{SessionID: f.session.ID, SettledBy: f.admin.ID, Lines: []LineInput{{UserID: player.ID, InBase: true}}})
+	record, _, err := settleReviewed(f.settlement, SettleInput{SessionID: f.session.ID, SettledBy: f.admin.ID, Lines: []LineInput{{UserID: player.ID, InBase: true}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +312,7 @@ func TestSessionChargeCommittedBalanceThresholdBoundaries(t *testing.T) {
 			if _, err := f.ledger.RecordTopup(CashInput{UserID: player.ID, AmountCents: preview.Totals.ChargedCents + desired, CreatedBy: f.admin.ID}); err != nil {
 				t.Fatal(err)
 			}
-			record, _, err := f.settlement.Settle(input)
+			record, _, err := settleReviewed(f.settlement, input)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -330,7 +330,7 @@ func TestSessionChargeCommittedBalanceThresholdBoundaries(t *testing.T) {
 func TestConcurrentReversalCreatesOneCorrectionAndOneLedgerReversal(t *testing.T) {
 	f := newSettlementFixture(t, 24, 10000)
 	player := f.member(t, "player")
-	record, _, err := f.settlement.Settle(SettleInput{SessionID: f.session.ID, SettledBy: f.admin.ID, Lines: []LineInput{{UserID: player.ID, InBase: true}}})
+	record, _, err := settleReviewed(f.settlement, SettleInput{SessionID: f.session.ID, SettledBy: f.admin.ID, Lines: []LineInput{{UserID: player.ID, InBase: true}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -376,7 +376,7 @@ func TestProviderFailureDoesNotRollBackSessionCharges(t *testing.T) {
 		return nil, errors.New("network failed")
 	})}
 	f.settlement.WithNotifier(ns)
-	record, _, err := f.settlement.Settle(SettleInput{SessionID: f.session.ID, SettledBy: f.admin.ID, Lines: []LineInput{{UserID: player.ID, InBase: true}}})
+	record, _, err := settleReviewed(f.settlement, SettleInput{SessionID: f.session.ID, SettledBy: f.admin.ID, Lines: []LineInput{{UserID: player.ID, InBase: true}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -433,7 +433,7 @@ func TestNudgeAndSettlementShareAccountsWithoutUserForeignKeyDeadlock(t *testing
 	settlementResult := make(chan error, 1)
 	nudgeResult := make(chan error, 1)
 	go func() {
-		_, _, err := f.settlement.Settle(SettleInput{SessionID: f.session.ID, SettledBy: f.admin.ID, Lines: []LineInput{{UserID: player.ID, InBase: true}}})
+		_, _, err := settleReviewed(f.settlement, SettleInput{SessionID: f.session.ID, SettledBy: f.admin.ID, Lines: []LineInput{{UserID: player.ID, InBase: true}}})
 		settlementResult <- err
 	}()
 	select {

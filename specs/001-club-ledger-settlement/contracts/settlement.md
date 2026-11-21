@@ -29,12 +29,14 @@ the numbers that will be posted.
 ```
 
 Omitting `lines` entirely returns the default: everyone who RSVP'd `in`, in every band of
-the session (FR-018).
+the session (FR-018). An empty body is the same as `{}`. A body that is present must be one
+valid JSON object with correctly typed fields; anything else is `400`, never the default.
 
 **Response**
 
 ```json
 {
+  "fingerprint": "9f2c…  (64 hex characters)",
   "bands": {
     "base":  { "hours": 2, "court_cents": 6000, "shuttle_units": 10, "shuttle_cents": 4167, "total_cents": 10167, "heads": 6 },
     "extra": { "hours": 1, "court_cents": 2300, "shuttle_units": 5,  "shuttle_cents": 2083, "total_cents": 4383,  "heads": 4 }
@@ -51,6 +53,9 @@ the session (FR-018).
 `charged_cents` always equals `court_cents + shuttle_cents` less anything comped, so the
 admin can see the split is exact before committing (I3).
 
+`fingerprint` binds these figures to what they were derived from: the lines, the hours and
+rates, and the shuttle stock. Settling requires it back as `expected_preview`.
+
 **Errors** — `shuttle_stock_short` (422) fires here too, so the form can prompt for the
 missing purchase before the admin commits rather than after they press settle.
 
@@ -58,7 +63,12 @@ missing purchase before the admin commits rather than after they press settle.
 
 ## `POST /api/admin/sessions/:id/settle` — group `admin`
 
-Same request body as the preview. Posts the settlement atomically (FR-021, FR-023).
+Same request body as the preview, plus `expected_preview`: the `fingerprint` of the preview
+the admin reviewed. It is required. Posts the settlement atomically (FR-021, FR-023).
+
+The server costs the settlement again under the session and account locks and posts only if
+the result is the reviewed one. A shuttle purchase, a rate change or an attendance edit made
+after the preview therefore cannot post an amount nobody looked at.
 
 Returns the created settlement, its charge lines, and the transaction. Then, as a
 consequence rather than a separate call, sends balance reminders to participants whose
@@ -68,6 +78,8 @@ resulting balance is below threshold (FR-034).
 
 | Code | HTTP | When |
 |---|---|---|
+| `bad_request` | 400 | No body, malformed JSON, a mistyped field, trailing content, or no `expected_preview`. Nothing is written. |
+| `preview_changed` | 409 | The costs differ from the reviewed preview. Nothing is written. Preview again. |
 | `session_already_settled` | 409 | A live settlement exists. Reverse it first (FR-024). |
 | `shuttle_stock_short` | 422 | Stock is short. Nothing is written. |
 | `not_settleable` | 422 | The session is cancelled, or has not finished yet. |
@@ -77,7 +89,9 @@ Settling twice concurrently yields exactly one settlement; the loser gets `409`.
 To correct a settled session: `POST /api/admin/transactions/:id/reverse` against the
 settlement's transaction, then settle again. The reversal updates both the ledger
 and settlement status atomically, using the same path as
-`POST /api/admin/settlements/:id/reverse`. Both require an approved admin.
+`POST /api/admin/settlements/:id/reverse`. Both require an approved admin. The body
+(`{"description": "…"}`) is optional on both; a body that is sent but is not one valid JSON
+object is `400` and reverses nothing.
 Concurrent reversals through either endpoint yield exactly one success; other
 requests receive `transaction_already_reversed`. The session lock also serializes
 reversal against settlement. Both records remain visible in history.

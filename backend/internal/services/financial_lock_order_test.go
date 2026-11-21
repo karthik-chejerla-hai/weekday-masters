@@ -52,7 +52,7 @@ func TestFinancialWritesWaitForImportBeforeRowLocks(t *testing.T) {
 			f := newSettlementFixture(t, 24, 10000)
 			player := f.member(t, "player")
 			return func() error {
-				_, _, err := f.settlement.Settle(SettleInput{SessionID: f.session.ID, SettledBy: f.admin.ID, Lines: []LineInput{{UserID: player.ID, InBase: true}}})
+				_, _, err := settleReviewed(f.settlement, SettleInput{SessionID: f.session.ID, SettledBy: f.admin.ID, Lines: []LineInput{{UserID: player.ID, InBase: true}}})
 				return err
 			}
 		}},

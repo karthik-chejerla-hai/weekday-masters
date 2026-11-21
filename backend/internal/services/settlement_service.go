@@ -379,7 +379,7 @@ func (s *SettlementService) cost(
 		Lines:      views,
 		StockAfter: StockView{Units: afterExtra.Units, AmountCents: afterExtra.ValueCents},
 	}
-	preview.Fingerprint = settlementFingerprint(sessionID, r, preview)
+	preview.Fingerprint = settlementFingerprint(sessionID, r, stock, preview)
 	return preview, amounts, nil
 }
 
@@ -493,6 +493,13 @@ func (s *SettlementService) lineViews(lines []LineInput, amounts []int64) ([]Cha
 // check-then-act sequence for "is this already settled?" is safe, and two
 // simultaneous requests resolve to exactly one settlement.
 func (s *SettlementService) Settle(in SettleInput) (*models.Settlement, *SettlementPreview, error) {
+	// Every settlement posts against a preview somebody looked at. Without the
+	// fingerprint there is nothing to compare the recomputed costing with, and
+	// whatever the stock and rates happen to be at this instant would be charged.
+	if len(in.ExpectedPreview) != PreviewFingerprintLength {
+		return nil, nil, newLedgerError("preview_required", 409, "Review a settlement preview before settling.")
+	}
+
 	var settlement *models.Settlement
 	var preview *SettlementPreview
 
@@ -565,8 +572,10 @@ func (s *SettlementService) Settle(in SettleInput) (*models.Settlement, *Settlem
 		if err != nil {
 			return err
 		}
-		if in.ExpectedPreview != "" && in.ExpectedPreview != costed.Fingerprint {
-			return newLedgerError("preview_changed", 409, "The expense has changed. Review a new preview before confirming.")
+		// Recomputed under the session and account locks, so this is the costing
+		// that would post. If it is not the one that was reviewed, post nothing.
+		if in.ExpectedPreview != costed.Fingerprint {
+			return newLedgerError("preview_changed", 409, "The costs have changed since they were reviewed. Review a new preview before confirming.")
 		}
 		preview = costed
 
@@ -1029,16 +1038,40 @@ func (s *SettlementService) WithNotifier(notifier BalanceNotifier) *SettlementSe
 	return s
 }
 
-// settlementFingerprint binds the reviewed costs to their inputs and rates.
+// PreviewFingerprintLength is the length of a preview fingerprint: a SHA-256
+// digest in hex.
+const PreviewFingerprintLength = 64
+
+// settlementFingerprint binds the reviewed costs to everything they were
+// derived from: who attended (the lines, in order, with their bands and
+// comping), the hours and rates, and the shuttle stock the blended shuttle
+// price came from. Settle recomputes it under lock and refuses on any
+// difference, so a purchase, a rate change or an attendance edit between
+// preview and confirmation cannot post an amount nobody reviewed.
+//
+// Stock is included explicitly rather than left to be implied by the shuttle
+// cents: two different bags can price a night identically, and the admin
+// reviewed the bag that is left afterwards too.
+//
 // It is a concurrency token, not an authorization token; routes enforce access.
-func settlementFingerprint(id uuid.UUID, r rates, p *SettlementPreview) string {
+func settlementFingerprint(id uuid.UUID, r rates, stock money.Stock, p *SettlementPreview) string {
 	value := struct {
-		ID      uuid.UUID
-		Hours   [2]float64
-		Rates   [2]int64
-		Actual  *int
-		Preview *SettlementPreview
-	}{id, [2]float64{r.baseHours, r.extraHours}, [2]int64{r.baseRateCents, r.extraRateCents}, r.actualShuttles, p}
+		ID              uuid.UUID
+		Hours           [2]float64
+		Rates           [2]int64
+		ShuttlesPerHour float64
+		Actual          *int
+		Stock           [2]int64
+		Preview         *SettlementPreview
+	}{
+		id,
+		[2]float64{r.baseHours, r.extraHours},
+		[2]int64{r.baseRateCents, r.extraRateCents},
+		r.shuttlesPerHour,
+		r.actualShuttles,
+		[2]int64{int64(stock.Units), stock.ValueCents},
+		p,
+	}
 	data, _ := json.Marshal(value)
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])

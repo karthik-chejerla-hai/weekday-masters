@@ -1750,6 +1750,13 @@ paths:
       responses:
         "201":
           $ref: "#/components/responses/TransactionCreated"
+        "400":
+          description: >
+            The optional body was sent but is not a single valid JSON object.
+            Nothing is reversed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         "422":
           description: Reversing a reversal is forbidden (reversal_not_allowed).
           content:
@@ -2133,7 +2140,11 @@ paths:
       description: >
         The form calls this on every change, so the figures on screen are always
         the figures that settling will post. Omitting `lines` returns the default:
-        everyone who said they were coming.
+        everyone who said they were coming. An empty body is the same as `{}`.
+        A body that is present must be a single valid JSON object with correctly
+        typed fields, or the request is refused with 400. The response carries a
+        `fingerprint`, which the settle request must send back as
+        `expected_preview`.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/SessionId"
@@ -2149,6 +2160,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SettlementPreview"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "422":
           $ref: "#/components/responses/LedgerUnprocessable"
         "403":
@@ -2163,14 +2176,27 @@ paths:
         each participant — in one atomic operation. Never touches the bank: that
         cash moved when members topped up and when the club bought credit and
         shuttles. Refused if the session is already settled.
+
+
+        Send the same input that was previewed, plus that preview's
+        `fingerprint` as `expected_preview`. The server costs the settlement
+        again under lock and posts only if the result is the one that was
+        reviewed. If attendance, rates or shuttle stock differ, it posts nothing
+        and returns 409 `preview_changed`: preview again and confirm the new
+        figures. A missing `expected_preview`, a missing body, malformed JSON, a
+        mistyped field or trailing content returns 400 and posts nothing.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/SessionId"
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SettlementRequest"
+              allOf:
+                - $ref: "#/components/schemas/SettlementRequest"
+                - type: object
+                  required: [expected_preview]
       responses:
         "201":
           description: Settled
@@ -2178,6 +2204,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SettlementPreview"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "409":
           $ref: "#/components/responses/LedgerConflict"
         "422":
@@ -2195,6 +2223,8 @@ paths:
         visible. Approved admins only. Ledger undo and settlement reversal metadata
         commit atomically under the session lock; competing reversals cannot both
         succeed. A failed write leaves the original settlement and money unchanged.
+        The body is optional. If one is sent it must be a single valid JSON
+        object, or the request is refused with 400 and nothing is reversed.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -2209,6 +2239,8 @@ paths:
       responses:
         "201":
           $ref: "#/components/responses/TransactionCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "409":
           $ref: "#/components/responses/LedgerConflict"
         "403":
@@ -2592,8 +2624,9 @@ components:
     LedgerConflict:
       description: >
         The request conflicts with what has already happened — the session is
-        already settled, the transaction was already reversed, or opening
-        balances have already been recorded.
+        already settled, the transaction was already reversed, opening
+        balances have already been recorded, or the costs changed after they
+        were previewed (preview_changed).
       content:
         application/json:
           schema:
@@ -3965,6 +3998,13 @@ components:
         extra_hours: { type: number }
         extra_rate_cents: { type: integer, format: int64 }
         shuttles_per_hour: { type: number }
+        expected_preview:
+          type: string
+          minLength: 64
+          maxLength: 64
+          description: >
+            The `fingerprint` of the preview that was reviewed. Required by the
+            settle route and ignored by the preview route.
         lines:
           type: array
           items:
