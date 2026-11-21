@@ -604,11 +604,14 @@ func settlePlayedSession(
 		InBase:    true,
 	})
 
-	if _, _, err := settlement.Settle(services.SettleInput{
-		SessionID: session.ID,
-		Lines:     lines,
-		SettledBy: by,
-	}); err != nil {
+	// Settle only posts against a reviewed preview, so the seed reviews its own.
+	input := services.SettleInput{SessionID: session.ID, Lines: lines, SettledBy: by}
+	preview, err := settlement.Preview(input)
+	if err != nil {
+		return fmt.Errorf("costing the seeded session: %w", err)
+	}
+	input.ExpectedPreview = preview.Fingerprint
+	if _, _, err := settlement.Settle(input); err != nil {
 		return fmt.Errorf("settling the seeded session: %w", err)
 	}
 

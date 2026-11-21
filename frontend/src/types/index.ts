@@ -383,9 +383,17 @@ export interface SettlementRates {
 
 export interface SettlementInput extends Partial<SettlementRates> {
   lines?: Array<Omit<ChargeLine, 'amount_cents' | 'name'>>;
+  /**
+   * The fingerprint of the preview the admin reviewed. The settle route
+   * requires it and refuses to post if the costs no longer match; the preview
+   * route ignores it.
+   */
+  expected_preview?: string;
 }
 
 export interface SettlementPreview {
+  /** Binds these figures to the attendance, rates and stock they came from. */
+  fingerprint: string;
   bands: { base: SettlementBand; extra: SettlementBand | null };
   totals: {
     court_cents: number;

@@ -132,7 +132,7 @@ func TestImportedScheduleCannotChargeMembersAgain(t *testing.T) {
 	}
 	_, err = service.Preview(in)
 	assertImportedError(err)
-	_, _, err = service.Settle(in)
+	_, _, err = settleReviewed(service, in)
 	assertImportedError(err)
 	view, err := service.SettlementForSession(session.ID)
 	if err != nil || view == nil {
@@ -141,7 +141,7 @@ func TestImportedScheduleCannotChargeMembersAgain(t *testing.T) {
 	in.SessionID = view.Session.ID
 	_, err = service.Preview(in)
 	assertImportedError(err)
-	if _, _, err := service.Settle(in); err == nil {
+	if _, _, err := settleReviewed(service, in); err == nil {
 		t.Fatal("canonical imported ID accepted for native settlement")
 	}
 	after, err := service.ledger.Position()
@@ -169,7 +169,7 @@ func TestImportedHistoryKeepsNativeSettlementsAndReversals(t *testing.T) {
 	for _, reverse := range []bool{false, true} {
 		session := historicalSchedule(t, alice.ID, "2024-04-03", "20:00")
 		in := SettleInput{SessionID: session.ID, SettledBy: alice.ID, Lines: []LineInput{{UserID: alice.ID, InBase: true}}}
-		settlement, _, err := service.Settle(in)
+		settlement, _, err := settleReviewed(service, in)
 		if err != nil {
 			t.Fatal(err)
 		}

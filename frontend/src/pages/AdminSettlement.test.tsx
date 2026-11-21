@@ -22,6 +22,7 @@ const members = [
 
 function makePreview(overrides: Partial<SettlementPreview> = {}): SettlementPreview {
   return {
+    fingerprint: 'a'.repeat(64),
     bands: {
       base: {
         hours: 2,
@@ -61,6 +62,38 @@ function shortfallError() {
   };
 }
 
+function previewChangedError() {
+  return {
+    response: {
+      data: {
+        code: 'preview_changed',
+        message: 'The costs have changed since they were reviewed.',
+      },
+    },
+  };
+}
+
+/** A preview whose total and fingerprint say which request it answers. */
+function previewCharging(cents: number, fingerprint: string): SettlementPreview {
+  const base = makePreview();
+  return { ...base, fingerprint, totals: { ...base.totals, charged_cents: cents } };
+}
+
+/** A promise the test settles by hand, to control the order replies arrive in. */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+function settleButton() {
+  return screen.getByRole('button', { name: /^(Settle|Working out the cost)/ });
+}
+
 function lastCall<T extends unknown[]>(calls: T[]): T {
   return calls[calls.length - 1];
 }
@@ -82,6 +115,10 @@ function renderPage() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Also drop any queued one-off replies a test did not use up, so one test's
+  // staged previews cannot answer the next test's requests.
+  vi.mocked(api.previewSettlement).mockReset();
+  vi.mocked(api.settleSession).mockReset();
   vi.mocked(api.listBalances).mockResolvedValue(members);
   vi.mocked(api.previewSettlement).mockResolvedValue(makePreview());
 });
@@ -150,7 +187,207 @@ describe('AdminSettlement', () => {
     const [sessionId, settled] = lastCall(vi.mocked(api.settleSession).mock.calls);
     const [, previewed] = lastCall(vi.mocked(api.previewSettlement).mock.calls);
     expect(sessionId).toBe('s1');
-    expect(settled).toEqual(previewed);
+    expect(settled).toEqual({ ...previewed, expected_preview: 'a'.repeat(64) });
+  });
+
+  // The server costs the session again when settling, and posts only if it
+  // reaches the figures named by this fingerprint.
+  it('sends the fingerprint of the preview on screen', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.previewSettlement)
+      .mockResolvedValueOnce(previewCharging(10167, 'a'.repeat(64)))
+      .mockResolvedValueOnce(previewCharging(13167, 'b'.repeat(64)));
+    vi.mocked(api.settleSession).mockResolvedValue(makePreview());
+    renderPage();
+
+    await waitFor(() => expect(participants().getByText('Karthik')).toBeInTheDocument());
+    await user.selectOptions(screen.getByLabelText('Did you play on?'), '1');
+
+    await user.click(await screen.findByRole('button', { name: /Settle — charge \$131\.67/ }));
+
+    await waitFor(() => expect(api.settleSession).toHaveBeenCalledTimes(1));
+    const [, settled] = lastCall(vi.mocked(api.settleSession).mock.calls);
+    expect(settled?.expected_preview).toBe('b'.repeat(64));
+    expect(settled?.extra_hours).toBe(1);
+  });
+
+  it('settles the opening preview with its fingerprint when nothing is changed', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.settleSession).mockResolvedValue(makePreview());
+    renderPage();
+
+    await user.click(await screen.findByRole('button', { name: /Settle — charge \$101\.67/ }));
+
+    await waitFor(() => expect(api.settleSession).toHaveBeenCalledTimes(1));
+    const [, settled] = lastCall(vi.mocked(api.settleSession).mock.calls);
+    expect(settled).toEqual({
+      extra_hours: 0,
+      lines: [
+        { user_id: 'u1', guest_name: undefined, in_base: true, in_extra: false, comped: false },
+        { user_id: 'u2', guest_name: undefined, in_base: true, in_extra: false, comped: false },
+      ],
+      expected_preview: 'a'.repeat(64),
+    });
+  });
+
+  it('cannot settle while a preview is in flight, and shows no old total', async () => {
+    const user = userEvent.setup();
+    const pending = deferred<SettlementPreview>();
+    vi.mocked(api.previewSettlement)
+      .mockResolvedValueOnce(previewCharging(10167, 'a'.repeat(64)))
+      .mockReturnValueOnce(pending.promise);
+    renderPage();
+
+    await screen.findByRole('button', { name: /Settle — charge \$101\.67/ });
+    await user.selectOptions(screen.getByLabelText('Did you play on?'), '1');
+
+    // The form now says three hours; the only total the page has is for two.
+    await waitFor(() => expect(api.previewSettlement).toHaveBeenCalledTimes(2));
+    expect(settleButton()).toBeDisabled();
+    expect(settleButton()).toHaveTextContent('Working out the cost…');
+    expect(screen.queryByText(/\$101\.67/)).not.toBeInTheDocument();
+    expect(participants().queryByText('$50.84')).not.toBeInTheDocument();
+
+    await user.click(settleButton());
+    expect(api.settleSession).not.toHaveBeenCalled();
+
+    pending.resolve(previewCharging(13167, 'b'.repeat(64)));
+    const ready = await screen.findByRole('button', { name: /Settle — charge \$131\.67/ });
+    expect(ready).toBeEnabled();
+  });
+
+  // Two quick changes, answered in the wrong order. The slow answer to the
+  // first change must not replace the answer to the second.
+  it('ignores a reply to a preview that has been superseded', async () => {
+    const user = userEvent.setup();
+    const first = deferred<SettlementPreview>();
+    const second = deferred<SettlementPreview>();
+    vi.mocked(api.previewSettlement)
+      .mockResolvedValueOnce(previewCharging(10167, 'a'.repeat(64)))
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    vi.mocked(api.settleSession).mockResolvedValue(makePreview());
+    renderPage();
+
+    await screen.findByRole('button', { name: /Settle — charge \$101\.67/ });
+    await user.selectOptions(screen.getByLabelText('Did you play on?'), '1');
+    await user.selectOptions(screen.getByLabelText('Did you play on?'), '2');
+    await waitFor(() => expect(api.previewSettlement).toHaveBeenCalledTimes(3));
+
+    second.resolve(previewCharging(16167, 'c'.repeat(64)));
+    await screen.findByRole('button', { name: /Settle — charge \$161\.67/ });
+
+    // The answer for one extra hour arrives late.
+    first.resolve(previewCharging(13167, 'b'.repeat(64)));
+    await first.promise;
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Settle — charge \$161\.67/ })).toBeEnabled()
+    );
+    expect(screen.queryByText(/\$131\.67/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Settle — charge \$161\.67/ }));
+    await waitFor(() => expect(api.settleSession).toHaveBeenCalledTimes(1));
+    const [, settled] = lastCall(vi.mocked(api.settleSession).mock.calls);
+    expect(settled?.extra_hours).toBe(2);
+    expect(settled?.expected_preview).toBe('c'.repeat(64));
+  });
+
+  it('keeps settle disabled when the superseded reply arrives first', async () => {
+    const user = userEvent.setup();
+    const first = deferred<SettlementPreview>();
+    const second = deferred<SettlementPreview>();
+    vi.mocked(api.previewSettlement)
+      .mockResolvedValueOnce(previewCharging(10167, 'a'.repeat(64)))
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    renderPage();
+
+    await screen.findByRole('button', { name: /Settle — charge \$101\.67/ });
+    await user.selectOptions(screen.getByLabelText('Did you play on?'), '1');
+    await user.selectOptions(screen.getByLabelText('Did you play on?'), '2');
+    await waitFor(() => expect(api.previewSettlement).toHaveBeenCalledTimes(3));
+
+    first.resolve(previewCharging(13167, 'b'.repeat(64)));
+    await first.promise;
+    await Promise.resolve();
+
+    expect(settleButton()).toBeDisabled();
+    expect(screen.queryByText(/\$131\.67/)).not.toBeInTheDocument();
+
+    second.resolve(previewCharging(16167, 'c'.repeat(64)));
+    await screen.findByRole('button', { name: /Settle — charge \$161\.67/ });
+  });
+
+  it('ignores a superseded preview that fails', async () => {
+    const user = userEvent.setup();
+    const first = deferred<SettlementPreview>();
+    vi.mocked(api.previewSettlement)
+      .mockResolvedValueOnce(previewCharging(10167, 'a'.repeat(64)))
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce(previewCharging(16167, 'c'.repeat(64)));
+    renderPage();
+
+    await screen.findByRole('button', { name: /Settle — charge \$101\.67/ });
+    await user.selectOptions(screen.getByLabelText('Did you play on?'), '1');
+    await user.selectOptions(screen.getByLabelText('Did you play on?'), '2');
+    await screen.findByRole('button', { name: /Settle — charge \$161\.67/ });
+
+    first.reject(shortfallError());
+    await first.promise.catch(() => undefined);
+    await Promise.resolve();
+
+    expect(screen.queryByText(/uses 10 shuttles but stock holds 3/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Settle — charge \$161\.67/ })).toBeEnabled();
+  });
+
+  // The server refused because stock, rates or attendance moved after the
+  // figures were shown. Nothing was charged, and the admin must see the new
+  // figures before anything is.
+  it('re-costs and asks again when the server says the costs changed', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.previewSettlement)
+      .mockResolvedValueOnce(previewCharging(10167, 'a'.repeat(64)))
+      .mockResolvedValueOnce(previewCharging(12250, 'd'.repeat(64)));
+    vi.mocked(api.settleSession)
+      .mockRejectedValueOnce(previewChangedError())
+      .mockResolvedValueOnce(makePreview());
+    renderPage();
+
+    await user.click(await screen.findByRole('button', { name: /Settle — charge \$101\.67/ }));
+
+    const again = await screen.findByRole('button', { name: /Settle — charge \$122\.50/ });
+    expect(screen.getByText(/costs changed after you reviewed them/)).toBeInTheDocument();
+    expect(api.settleSession).toHaveBeenCalledTimes(1);
+
+    await user.click(again);
+    await waitFor(() => expect(api.settleSession).toHaveBeenCalledTimes(2));
+    const [, settled] = lastCall(vi.mocked(api.settleSession).mock.calls);
+    expect(settled?.expected_preview).toBe('d'.repeat(64));
+  });
+
+  it('settles a guest through the same reviewed preview', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.previewSettlement)
+      .mockResolvedValueOnce(previewCharging(10167, 'a'.repeat(64)))
+      .mockResolvedValueOnce(previewCharging(10167, 'e'.repeat(64)));
+    vi.mocked(api.settleSession).mockResolvedValue(makePreview());
+    renderPage();
+
+    await screen.findByRole('button', { name: /Settle — charge \$101\.67/ });
+    await user.type(screen.getByLabelText('Add a guest'), 'Sam');
+    await user.selectOptions(screen.getByLabelText('Charged to'), 'u1');
+    const addButtons = screen.getAllByRole('button', { name: '' });
+    await user.click(addButtons[addButtons.length - 1]);
+
+    await waitFor(() => expect(api.previewSettlement).toHaveBeenCalledTimes(2));
+    const [, previewed] = lastCall(vi.mocked(api.previewSettlement).mock.calls);
+    expect(previewed?.lines).toHaveLength(3);
+    expect(previewed?.lines?.[2]).toMatchObject({ user_id: 'u1', guest_name: 'Sam', in_base: true });
+
+    await user.click(await screen.findByRole('button', { name: /Settle — charge/ }));
+    await waitFor(() => expect(api.settleSession).toHaveBeenCalledTimes(1));
+    const [, settled] = lastCall(vi.mocked(api.settleSession).mock.calls);
+    expect(settled).toEqual({ ...previewed, expected_preview: 'e'.repeat(64) });
   });
 
   // Opening the form should cost one request, not two.

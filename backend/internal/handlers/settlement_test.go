@@ -110,9 +110,7 @@ func TestSettleSessionChargesTheParticipants(t *testing.T) {
 			{"user_id": player.ID.String(), "in_base": true},
 		},
 	}
-	path := fmt.Sprintf("/api/admin/sessions/%s/settle", session.ID)
-
-	h.as(admin).post(path, body).expect(http.StatusCreated)
+	h.settleReviewed(admin, session.ID, body).expect(http.StatusCreated)
 
 	var balance struct {
 		BalanceCents int64 `json:"balance_cents"`
@@ -123,7 +121,7 @@ func TestSettleSessionChargesTheParticipants(t *testing.T) {
 	}
 
 	// Settling twice is refused with a code the frontend can act on.
-	conflict := h.as(admin).post(path, body).expect(http.StatusConflict).ledgerError()
+	conflict := h.settleReviewed(admin, session.ID, body).expect(http.StatusConflict).ledgerError()
 	if conflict.Code != "session_already_settled" {
 		t.Errorf("code = %q, want session_already_settled", conflict.Code)
 	}
@@ -150,8 +148,11 @@ func TestSettleReportsAShuttleShortfallWithNumbers(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// No preview can be costed while stock is short, so there is no fingerprint
+	// to carry; the shortfall is reported before the fingerprint is compared.
 	body := map[string]any{
-		"lines": []map[string]any{{"user_id": player.ID.String(), "in_base": true}},
+		"lines":            []map[string]any{{"user_id": player.ID.String(), "in_base": true}},
+		"expected_preview": unreviewedFingerprint,
 	}
 	failure := h.as(admin).
 		post(fmt.Sprintf("/api/admin/sessions/%s/settle", session.ID), body).
@@ -177,8 +178,7 @@ func TestSettleRefusesACancelledSession(t *testing.T) {
 	database.DB.Model(&models.Session{}).Where("id = ?", session.ID).
 		Update("status", models.SessionStatusCancelled)
 
-	failure := h.as(admin).post(
-		fmt.Sprintf("/api/admin/sessions/%s/settle", session.ID),
+	failure := h.settleReviewed(admin, session.ID,
 		map[string]any{"lines": []map[string]any{{"user_id": player.ID.String(), "in_base": true}}},
 	).expect(http.StatusUnprocessableEntity).ledgerError()
 
@@ -195,7 +195,7 @@ func TestSessionHistoryIncludesUnsettledSessions(t *testing.T) {
 	player := makePlayer(t)
 	settled := pastSession(t, h, admin)
 
-	h.as(admin).post(fmt.Sprintf("/api/admin/sessions/%s/settle", settled.ID), map[string]any{
+	h.settleReviewed(admin, settled.ID, map[string]any{
 		"lines": []map[string]any{{"user_id": player.ID.String(), "in_base": true}},
 	}).expect(http.StatusCreated)
 
@@ -249,7 +249,7 @@ func TestSessionSettlementIsReadableByAnyMember(t *testing.T) {
 	other := makePlayer(t)
 	session := pastSession(t, h, admin)
 
-	h.as(admin).post(fmt.Sprintf("/api/admin/sessions/%s/settle", session.ID), map[string]any{
+	h.settleReviewed(admin, session.ID, map[string]any{
 		"lines": []map[string]any{{"user_id": player.ID.String(), "in_base": true}},
 	}).expect(http.StatusCreated)
 
@@ -307,7 +307,7 @@ func TestReverseSettlementAllowsResettling(t *testing.T) {
 			ID string `json:"id"`
 		} `json:"settlement"`
 	}
-	h.as(admin).post(fmt.Sprintf("/api/admin/sessions/%s/settle", session.ID), map[string]any{
+	h.settleReviewed(admin, session.ID, map[string]any{
 		"lines": []map[string]any{{"user_id": player.ID.String(), "in_base": true}},
 	}).expect(http.StatusCreated).decode(&created)
 
@@ -322,7 +322,7 @@ func TestReverseSettlementAllowsResettling(t *testing.T) {
 		t.Errorf("balance after reversal = %d, want 0", balance.BalanceCents)
 	}
 
-	h.as(admin).post(fmt.Sprintf("/api/admin/sessions/%s/settle", session.ID), map[string]any{
+	h.settleReviewed(admin, session.ID, map[string]any{
 		"lines": []map[string]any{{"user_id": player.ID.String(), "in_base": true}},
 	}).expect(http.StatusCreated)
 }
@@ -344,9 +344,9 @@ func TestHistoricalSettlementQueryKeepsOriginalAfterReversal(t *testing.T) {
 		Settlement models.Settlement `json:"settlement"`
 	}
 	body := map[string]any{"lines": []map[string]any{{"user_id": player.ID.String(), "in_base": true}}}
-	h.as(admin).post("/api/admin/sessions/"+session.ID.String()+"/settle", body).expect(http.StatusCreated).decode(&first)
+	h.settleReviewed(admin, session.ID, body).expect(http.StatusCreated).decode(&first)
 	h.as(admin).post("/api/admin/settlements/"+first.Settlement.ID.String()+"/reverse", nil).expect(http.StatusCreated)
-	h.as(admin).post("/api/admin/sessions/"+session.ID.String()+"/settle", body).expect(http.StatusCreated)
+	h.settleReviewed(admin, session.ID, body).expect(http.StatusCreated)
 	var original services.SettlementView
 	path := "/api/sessions/" + session.ID.String() + "/settlement?settlement_id=" + first.Settlement.ID.String()
 	h.as(player).get(path).expect(http.StatusOK).decode(&original)
@@ -367,7 +367,7 @@ func TestGenericSessionReversalAllowsResettling(t *testing.T) {
 	var created struct {
 		Settlement models.Settlement `json:"settlement"`
 	}
-	h.as(admin).post(fmt.Sprintf("/api/admin/sessions/%s/settle", session.ID), input).
+	h.settleReviewed(admin, session.ID, input).
 		expect(http.StatusCreated).decode(&created)
 	var inverse models.Transaction
 	h.as(admin).post(fmt.Sprintf("/api/admin/transactions/%s/reverse", created.Settlement.TransactionID),
@@ -392,7 +392,7 @@ func TestGenericSessionReversalAllowsResettling(t *testing.T) {
 	if body.Code != "reversal_not_allowed" {
 		t.Fatalf("unexpected inverse reversal code: %s", body.Code)
 	}
-	h.as(admin).post(fmt.Sprintf("/api/admin/sessions/%s/settle", session.ID), input).
+	h.settleReviewed(admin, session.ID, input).
 		expect(http.StatusCreated)
 	// An old transaction must not undo the newly settled version.
 	h.as(admin).post(fmt.Sprintf("/api/admin/transactions/%s/reverse", created.Settlement.TransactionID), nil).
@@ -410,8 +410,7 @@ func TestReversalRoutesRequireApprovedAdmin(t *testing.T) {
 	var created struct {
 		Settlement models.Settlement `json:"settlement"`
 	}
-	h.as(admin).post(fmt.Sprintf("/api/admin/sessions/%s/settle", session.ID),
-		map[string]any{"lines": []map[string]any{{"user_id": player.ID.String(), "in_base": true}}}).
+	h.settleReviewed(admin, session.ID, map[string]any{"lines": []map[string]any{{"user_id": player.ID.String(), "in_base": true}}}).
 		expect(http.StatusCreated).decode(&created)
 	paths := []string{
 		fmt.Sprintf("/api/admin/transactions/%s/reverse", created.Settlement.TransactionID),

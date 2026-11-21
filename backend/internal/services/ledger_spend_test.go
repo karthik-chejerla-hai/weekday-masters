@@ -153,7 +153,7 @@ func TestPersonalSpendNativeGuestsReversalsAndReplacement(t *testing.T) {
 	lines := []LineInput{{UserID: host.ID, InBase: true}, {UserID: host.ID, GuestName: "Guest", InBase: true}, {UserID: other.ID, InBase: true}, {UserID: comped.ID, InBase: true, Comped: true}, {UserID: guestOnly.ID, GuestName: "Another guest", InBase: true}}
 	settle := func() *models.Settlement {
 		t.Helper()
-		record, _, err := f.settlement.Settle(SettleInput{SessionID: f.session.ID, SettledBy: f.admin.ID, Lines: lines})
+		record, _, err := settleReviewed(f.settlement, SettleInput{SessionID: f.session.ID, SettledBy: f.admin.ID, Lines: lines})
 		if err != nil {
 			t.Fatal(err)
 		}

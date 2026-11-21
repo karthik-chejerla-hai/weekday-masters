@@ -18,6 +18,26 @@ function readApiError(err: unknown): ApiError | null {
   return response?.data?.code ? response.data : null;
 }
 
+/** The request the form's state stands for, for both preview and settle. */
+function toInput(lines: EditableLine[], extraHours: number): SettlementInput {
+  return {
+    extra_hours: extraHours,
+    lines: lines.map(({ user_id, guest_name, in_base, in_extra, comped }) => ({
+      user_id,
+      guest_name,
+      in_base,
+      in_extra: extraHours > 0 && in_extra,
+      comped,
+    })),
+  };
+}
+
+/**
+ * Identifies an input by value, so a preview can be matched to the form state
+ * it was costed from rather than to whichever render happened to request it.
+ */
+const inputKey = (input: SettlementInput) => JSON.stringify(input);
+
 export default function AdminSettlement() {
   const { id: sessionId } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -26,6 +46,14 @@ export default function AdminSettlement() {
   const [lines, setLines] = useState<EditableLine[]>([]);
   const [extraHours, setExtraHours] = useState(0);
   const [preview, setPreview] = useState<SettlementPreview | null>(null);
+  // Which form state `preview` was costed from. The figures may only be shown
+  // as current, and may only be settled, while this still matches the form.
+  const [previewedKey, setPreviewedKey] = useState<string | null>(null);
+  const [isPreviewing, setIsPreviewing] = useState(false);
+  // Replies can arrive out of order. Only the reply to the newest request may
+  // touch the screen; every request, and every change that makes the pending
+  // one pointless, takes the next number.
+  const previewSeq = useRef(0);
 
   const [isLoading, setIsLoading] = useState(true);
   // The seed request already returns a costed preview, so the first run of the
@@ -37,19 +65,12 @@ export default function AdminSettlement() {
 
   const hasExtraHour = extraHours > 0;
 
-  const input = useMemo<SettlementInput>(
-    () => ({
-      extra_hours: extraHours,
-      lines: lines.map(({ user_id, guest_name, in_base, in_extra, comped }) => ({
-        user_id,
-        guest_name,
-        in_base,
-        in_extra: hasExtraHour && in_extra,
-        comped,
-      })),
-    }),
-    [lines, extraHours, hasExtraHour]
-  );
+  const input = useMemo(() => toInput(lines, extraHours), [lines, extraHours]);
+
+  // The preview the admin can act on: the one costed from exactly what the form
+  // says now. After any change this is null until the new costing arrives, so an
+  // old total can never sit beside, or be settled against, a new form.
+  const reviewed = preview && !isPreviewing && previewedKey === inputKey(input) ? preview : null;
 
   // Seed the form from the session's RSVPs, which is what the server would
   // default to anyway.
@@ -62,18 +83,21 @@ export default function AdminSettlement() {
           api.listBalances(),
           api.previewSettlement(sessionId, {}),
         ]);
+        const seededLines: EditableLine[] = seeded.lines.map((line) => ({
+          user_id: line.user_id,
+          name: line.name ?? '',
+          guest_name: line.guest_name,
+          in_base: line.in_base,
+          in_extra: line.in_extra,
+          comped: line.comped,
+        }));
         setMembers(balances);
-        setLines(
-          seeded.lines.map((line) => ({
-            user_id: line.user_id,
-            name: line.name ?? '',
-            guest_name: line.guest_name,
-            in_base: line.in_base,
-            in_extra: line.in_extra,
-            comped: line.comped,
-          }))
-        );
+        setLines(seededLines);
         setPreview(seeded);
+        // The default preview is the costing of these lines, so it stands as the
+        // review of the form they seed. If the server disagrees, settling is
+        // refused as changed and the form re-costs.
+        setPreviewedKey(inputKey(toInput(seededLines, 0)));
         hasSeeded.current = true;
       } catch (err) {
         const apiError = readApiError(err);
@@ -85,26 +109,41 @@ export default function AdminSettlement() {
   }, [sessionId]);
 
   // Re-cost on every change, so what is on screen is what settling will post.
-  const refreshPreview = useCallback(async () => {
+  //
+  // `notice` is a message that should survive the re-cost, for when the reason
+  // the form is re-costing is itself something the admin needs to read.
+  const refreshPreview = useCallback(async (notice?: string) => {
+    const seq = ++previewSeq.current;
+
     if (!sessionId || lines.length === 0) {
       setPreview(null);
+      setPreviewedKey(null);
+      setIsPreviewing(false);
       return;
     }
 
+    setIsPreviewing(true);
     try {
       const next = await api.previewSettlement(sessionId, input);
+      // A newer request has gone out: this reply describes a form that is no
+      // longer on screen.
+      if (seq !== previewSeq.current) return;
       setPreview(next);
+      setPreviewedKey(inputKey(input));
       setShortfall(null);
-      setError(null);
+      setError(notice ?? null);
     } catch (err) {
+      if (seq !== previewSeq.current) return;
+      setPreview(null);
+      setPreviewedKey(null);
       const apiError = readApiError(err);
       if (apiError?.code === 'shuttle_stock_short') {
         setShortfall(apiError.details as unknown as StockShortfall);
-        setPreview(null);
         return;
       }
       setError(apiError?.message ?? 'Could not work out what this session cost.');
-      setPreview(null);
+    } finally {
+      if (seq === previewSeq.current) setIsPreviewing(false);
     }
   }, [sessionId, input, lines.length]);
 
@@ -157,17 +196,25 @@ export default function AdminSettlement() {
   };
 
   const handleSettle = async () => {
-    if (!sessionId || !preview) return;
+    if (!sessionId || !reviewed) return;
 
     setIsSettling(true);
     setError(null);
     try {
-      await api.settleSession(sessionId, input);
+      // The fingerprint is the server's own record of what it showed. It costs
+      // the session again and posts only if it comes to these same figures.
+      await api.settleSession(sessionId, { ...input, expected_preview: reviewed.fingerprint });
       navigate('/sessions');
     } catch (err) {
       const apiError = readApiError(err);
       if (apiError?.code === 'shuttle_stock_short') {
         setShortfall(apiError.details as unknown as StockShortfall);
+      } else if (apiError?.code === 'preview_changed') {
+        // Stock, rates or attendance moved after the figures were shown. Nothing
+        // was posted; show the new figures and let the admin decide again.
+        await refreshPreview(
+          'The costs changed after you reviewed them, so nothing was charged. Check the new total, then settle.'
+        );
       } else {
         setError(apiError?.message ?? 'Could not settle this session.');
       }
@@ -234,7 +281,7 @@ export default function AdminSettlement() {
             <ParticipantRow
               key={`${line.user_id}-${line.guest_name ?? ''}-${index}`}
               line={line}
-              costed={preview?.lines[index]}
+              costed={reviewed?.lines[index]}
               hasExtraHour={hasExtraHour}
               onChange={(next) => updateLine(index, next)}
               onRemove={() => removeLine(index)}
@@ -250,24 +297,27 @@ export default function AdminSettlement() {
 
       <AddParticipant members={members} onAddMember={addMember} onAddGuest={addGuest} />
 
-      {preview && (
+      {reviewed && (
         <div>
           <h2 className="text-sm font-semibold text-slate-900 mb-2">What it comes to</h2>
-          <SettlementBreakdown preview={preview} />
+          <SettlementBreakdown preview={reviewed} />
         </div>
       )}
 
       <button
         type="button"
         className="btn-primary w-full"
-        disabled={!preview || isSettling || lines.length === 0}
+        disabled={!reviewed || isSettling || lines.length === 0}
+        aria-busy={isPreviewing}
         onClick={handleSettle}
       >
         {isSettling
           ? 'Settling…'
-          : preview
-            ? `Settle — charge ${formatCents(preview.totals.charged_cents)}`
-            : 'Settle'}
+          : reviewed
+            ? `Settle — charge ${formatCents(reviewed.totals.charged_cents)}`
+            : isPreviewing
+              ? 'Working out the cost…'
+              : 'Settle'}
       </button>
     </div>
   );

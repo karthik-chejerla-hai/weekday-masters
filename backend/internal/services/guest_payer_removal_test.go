@@ -58,7 +58,7 @@ func TestRemoveGuestPayerRequiresReplacement(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
-	_, preview, err := f.settlement.Settle(SettleInput{SessionID: session.ID, SettledBy: f.admin.ID})
+	_, preview, err := settleReviewed(f.settlement, SettleInput{SessionID: session.ID, SettledBy: f.admin.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestRemoveGuestPayerSessionStates(t *testing.T) {
 					t.Fatal(err)
 				}
 				if state != "past unsettled" {
-					settled, preview, err := f.settlement.Settle(SettleInput{SessionID: session.ID, SettledBy: f.admin.ID})
+					settled, preview, err := settleReviewed(f.settlement, SettleInput{SessionID: session.ID, SettledBy: f.admin.ID})
 					if err != nil {
 						t.Fatal(err)
 					}

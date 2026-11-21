@@ -32,7 +32,7 @@ func reverseFixtureSession(t *testing.T, f *settlementFixture) *models.Settlemen
 	t.Helper()
 	player := f.member(t, "player")
 	comped := f.member(t, "comped")
-	record, _, err := f.settlement.Settle(SettleInput{
+	record, _, err := settleReviewed(f.settlement, SettleInput{
 		SessionID: f.session.ID, SettledBy: f.admin.ID,
 		Lines: []LineInput{{UserID: player.ID, InBase: true}, {UserID: comped.ID, InBase: true, Comped: true}},
 	})
@@ -107,7 +107,7 @@ func TestSessionReversalMixedEntryPointsAreSerialized(t *testing.T) {
 	player := f.member(t, "player")
 	comped := f.member(t, "comped")
 	before := reversalAccounts(t)
-	record, _, err := f.settlement.Settle(SettleInput{SessionID: f.session.ID, SettledBy: f.admin.ID,
+	record, _, err := settleReviewed(f.settlement, SettleInput{SessionID: f.session.ID, SettledBy: f.admin.ID,
 		Lines: []LineInput{{UserID: player.ID, InBase: true}, {UserID: comped.ID, InBase: true, Comped: true}}})
 	if err != nil {
 		t.Fatal(err)
@@ -177,7 +177,7 @@ func TestSessionReversalMixedEntryPointsAreSerialized(t *testing.T) {
 		}
 	}
 	assertBalanced(t)
-	if _, _, err := f.settlement.Settle(SettleInput{SessionID: f.session.ID, SettledBy: f.admin.ID,
+	if _, _, err := settleReviewed(f.settlement, SettleInput{SessionID: f.session.ID, SettledBy: f.admin.ID,
 		Lines: []LineInput{{UserID: player.ID, InBase: true}}}); err != nil {
 		t.Fatalf("cannot settle after reversal: %v", err)
 	}
@@ -215,6 +215,15 @@ func TestSessionReversalAndResettlementAreSerialized(t *testing.T) {
 	input := SettleInput{SessionID: f.session.ID, SettledBy: f.admin.ID,
 		Lines: []LineInput{{UserID: player.ID, InBase: true}}}
 	before := reversalAccounts(t)
+	// Reviewed once, before anything is settled. The reversal restores exactly
+	// this state, so the same review is the right one for the re-settlement —
+	// and a preview taken mid-race would be of the settled state instead, which
+	// Settle would correctly refuse as changed.
+	reviewed, err := f.settlement.Preview(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.ExpectedPreview = reviewed.Fingerprint
 	record, _, err := f.settlement.Settle(input)
 	if err != nil {
 		t.Fatal(err)

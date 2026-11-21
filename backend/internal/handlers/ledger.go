@@ -393,8 +393,12 @@ func (h *LedgerHandler) ReverseTransaction(c *gin.Context) {
 		return
 	}
 
+	// The description is optional, so no body is fine; a broken one is not.
 	var req reverseRequest
-	_ = c.ShouldBindJSON(&req)
+	if err := decodeOptionalJSONBody(c, &req); err != nil {
+		respondInvalidBody(c)
+		return
+	}
 
 	txn, err := h.ledgerService.ReverseTransaction(transactionID, req.Description, admin.ID)
 	if err != nil {

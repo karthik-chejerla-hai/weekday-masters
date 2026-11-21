@@ -112,7 +112,7 @@ func TestGameActivityNativeGuestCompedAndSameDaySessions(t *testing.T) {
 	host := f.member(t, "host")
 	comped := f.member(t, "comped")
 	lines := []LineInput{{UserID: host.ID, InBase: true}, {UserID: host.ID, GuestName: "Guest One", InBase: true}, {UserID: comped.ID, InBase: true, Comped: true}}
-	first, preview, err := f.settlement.Settle(SettleInput{SessionID: f.session.ID, SettledBy: f.admin.ID, Lines: lines})
+	first, preview, err := settleReviewed(f.settlement, SettleInput{SessionID: f.session.ID, SettledBy: f.admin.ID, Lines: lines})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestGameActivityNativeGuestCompedAndSameDaySessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := f.settlement.Settle(SettleInput{SessionID: second.ID, SettledBy: f.admin.ID, Lines: []LineInput{{UserID: comped.ID, InBase: true, Comped: true}}}); err != nil {
+	if _, _, err := settleReviewed(f.settlement, SettleInput{SessionID: second.ID, SettledBy: f.admin.ID, Lines: []LineInput{{UserID: comped.ID, InBase: true, Comped: true}}}); err != nil {
 		t.Fatal(err)
 	}
 	activities, total, err := f.ledger.Activity(LedgerHistoryFilter{UserID: &comped.ID, Limit: 200})
