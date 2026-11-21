@@ -177,17 +177,32 @@ func canonicalMoneyRequest(in moneyOperationRequest) (moneyOperationRequest, str
 			return in, "", "", moneyInputError("Select an original transaction.")
 		}
 	default:
-		return in, "", "", newLedgerError("unsupported_transaction", 422, "This operation is not supported.")
+		if !in.Action.IsUnreviewedCreate() {
+			return in, "", "", newLedgerError("unsupported_transaction", 422, "This operation is not supported.")
+		}
+		if in.TargetTransactionID != nil {
+			return in, "", "", moneyInputError("A new transaction cannot replace an existing transaction.")
+		}
 	}
-	if len(in.ExpectedPreview) != 64 {
-		return in, "", "", newLedgerError("preview_required", 409, "Review this operation before confirming.")
-	}
-	decoded, err := hex.DecodeString(in.ExpectedPreview)
-	if err != nil || len(decoded) != 32 || strings.ToLower(in.ExpectedPreview) != in.ExpectedPreview {
-		return in, "", "", newLedgerError("preview_required", 409, "Review this operation before confirming.")
+	var err error
+	if in.Action.IsUnreviewedCreate() {
+		// Nothing was reviewed, so there is no fingerprint to hold the caller to.
+		// Accepting one would let it vary between retries of the same submission.
+		if in.ExpectedPreview != "" {
+			return in, "", "", moneyInputError("This operation has no preview.")
+		}
+	} else {
+		if len(in.ExpectedPreview) != 64 {
+			return in, "", "", newLedgerError("preview_required", 409, "Review this operation before confirming.")
+		}
+		decoded, err := hex.DecodeString(in.ExpectedPreview)
+		if err != nil || len(decoded) != 32 || strings.ToLower(in.ExpectedPreview) != in.ExpectedPreview {
+			return in, "", "", newLedgerError("preview_required", 409, "Review this operation before confirming.")
+		}
 	}
 	in.Reason = strings.TrimSpace(in.Reason)
-	if !utf8.ValidString(in.Reason) || utf8.RuneCountInString(in.Reason) > 1000 || (in.Action != models.MoneyOperationCreateSharedExpense && in.Reason == "") {
+	reasonOptional := in.Action == models.MoneyOperationCreateSharedExpense || in.Action.IsUnreviewedCreate()
+	if !utf8.ValidString(in.Reason) || utf8.RuneCountInString(in.Reason) > 1000 || (!reasonOptional && in.Reason == "") {
 		return in, "", "", moneyInputError("A reason of 1–1000 characters is required.")
 	}
 	in.Proposed, err = CanonicalMoneyPayload(in.Proposed)

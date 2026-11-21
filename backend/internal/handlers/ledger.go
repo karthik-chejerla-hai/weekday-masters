@@ -207,7 +207,12 @@ func (h *LedgerHandler) getHistory(c *gin.Context, groupGames bool) {
 
 // --- writes (admin only) --------------------------------------------------
 
+// request_id is the submission key on the four create routes. The client mints
+// one per submission and resends it on a retry, so a reply lost after the write
+// committed cannot become a second transaction. It is parsed by hand rather than
+// with a binding tag so that a missing key reads the same as a malformed one.
 type cashRequest struct {
+	RequestID   string `json:"request_id"`
 	UserID      string `json:"user_id" binding:"required"`
 	AmountCents int64  `json:"amount_cents" binding:"required"`
 	OccurredAt  string `json:"occurred_at"`
@@ -230,19 +235,25 @@ func (h *LedgerHandler) recordCash(c *gin.Context, isTopup bool) {
 		return
 	}
 
+	requestID, ok := parseRequestID(c, req.RequestID)
+	if !ok {
+		return
+	}
+
 	userID, err := uuid.Parse(req.UserID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": "bad_request", "message": "Invalid user ID"})
 		return
 	}
 
-	occurredAt, err := parseOccurredAt(req.OccurredAt)
+	occurredAt, err := parseSubmittedOccurredAt(req.OccurredAt)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": "bad_request", "message": err.Error()})
 		return
 	}
 
 	input := services.CashInput{
+		RequestID:   requestID,
 		UserID:      userID,
 		AmountCents: req.AmountCents,
 		OccurredAt:  occurredAt,
@@ -264,6 +275,7 @@ func (h *LedgerHandler) recordCash(c *gin.Context, isTopup bool) {
 }
 
 type assetPurchaseRequest struct {
+	RequestID   string `json:"request_id"`
 	AmountCents int64  `json:"amount_cents" binding:"required"`
 	Units       int    `json:"units"`
 	OccurredAt  string `json:"occurred_at"`
@@ -295,13 +307,19 @@ func (h *LedgerHandler) recordAsset(c *gin.Context, record func(services.AssetPu
 		return
 	}
 
-	occurredAt, err := parseOccurredAt(req.OccurredAt)
+	requestID, ok := parseRequestID(c, req.RequestID)
+	if !ok {
+		return
+	}
+
+	occurredAt, err := parseSubmittedOccurredAt(req.OccurredAt)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": "bad_request", "message": err.Error()})
 		return
 	}
 
 	txn, err := record(services.AssetPurchaseInput{
+		RequestID:   requestID,
 		AmountCents: req.AmountCents,
 		Units:       req.Units,
 		OccurredAt:  occurredAt,
@@ -418,6 +436,28 @@ func parseOccurredAt(value string) (time.Time, error) {
 		return time.Time{}, errors.New("occurred_at must be an RFC3339 timestamp")
 	}
 	return parsed.In(utils.SydneyLocation), nil
+}
+
+// parseSubmittedOccurredAt leaves an omitted date as the zero time instead of
+// resolving it to now. The ledger still records now, but the submission key is
+// bound to what the admin sent, and "now" differs between a request and its
+// retry.
+func parseSubmittedOccurredAt(value string) (time.Time, error) {
+	if value == "" {
+		return time.Time{}, nil
+	}
+	return parseOccurredAt(value)
+}
+
+// parseRequestID reads a create route's submission key, writing the refusal
+// itself when there is none.
+func parseRequestID(c *gin.Context, value string) (uuid.UUID, bool) {
+	id, err := uuid.Parse(value)
+	if err != nil || id == uuid.Nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_input", "message": "Provide a submission ID."})
+		return uuid.Nil, false
+	}
+	return id, true
 }
 
 func lowBalanceThreshold() (int64, error) {

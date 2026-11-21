@@ -35,6 +35,7 @@ func topup(t *testing.T, h *harness, admin, user *models.User, cents int64) stri
 		ID string `json:"id"`
 	}
 	h.as(admin).post("/api/admin/transactions/topup", map[string]any{
+		"request_id":   uuid.NewString(),
 		"user_id":      user.ID.String(),
 		"amount_cents": cents,
 		"description":  "Bank transfer",
@@ -127,11 +128,13 @@ func TestRecordTopupRejectsBadInput(t *testing.T) {
 	player := makePlayer(t)
 
 	h.as(admin).post("/api/admin/transactions/topup", map[string]any{
+		"request_id":   uuid.NewString(),
 		"user_id":      "not-a-uuid",
 		"amount_cents": 5000,
 	}).expect(http.StatusBadRequest)
 
 	h.as(admin).post("/api/admin/transactions/topup", map[string]any{
+		"request_id":   uuid.NewString(),
 		"user_id":      player.ID.String(),
 		"amount_cents": 5000,
 		"occurred_at":  "last Tuesday",
@@ -196,11 +199,11 @@ func TestAssetPurchasesMoveNoPlayerBalance(t *testing.T) {
 	topup(t, h, admin, player, 20000)
 
 	h.as(admin).post("/api/admin/transactions/court-credit", map[string]any{
-		"amount_cents": 10000, "description": "venue top-up",
+		"request_id": uuid.NewString(), "amount_cents": 10000, "description": "venue top-up",
 	}).expect(http.StatusCreated)
 
 	h.as(admin).post("/api/admin/transactions/shuttle-purchase", map[string]any{
-		"units": 12, "amount_cents": 5000, "description": "1 tube",
+		"request_id": uuid.NewString(), "units": 12, "amount_cents": 5000, "description": "1 tube",
 	}).expect(http.StatusCreated)
 
 	var position struct {

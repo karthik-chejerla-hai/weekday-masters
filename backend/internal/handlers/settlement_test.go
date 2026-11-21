@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/weekday-masters/backend/internal/database"
 	"github.com/weekday-masters/backend/internal/models"
 	"github.com/weekday-masters/backend/internal/services"
@@ -32,13 +33,13 @@ func pastSession(t *testing.T, h *harness, admin *models.User) *models.Session {
 
 	// Fund the club so settlement is not the thing that runs it dry.
 	h.as(admin).post("/api/admin/transactions/topup", map[string]any{
-		"user_id": admin.ID.String(), "amount_cents": 100000,
+		"request_id": uuid.NewString(), "user_id": admin.ID.String(), "amount_cents": 100000,
 	}).expect(http.StatusCreated)
 	h.as(admin).post("/api/admin/transactions/court-credit", map[string]any{
-		"amount_cents": 50000,
+		"request_id": uuid.NewString(), "amount_cents": 50000,
 	}).expect(http.StatusCreated)
 	h.as(admin).post("/api/admin/transactions/shuttle-purchase", map[string]any{
-		"units": 24, "amount_cents": 10000,
+		"request_id": uuid.NewString(), "units": 24, "amount_cents": 10000,
 	}).expect(http.StatusCreated)
 
 	return &session

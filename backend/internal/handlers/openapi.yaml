@@ -1500,7 +1500,10 @@ paths:
     post:
       tags: [Ledger]
       summary: Record money a member paid into the club
-      description: Bank up, that member up. The club now holds their money and owes them its value.
+      description: >
+        Bank up, that member up. The club now holds their money and owes them its value.
+        `request_id` makes the create safe to retry: send the same ID again after a
+        lost reply and the original transaction is returned with 201, not posted twice.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -1515,6 +1518,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/SubmissionConflict"
 
   /admin/transactions/withdrawal:
     post:
@@ -1534,6 +1539,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/SubmissionConflict"
 
   /admin/balance-corrections:
     post:
@@ -1681,6 +1688,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/SubmissionConflict"
 
   /admin/transactions/shuttle-purchase:
     post:
@@ -1703,6 +1712,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/SubmissionConflict"
 
   /admin/transactions/opening-balances:
     post:
@@ -2589,6 +2600,14 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Transaction"
+    SubmissionConflict:
+      description: >
+        `request_conflict`: this `request_id` was already used, by another admin or
+        for different contents. Nothing was posted. Use a new ID for a new submission.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/LedgerError"
     LedgerConflict:
       description: >
         The request conflicts with what has already happened — the session is
@@ -3777,8 +3796,15 @@ components:
 
     CashRequest:
       type: object
-      required: [user_id, amount_cents]
+      required: [request_id, user_id, amount_cents]
       properties:
+        request_id:
+          type: string
+          format: uuid
+          description: >
+            Submission key, minted by the client once per submission and resent
+            unchanged on a retry. An identical retry returns the original transaction.
+            The same ID with different contents is refused with 409 `request_conflict`.
         user_id: { type: string, format: uuid }
         amount_cents: { type: integer, format: int64, minimum: 1 }
         occurred_at: { type: string, format: date-time }
@@ -3801,8 +3827,15 @@ components:
 
     AssetPurchaseRequest:
       type: object
-      required: [amount_cents]
+      required: [request_id, amount_cents]
       properties:
+        request_id:
+          type: string
+          format: uuid
+          description: >
+            Submission key, minted by the client once per submission and resent
+            unchanged on a retry. An identical retry returns the original transaction.
+            The same ID with different contents is refused with 409 `request_conflict`.
         amount_cents: { type: integer, format: int64, minimum: 1 }
         units:
           type: integer

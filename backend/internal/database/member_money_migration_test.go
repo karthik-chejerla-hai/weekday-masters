@@ -259,3 +259,70 @@ func TestMemberMoneyTransactionLinksAndOperationValidation(t *testing.T) {
 		}
 	}
 }
+
+// A database migrated before the keyed create routes carries the original
+// action rule, which refuses record_* operations. The migration must widen it in
+// place, twice over without complaint, and keep the half of the rule that says a
+// create has no target.
+func TestMemberMoneyMigrationAdmitsKeyedCreateActions(t *testing.T) {
+	requireDB(t)
+	actor, original := moneyFixture(t)
+	for _, sql := range []string{
+		`ALTER TABLE money_operations DROP CONSTRAINT IF EXISTS money_operations_action_target_v2`,
+		`ALTER TABLE money_operations ADD CONSTRAINT money_operations_action_target CHECK (
+			(action = 'create_shared_expense' AND target_transaction_id IS NULL)
+			OR (action IN ('correct_topup', 'reverse_transaction', 'correct_shared_expense', 'correct_settlement') AND target_transaction_id IS NOT NULL))`,
+	} {
+		if err := database.DB.Exec(sql).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() {
+		if err := database.Migrate(); err != nil {
+			t.Errorf("restore migration: %v", err)
+		}
+	})
+	record := func(action string, target *uuid.UUID) error {
+		return database.DB.Transaction(func(tx *gorm.DB) error {
+			id := uuid.New()
+			if err := tx.Exec(`INSERT INTO money_operations
+				(id, actor_id, action, target_transaction_id, payload_hash, canonical_payload, created_at)
+				VALUES (?, ?, ?, ?, ?, '{}'::jsonb, clock_timestamp())`,
+				id, actor.ID, action, target, strings.Repeat("a", 64)).Error; err != nil {
+				return err
+			}
+			return completeOperation(tx, id)
+		})
+	}
+	if err := record("record_topup", nil); err == nil {
+		t.Fatal("fixture is not the pre-upgrade rule: record_topup was already accepted")
+	}
+
+	for i := 0; i < 2; i++ {
+		if err := database.Migrate(); err != nil {
+			t.Fatalf("migration run %d: %v", i+1, err)
+		}
+	}
+	var names []string
+	if err := database.DB.Raw(`SELECT conname FROM pg_constraint
+		WHERE conrelid = 'money_operations'::regclass AND conname LIKE 'money_operations_action_target%'`).Scan(&names).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 1 || names[0] != "money_operations_action_target_v2" {
+		t.Fatalf("action rules after upgrade = %v, want only the widened one", names)
+	}
+	for _, action := range []string{"record_topup", "record_withdrawal", "record_court_credit_purchase", "record_shuttle_purchase", "create_shared_expense"} {
+		if err := record(action, nil); err != nil {
+			t.Errorf("%s without a target refused: %v", action, err)
+		}
+		if err := record(action, &original.ID); err == nil {
+			t.Errorf("%s with a target was accepted", action)
+		}
+	}
+	if err := record("reverse_transaction", nil); err == nil {
+		t.Error("reverse_transaction without a target was accepted")
+	}
+	if err := record("record_refund", nil); err == nil {
+		t.Error("an unknown action was accepted")
+	}
+}

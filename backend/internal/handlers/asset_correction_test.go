@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"github.com/google/uuid"
 	"github.com/weekday-masters/backend/internal/database"
 	"github.com/weekday-masters/backend/internal/models"
 	"net/http"
@@ -12,7 +13,7 @@ func TestAssetPurchaseCorrectionHTTPAndAccess(t *testing.T) {
 	admin := makeAdmin(t)
 	player := makePlayer(t)
 	var original models.Transaction
-	h.as(admin).post("/api/admin/transactions/shuttle-purchase", map[string]any{"amount_cents": 5000, "units": 12}).expect(http.StatusCreated).decode(&original)
+	h.as(admin).post("/api/admin/transactions/shuttle-purchase", map[string]any{"request_id": uuid.NewString(), "amount_cents": 5000, "units": 12}).expect(http.StatusCreated).decode(&original)
 	path := "/api/admin/asset-purchases/" + original.ID.String() + "/correct"
 	req := map[string]any{"amount_cents": 6000, "units": 24, "reason": "Receipt verified"}
 	h.as(player).get("/api/admin/asset-purchases").expect(http.StatusForbidden)

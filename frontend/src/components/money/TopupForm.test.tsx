@@ -14,6 +14,9 @@ const members: PlayerBalance[] = [
   { user_id: 'u2', name: 'Priya', balance_cents: 3100 },
 ];
 
+const uuid = expect.stringMatching(/^[0-9a-f-]{36}$/);
+const sentIds = () => vi.mocked(api.recordTopup).mock.calls.map((call) => call[4]);
+
 function renderForm(onRecorded = vi.fn()) {
   render(<TopupForm members={members} onRecorded={onRecorded} />);
   return { onRecorded };
@@ -35,7 +38,7 @@ describe('TopupForm', () => {
     await user.type(screen.getByLabelText('Amount'), '50.00');
     await user.click(screen.getByRole('button', { name: 'Record top-up' }));
 
-    await waitFor(() => expect(api.recordTopup).toHaveBeenCalledWith('u1', 5000, 'Bank transfer'));
+    await waitFor(() => expect(api.recordTopup).toHaveBeenCalledWith('u1', 5000, 'Bank transfer', undefined, uuid));
   });
 
   it('handles an amount that a float would round badly', async () => {
@@ -46,7 +49,7 @@ describe('TopupForm', () => {
     await user.type(screen.getByLabelText('Amount'), '16.94');
     await user.click(screen.getByRole('button', { name: 'Record top-up' }));
 
-    await waitFor(() => expect(api.recordTopup).toHaveBeenCalledWith('u2', 1694, 'Bank transfer'));
+    await waitFor(() => expect(api.recordTopup).toHaveBeenCalledWith('u2', 1694, 'Bank transfer', undefined, uuid));
   });
 
   it('sends the note when one is given', async () => {
@@ -59,7 +62,7 @@ describe('TopupForm', () => {
     await user.click(screen.getByRole('button', { name: 'Record top-up' }));
 
     await waitFor(() =>
-      expect(api.recordTopup).toHaveBeenCalledWith('u1', 2500, 'PayID from Priya')
+      expect(api.recordTopup).toHaveBeenCalledWith('u1', 2500, 'PayID from Priya', undefined, uuid)
     );
   });
 
@@ -116,5 +119,62 @@ describe('TopupForm', () => {
       expect(screen.getByText(/Could not record that top-up/)).toBeInTheDocument()
     );
     expect(onRecorded).not.toHaveBeenCalled();
+  });
+
+  // A reply lost after the write commits looks like a failure here. Pressing the
+  // button again must send the same ID, so the server returns the original
+  // transaction instead of recording the receipt twice.
+  it('reuses the request ID when a failed submission is retried', async () => {
+    vi.mocked(api.recordTopup).mockRejectedValueOnce(new Error('network'));
+    const user = userEvent.setup();
+    const { onRecorded } = renderForm();
+
+    await user.selectOptions(screen.getByLabelText('Member'), 'u1');
+    await user.type(screen.getByLabelText('Amount'), '50');
+    await user.click(screen.getByRole('button', { name: 'Record top-up' }));
+    await screen.findByText(/Could not record that top-up/);
+    await user.click(screen.getByRole('button', { name: 'Record top-up' }));
+
+    await waitFor(() => expect(onRecorded).toHaveBeenCalled());
+    const [first, retry] = sentIds();
+    expect(first).toEqual(uuid);
+    expect(retry).toBe(first);
+  });
+
+  // Two transfers of the same amount from the same member are two receipts.
+  it('mints a new request ID after a top-up is recorded', async () => {
+    const user = userEvent.setup();
+    const { onRecorded } = renderForm();
+
+    for (let i = 1; i <= 2; i++) {
+      await user.selectOptions(screen.getByLabelText('Member'), 'u1');
+      await user.type(screen.getByLabelText('Amount'), '50');
+      await user.click(screen.getByRole('button', { name: 'Record top-up' }));
+      await waitFor(() => expect(onRecorded).toHaveBeenCalledTimes(i));
+    }
+
+    const [first, second] = sentIds();
+    expect(second).toEqual(uuid);
+    expect(second).not.toBe(first);
+  });
+
+  // The server refuses a reused ID with different contents, so an edited form
+  // has to go out as a new submission.
+  it('mints a new request ID when the form is edited after a failure', async () => {
+    vi.mocked(api.recordTopup).mockRejectedValueOnce(new Error('network'));
+    const user = userEvent.setup();
+    renderForm();
+
+    await user.selectOptions(screen.getByLabelText('Member'), 'u1');
+    await user.type(screen.getByLabelText('Amount'), '50');
+    await user.click(screen.getByRole('button', { name: 'Record top-up' }));
+    await screen.findByText(/Could not record that top-up/);
+    await user.clear(screen.getByLabelText('Amount'));
+    await user.type(screen.getByLabelText('Amount'), '55');
+    await user.click(screen.getByRole('button', { name: 'Record top-up' }));
+
+    await waitFor(() => expect(api.recordTopup).toHaveBeenCalledTimes(2));
+    const [first, second] = sentIds();
+    expect(second).not.toBe(first);
   });
 });

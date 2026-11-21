@@ -7,8 +7,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// MoneyOperationAction identifies a reviewed member-money submission. It is
-// separate from TransactionKind: a correction appends two transactions.
+// MoneyOperationAction identifies a keyed money submission. It is separate from
+// TransactionKind: a correction appends two transactions. The record_* actions
+// are plain creates with no review step; they are keyed so that a retry after a
+// lost reply returns the original transaction instead of posting a second one.
 type MoneyOperationAction string
 
 const (
@@ -17,7 +19,23 @@ const (
 	MoneyOperationCreateSharedExpense  MoneyOperationAction = "create_shared_expense"
 	MoneyOperationCorrectSharedExpense MoneyOperationAction = "correct_shared_expense"
 	MoneyOperationCorrectSettlement    MoneyOperationAction = "correct_settlement"
+
+	MoneyOperationRecordTopup               MoneyOperationAction = "record_topup"
+	MoneyOperationRecordWithdrawal          MoneyOperationAction = "record_withdrawal"
+	MoneyOperationRecordCourtCreditPurchase MoneyOperationAction = "record_court_credit_purchase"
+	MoneyOperationRecordShuttlePurchase     MoneyOperationAction = "record_shuttle_purchase"
 )
+
+// IsUnreviewedCreate reports whether the action is a direct create: no target
+// transaction, no preview fingerprint, and no reason.
+func (a MoneyOperationAction) IsUnreviewedCreate() bool {
+	switch a {
+	case MoneyOperationRecordTopup, MoneyOperationRecordWithdrawal,
+		MoneyOperationRecordCourtCreditPurchase, MoneyOperationRecordShuttlePurchase:
+		return true
+	}
+	return false
+}
 
 // MoneyOperation durably binds one submission ID to its accepted contents and
 // response. A reservation and its completed response share the caller's DB
