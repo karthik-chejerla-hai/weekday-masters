@@ -82,8 +82,9 @@ func TestRequireAdmin_AdminUser(t *testing.T) {
 
 	r.Use(func(c *gin.Context) {
 		c.Set("user", &models.User{
-			ID:   uuid.New(),
-			Role: models.RoleAdmin,
+			ID:               uuid.New(),
+			Role:             models.RoleAdmin,
+			MembershipStatus: models.MembershipApproved,
 		})
 		c.Next()
 	})
@@ -121,6 +122,41 @@ func TestRequireAdmin_NonAdminUser(t *testing.T) {
 
 	if w.Code != http.StatusForbidden {
 		t.Errorf("expected status %d for player accessing admin route, got %d", http.StatusForbidden, w.Code)
+	}
+}
+
+// An admin role with unapproved membership must not pass: role and membership
+// are independent columns, and the old role route can set them independently.
+func TestRequireAdmin_UnapprovedAdmin(t *testing.T) {
+	for _, status := range []models.MembershipStatus{
+		models.MembershipPending,
+		models.MembershipRejected,
+		models.MembershipRemoved,
+	} {
+		t.Run(string(status), func(t *testing.T) {
+			w := httptest.NewRecorder()
+			c, r := gin.CreateTestContext(w)
+
+			r.Use(func(c *gin.Context) {
+				c.Set("user", &models.User{
+					ID:               uuid.New(),
+					Role:             models.RoleAdmin,
+					MembershipStatus: status,
+				})
+				c.Next()
+			})
+			r.Use(RequireAdmin())
+			r.GET("/admin-only", func(c *gin.Context) {
+				c.Status(http.StatusOK)
+			})
+
+			c.Request, _ = http.NewRequest(http.MethodGet, "/admin-only", nil)
+			r.ServeHTTP(w, c.Request)
+
+			if w.Code != http.StatusForbidden {
+				t.Errorf("expected status %d for %s admin, got %d", http.StatusForbidden, status, w.Code)
+			}
+		})
 	}
 }
 

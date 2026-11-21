@@ -331,6 +331,13 @@ func (s *UserService) UpdateUserRole(userID uuid.UUID, role models.UserRole) (*m
 		return nil, err
 	}
 
+	// Membership status is a separate column, and middleware trusts the role
+	// only together with approval — never mint an admin whose membership would
+	// let that trust be revisited later.
+	if role == models.RoleAdmin && !user.IsApproved() {
+		return nil, errors.New("only an approved member can be made an admin")
+	}
+
 	user.Role = role
 	user.UpdatedAt = time.Now()
 
